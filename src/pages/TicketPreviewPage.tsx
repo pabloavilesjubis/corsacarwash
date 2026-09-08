@@ -37,22 +37,26 @@ export function TicketPreviewPage() {
   const [vehiculo, setVehiculo] = useState('Toyota Corolla · Gris')
   const [orden, setOrden] = useState('00042')
   const [total, setTotal] = useState('18.00')
+  const [aspiradoPrecioTxt, setAspiradoPrecioTxt] = useState('3.00')
   const [conDte, setConDte] = useState(true)
   const [esCcf, setEsCcf] = useState(false)
   const [zoom, setZoom] = useState(1.5)
 
   const args: TicketArgs = useMemo(() => {
     const totalNum = Number(total) || 0
+    const aspiradoPrecio = aspirado ? (Number(aspiradoPrecioTxt) || 0) : 0
     return {
       emisor: EMISOR,
       operacion: { servicio, aspirado, placa, vehiculo, ordenNumero: orden },
       venta: {
         id: 'preview',
         fecha: new Date().toISOString(),
+        // El aspirado es una línea con su propio precio, no un "incluido" a
+        // cero: el ticket tiene que mostrar el desglose real de la venta.
         lineas: [
-          { nombre: `Lavado ${servicio}`, cantidad: 1, precioUnitario: totalNum, subtotal: totalNum },
+          { nombre: `${servicio} M`, cantidad: 1, precioUnitario: totalNum - aspiradoPrecio, subtotal: totalNum - aspiradoPrecio },
           ...(aspirado
-            ? [{ nombre: 'Aspirado incluido', cantidad: 1, precioUnitario: 0, subtotal: 0 }]
+            ? [{ nombre: 'Aspirado de interiores', cantidad: 1, precioUnitario: aspiradoPrecio, subtotal: aspiradoPrecio }]
             : []),
         ],
         total: totalNum,
@@ -75,7 +79,7 @@ export function TicketPreviewPage() {
         : { nombre: 'Consumidor Final' },
       atendio: 'Mauricio J.',
     }
-  }, [servicio, aspirado, placa, vehiculo, orden, total, conDte, esCcf])
+  }, [servicio, aspirado, placa, vehiculo, orden, total, aspiradoPrecioTxt, conDte, esCcf])
 
   const html = useMemo(() => buildCorsaTicketPreviewHTML(args), [args])
 
@@ -126,6 +130,13 @@ export function TicketPreviewPage() {
           <span style={label}>Total</span>
           <input className="corsa-input" value={total} onChange={e => setTotal(e.target.value)}/>
         </div>
+        {aspirado && (
+          <div style={field}>
+            <span style={label}>Precio del aspirado</span>
+            <input className="corsa-input" value={aspiradoPrecioTxt}
+                   onChange={e => setAspiradoPrecioTxt(e.target.value)}/>
+          </div>
+        )}
 
         <div style={field}>
           <span style={label}>Documento</span>

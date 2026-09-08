@@ -314,8 +314,16 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
   .kv-row .k { flex-shrink: 0; }
   .kv-row .v { text-align: right; word-break: break-word; font-weight: 400; }
 
+  /* Detalle: una línea por servicio. El operario y el cliente tienen que ver
+     el lavado y el aspirado por separado, no un único importe agregado. */
   .items { margin: 2px 0; text-align: left; }
-  .line { margin-bottom: 4px; }
+  .items-head {
+    display: flex; justify-content: space-between;
+    font-size: 9px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase;
+    border-bottom: 1px solid #000; padding-bottom: 2px; margin-bottom: 4px;
+  }
+  .line { margin-bottom: 4px; padding-bottom: 3px; border-bottom: 1px dotted #000; }
+  .line:last-child { border-bottom: none; }
   .line-name { font-size: 12px; line-height: 1.2; font-weight: 700; }
   .line-row { display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; margin-top: 1px; }
   .line-qty { font-family: 'SF Mono', monospace; }
@@ -374,7 +382,10 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
     ${atendio ? `<div class="kv-block"><div class="kv-row"><span class="k">Atendió</span><span class="v">${esc(atendio)}</span></div></div>` : ''}
 
     <hr class="sep"/>
-    <div class="items">${lineasHTML}</div>
+    <div class="items">
+      <div class="items-head"><span>Detalle</span><span>Importe</span></div>
+      ${lineasHTML}
+    </div>
 
     <hr class="sep"/>
     <div class="totals">
