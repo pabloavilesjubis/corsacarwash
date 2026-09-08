@@ -2,7 +2,8 @@
  * CORSA Carwash — POS Nueva orden
  * Modos: Normal · Flotilla Corporativa · Membresía
  * Servicios: PRO · ÉLITE · SIGNATURE  (S / M / L)
- * Add-on: Aspirado de interiores $3
+ * Add-on: Aspirado de interiores — $3 de lista, o el precio negociado si la
+ *          flotilla tiene uno cargado (fleet_pricing)
  * Modal de cobro: Ticket (FCF) o CCF
  */
 
@@ -752,8 +753,11 @@ export function POSPage() {
   }
   const servicePrice = mode === 'flotilla' ? (fleetPrices[selectedSize] ?? svc.prices[selectedSize]) : svc.prices[selectedSize]
   // En flotilla manda el precio negociado; si no hay acuerdo, la tarifa de lista.
-  const aspiradoUnit = (mode === 'flotilla' && fleetCompany?.aspirado_enabled && fleetCompany.aspirado_price != null)
-    ? fleetCompany.aspirado_price
+  const usaAspiradoFlotilla = mode === 'flotilla'
+    && Boolean(fleetCompany?.aspirado_enabled)
+    && fleetCompany?.aspirado_price != null
+  const aspiradoUnit = usaAspiradoFlotilla
+    ? Number(fleetCompany!.aspirado_price)
     : ADDON_ASPIRADO.price
   const aspiradoPrice = withAspirado ? aspiradoUnit : 0
   const total = servicePrice + aspiradoPrice
@@ -1003,9 +1007,17 @@ export function POSPage() {
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{ADDON_ASPIRADO.label}</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 1 }}>Sin importar tamaño del vehículo</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 1 }}>
+                    Sin importar tamaño del vehículo
+                    {usaAspiradoFlotilla && <span style={{ color: 'var(--corsa-orange)' }}> · Precio flotilla</span>}
+                  </div>
                 </div>
-                <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 18, color: withAspirado ? 'var(--corsa-orange)' : 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>+$3</div>
+                {/* El importe estaba escrito a mano como "+$3": la tarjeta
+                    mostraba la tarifa de lista aunque la flotilla tuviera otra
+                    negociada, y sólo el resumen reflejaba el precio real. */}
+                <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 18, color: withAspirado ? 'var(--corsa-orange)' : 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+                  +{fmt(aspiradoUnit)}
+                </div>
               </button>
             </div>
           </div>
