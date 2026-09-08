@@ -15,6 +15,7 @@ const OrdersPage = lazy(() => import('./pages/OrdersPage').then(m => ({ default:
 const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage').then(m => ({ default: m.PlaceholderPage })))
 const FlotillasPage = lazy(() => import('./pages/FlotillasPage').then(m => ({ default: m.FlotillasPage })))
 const UsersPage = lazy(() => import('./pages/UsersPage').then(m => ({ default: m.UsersPage })))
+const SalesPage = lazy(() => import('./pages/SalesPage').then(m => ({ default: m.SalesPage })))
 // Banco de pruebas del ticket térmico. Sólo en desarrollo: no es una pantalla
 // del sistema, así que no pasa por ScreenGuard ni aparece en el sidebar.
 const TicketPreviewPage = lazy(() => import('./pages/TicketPreviewPage').then(m => ({ default: m.TicketPreviewPage })))
@@ -67,6 +68,7 @@ export default function App() {
                   src/lib/screens.ts, que también alimenta el sidebar. */}
               <Route element={<AppShell/>}>
                 <Route path="/dashboard"   element={<ScreenGuard permission="screens.dashboard"><DashboardPage/></ScreenGuard>}/>
+                <Route path="/sales"       element={<ScreenGuard permission="screens.sales"><SalesPage/></ScreenGuard>}/>
                 <Route path="/customers"   element={<ScreenGuard permission="screens.customers"><CustomersPage/></ScreenGuard>}/>
                 <Route path="/pos"         element={<ScreenGuard permission="screens.pos"><POSPage/></ScreenGuard>}/>
                 <Route path="/orders"      element={<ScreenGuard permission="screens.orders"><OrdersPage/></ScreenGuard>}/>

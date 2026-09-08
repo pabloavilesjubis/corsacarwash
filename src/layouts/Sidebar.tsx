@@ -129,6 +129,7 @@ const screenIcons: Record<string, React.ReactNode> = {
     </svg>
   ),
   orders: icons.orders,
+  sales: icons.receivable,
   dashboard: icons.dashboard,
   customers: icons.customers,
   analytics: icons.analytics,

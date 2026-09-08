@@ -15,6 +15,8 @@ import {
   ccfReceptorStatus, fcfReceptorStatus, preferredDocType, type ReceptorStatus,
 } from '../lib/fiscal/receptor'
 import { FCF_IDENTIFICACION_OBLIGATORIA_DESDE } from '../lib/mh-catalogs'
+import { printCorsaTicket } from '../lib/ticket/corsaTicket'
+import { buildTicketArgsFromPos, type PosSaleResult } from '../lib/ticket/fromSale'
 
 // ─── Catálogo ────────────────────────────────────────────────
 
@@ -472,8 +474,16 @@ function ReceptorPanel({ status, title }: { status: ReceptorStatus; title: strin
       <div style={{ padding: '4px 12px 8px' }}>
         {status.fields.map(f => (
           <div key={f.label} style={{ display: 'flex', gap: 8, alignItems: 'baseline', padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
-            <span style={{ flexShrink: 0, width: 14, fontWeight: 900, fontSize: 12, color: f.ok ? 'var(--color-success-text)' : 'var(--color-danger-text)' }}>
-              {f.ok ? '✓' : '!'}
+            {/* Un campo opcional vacío no es un error: se marca en gris, no en
+                rojo, para que el cajero distinga "falta y bloquea" de
+                "no lo tenemos y no importa". */}
+            <span style={{
+              flexShrink: 0, width: 14, fontWeight: 900, fontSize: 12,
+              color: !f.required && f.value === '—' ? 'var(--text-secondary)'
+                : f.ok ? 'var(--color-success-text)'
+                : 'var(--color-danger-text)',
+            }}>
+              {!f.required && f.value === '—' ? '–' : f.ok ? '✓' : '!'}
             </span>
             <span style={{ flexShrink: 0, width: 108, fontSize: 11.5, color: 'var(--text-secondary)' }}>{f.label}</span>
             <span style={{ flex: 1, fontSize: 12.5, fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-word' }}>
@@ -615,8 +625,14 @@ function BillingModal({ total, paymentMethod, customer, onConfirm, onCancel }: B
                 </label>
               ))}
 
-              {/* Sobre el umbral del MH el receptor deja de ser opcional. */}
-              <ReceptorPanel status={fcfStatus} title={`Identificación exigida sobre US$${FCF_IDENTIFICACION_OBLIGATORIA_DESDE.toFixed(2)}`}/>
+              {/* Siempre visible: el cajero confirma los datos con el cliente
+                  antes de cobrar. Sobre el umbral del MH, además, bloquean. */}
+              <ReceptorPanel
+                status={fcfStatus}
+                title={total >= FCF_IDENTIFICACION_OBLIGATORIA_DESDE
+                  ? `Datos del ticket · identificación exigida sobre US$${FCF_IDENTIFICACION_OBLIGATORIA_DESDE.toFixed(2)}`
+                  : 'Datos con los que se emitirá el ticket'}
+              />
             </div>
           )}
 
@@ -748,21 +764,51 @@ export function POSPage() {
     setShowBillingModal(false)
     setSubmitting(true)
     try {
-      await (supabase as any).rpc('create_work_order', {
+      // pos_register_sale (0030) reemplaza a create_work_order: aquella se
+      // llamaba con parámetros que no existían en ninguna migración, así que
+      // el cobro fallaba y ninguna venta llegaba a guardarse.
+      const { data, error } = await (supabase as any).rpc('pos_register_sale', {
         p_branch_id:       branchId,
-        p_customer_id:     mode === 'flotilla' ? (fleetCompany?.customer_id ?? null) : (customer?.id ?? null),
-        p_vehicle_id:      mode === 'flotilla' ? (fleetVehicle?.vehicle_id ?? null) : (customer?.vehicle?.id ?? null),
-        p_service_name:    `${svc.name} ${selectedSize}`,
+        p_service_code:    svc.tier.toUpperCase(),
         p_size:            selectedSize,
         p_total:           total,
         p_payment_method:  selectedPayment,
         p_with_aspirado:   withAspirado,
+        p_aspirado_price:  withAspirado ? ADDON_ASPIRADO.price : 0,
+        p_customer_id:     mode === 'flotilla' ? (fleetCompany?.customer_id ?? null) : (customer?.id ?? null),
+        p_vehicle_id:      mode === 'flotilla' ? (fleetVehicle?.vehicle_id ?? null) : (customer?.vehicle?.id ?? null),
         p_doc_type:        billing.docType,
         p_fcf_name:        billing.fcfName ?? null,
         p_ccf_customer_id: billing.ccfCustomer?.id ?? null,
         p_order_type:      mode,
       })
-      toast.success('Orden creada ✓')
+      if (error) throw error
+
+      const sale = data as PosSaleResult
+      const receptor = billing.ccfCustomer ?? customer
+
+      // El ticket se abre solo: es el comprobante y a la vez la orden que lee
+      // el equipo en piso. Si el navegador bloquea la ventana emergente el
+      // cobro ya quedó registrado, así que sólo se avisa — no se revierte.
+      try {
+        printCorsaTicket(buildTicketArgsFromPos(sale, {
+          clienteNombre: billing.fcfName ?? (receptor ? displayName(receptor) : undefined),
+          clienteDoc: receptor
+            ? { tipo: receptor.nit ? 'NIT' : 'DUI', numero: receptor.nit ?? receptor.dui, nrc: receptor.nrc }
+            : undefined,
+          placa: mode === 'flotilla' ? fleetVehicle?.plate : customer?.vehicle?.plate,
+          vehiculo: customer?.vehicle
+            ? [customer.vehicle.brand, customer.vehicle.model, customer.vehicle.color].filter(Boolean).join(' ')
+            : undefined,
+          metodoPago: PAYMENT_METHODS.find(p => p.id === selectedPayment)?.label,
+          aspiradoPrecio: ADDON_ASPIRADO.price,
+          branchName: (currentBranch as any)?.name,
+        }))
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'La venta se guardó, pero no se pudo abrir el ticket')
+      }
+
+      toast.success(`Venta ${sale.order_number} registrada ✓`)
       setCustomer(null); setFleetCompany(null); setFleetVehicle(null)
       setMode('normal'); setSelectedService('elite'); setSelectedSize('M')
       setWithAspirado(false); setKeypadValue('')
@@ -770,7 +816,7 @@ export function POSPage() {
       toast.error(err?.message ?? 'Error al crear la orden')
     }
     setSubmitting(false)
-  }, [branchId, mode, fleetCompany, fleetVehicle, customer, svc, selectedSize, total, selectedPayment, withAspirado])
+  }, [branchId, mode, fleetCompany, fleetVehicle, customer, svc, selectedSize, total, selectedPayment, withAspirado, currentBranch])
 
   const canCharge = mode === 'flotilla' ? !!fleetVehicle : true
 

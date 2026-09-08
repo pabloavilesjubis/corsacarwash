@@ -47,9 +47,8 @@ interface KPIs {
 
 const DIAS_ES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 const HOURS_LABEL = ['7a', '8a', '9a', '10a', '11a', '12p', '1p', '2p', '3p', '4p', '5p', '6p', '7p']
-// Hour weights: mañana pico, baja mediodía, repunta tarde
-const HOUR_WEIGHTS = [0.29, 0.47, 0.68, 0.85, 0.78, 0.63, 0.71, 0.58, 0.73, 0.92, 1.0, 0.80, 0.44]
-const DAY_WEIGHTS  = [0.55, 0.65, 0.60, 0.70, 1.0, 0.82, 0.72]  // mar–lun
+// La grilla cubre de 7am a 7pm; HOURS_LABEL[i] corresponde a la hora 7+i.
+const FIRST_HOUR = 7
 
 // Service category colors
 const CAT_COLORS: Record<number, { color: string; tint: string; bar: string }> = {
@@ -77,57 +76,27 @@ function heatColor(intensity: number): string {
   return `rgba(2,53,48,${alpha.toFixed(2)})`
 }
 
-// ─── Mock data (replace with real Supabase once migrations applied) ──
+/**
+ * Mapa de calor de ocupación por día y hora.
+ * Antes se generaba con pesos inventados (DAY_WEIGHTS / HOUR_WEIGHTS): dibujaba
+ * un patrón plausible que no tenía ninguna relación con las ventas reales.
+ * Ahora sale de v_sales_heatmap; sin ventas, la grilla queda vacía.
+ */
+function buildHeatmapFrom(rows: any[]): { label: string; cells: HourCell[] }[] {
+  const max = Math.max(1, ...rows.map(r => Number(r.order_count) || 0))
+  // v_sales_heatmap devuelve el dow de Postgres (0 = domingo); la grilla
+  // arranca en lunes porque así lee la semana el equipo de piso.
+  const dows = [1, 2, 3, 4, 5, 6, 0]
+  const nombres = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 
-function buildMockServiceKPIs(): ServiceKPI[] {
-  const raw = [
-    { service_name: 'Programa 1 · Básico',              count: 14, revenue: 112.00 },
-    { service_name: 'Programa 2 · Completo',            count: 19, revenue: 228.00 },
-    { service_name: 'Programa 3 · Premium + encerado',  count: 9,  revenue: 162.00 },
-    { service_name: 'Programa 4 · Detallado',           count: 5,  revenue: 135.00 },
-    { service_name: 'Lavado de motor',                  count: 3,  revenue: 36.00  },
-    { service_name: 'Desinfección',                     count: 7,  revenue: 42.00  },
-  ]
-  const totalOrders = raw.reduce((s, r) => s + r.count, 0)
-  return raw.map((r, i) => ({
-    service_id: String(i),
-    service_name: r.service_name,
-    count: r.count,
-    revenue: r.revenue,
-    pct: Math.round(r.count / totalOrders * 100),
-    avg_ticket: parseFloat((r.revenue / r.count).toFixed(2)),
-  }))
-}
-
-function buildMockDailySummary(): DailySummary[] {
-  const raw = [
-    { label: 'Mar', count: 36, revenue: 756.00 },
-    { label: 'Mié', count: 42, revenue: 924.00 },
-    { label: 'Jue', count: 39, revenue: 858.00 },
-    { label: 'Vie', count: 44, revenue: 968.00 },
-    { label: 'Sáb', count: 61, revenue: 1342.00 },
-    { label: 'Dom', count: 52, revenue: 1144.00 },
-    { label: 'Lun\u00a0(hoy)', count: 47, revenue: 1033.25 },
-  ]
-  const max = Math.max(...raw.map(r => r.count))
-  return raw.map((r, i) => ({
-    sale_date: '',
-    label: r.label,
-    total_orders: r.count,
-    gross_revenue: r.revenue,
-    pct: Math.max(6, Math.round(r.count / max * 100)),
-    is_today: i === raw.length - 1,
-  }))
-}
-
-function buildHeatmap(): { label: string; cells: HourCell[] }[] {
-  return DAY_WEIGHTS.map((dw, di) => ({
-    label: ['Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom', 'Lun'][di],
-    cells: HOUR_WEIGHTS.map((hw, hi) => ({
-      hour: HOURS_LABEL[hi],
-      intensity: hw * dw,
-      count: Math.round(hw * dw * 18),
-    })),
+  return dows.map((dow, i) => ({
+    label: nombres[i],
+    cells: HOURS_LABEL.map((label, hi) => {
+      const hit = rows.find(r =>
+        Number(r.day_of_week) === dow && Number(r.hour_of_day) === FIRST_HOUR + hi)
+      const count = Number(hit?.order_count) || 0
+      return { hour: label, count, intensity: count / max }
+    }),
   }))
 }
 
@@ -341,9 +310,10 @@ export function DashboardPage() {
 
   // State
   const [kpis, setKpis] = useState<KPIs | null>(null)
-  const [serviceKpis, setServiceKpis] = useState<ServiceKPI[]>(buildMockServiceKPIs())
-  const [dailySales, setDailySales] = useState<DailySummary[]>(buildMockDailySummary())
-  const [heatmapRows] = useState(buildHeatmap())
+  // Sin datos de relleno: si no hay ventas, las secciones muestran su vacío.
+  const [serviceKpis, setServiceKpis] = useState<ServiceKPI[]>([])
+  const [dailySales, setDailySales] = useState<DailySummary[]>([])
+  const [heatmapRows, setHeatmapRows] = useState<{ label: string; cells: HourCell[] }[]>([])
   const [loading, setLoading] = useState(false)
   const [activeOrders, setActiveOrders] = useState(0)
   const [cashAlert, setCashAlert] = useState<{ difference: number } | null>(null)
@@ -361,7 +331,8 @@ export function DashboardPage() {
         .eq('branch_id', branchId)
         .gte('created_at', `${today}T00:00:00`)
 
-      if (orders && orders.length > 0) {
+      if (orders) {
+        // Un día sin ventas es un dato, no un error: se muestran ceros.
         const completed = orders.filter((o: any) => ['paid', 'delivered'].includes(o.status))
         const cancelled = orders.filter((o: any) => o.status === 'cancelled')
         const gross = completed.reduce((s: number, o: any) => s + (o.total || 0), 0)
@@ -376,24 +347,45 @@ export function DashboardPage() {
         setActiveOrders(orders.filter((o: any) => !['delivered', 'cancelled'].includes(o.status)).length)
       }
 
-      // Service performance
+      // Desglose por servicio del día.
+      // No se usa v_service_performance: esa vista agrupa por MES, y la
+      // consulta anterior filtraba por `order_date`, columna que no existe —
+      // fallaba en silencio y dejaba a la vista los datos de relleno.
       const { data: svcData } = await (supabase as any)
-        .from('v_service_performance')
-        .select('*')
-        .eq('branch_id', branchId)
-        .gte('order_date', today)
+        .from('work_order_items')
+        .select('service_id, description_snapshot, total, work_orders!inner(branch_id, status, created_at)')
+        .eq('work_orders.branch_id', branchId)
+        .neq('work_orders.status', 'cancelled')
+        .gte('work_orders.created_at', `${today}T00:00:00`)
 
-      if (svcData && svcData.length > 0) {
-        const total = svcData.reduce((s: number, r: any) => s + (r.times_sold || 0), 0)
-        setServiceKpis(svcData.map((r: any, i: number) => ({
-          service_id: r.service_id || String(i),
-          service_name: r.service_name,
-          count: r.times_sold || 0,
-          revenue: r.total_revenue || 0,
-          pct: total > 0 ? Math.round((r.times_sold / total) * 100) : 0,
-          avg_ticket: r.times_sold > 0 ? r.total_revenue / r.times_sold : 0,
-        })))
+      if (svcData) {
+        const porServicio = new Map<string, { name: string; count: number; revenue: number }>()
+        for (const row of svcData as any[]) {
+          const key = row.service_id ?? row.description_snapshot
+          const prev = porServicio.get(key) ?? { name: row.description_snapshot, count: 0, revenue: 0 }
+          prev.count += 1
+          prev.revenue += Number(row.total) || 0
+          porServicio.set(key, prev)
+        }
+        const totalCount = [...porServicio.values()].reduce((n, r) => n + r.count, 0)
+        setServiceKpis([...porServicio.entries()]
+          .map(([id, r]) => ({
+            service_id: id,
+            service_name: r.name,
+            count: r.count,
+            revenue: r.revenue,
+            pct: totalCount > 0 ? Math.round((r.count / totalCount) * 100) : 0,
+            avg_ticket: r.count > 0 ? r.revenue / r.count : 0,
+          }))
+          .sort((a, b) => b.revenue - a.revenue))
       }
+
+      // Mapa de calor — ocupación real por día y hora
+      const { data: heatData } = await (supabase as any)
+        .from('v_sales_heatmap')
+        .select('day_of_week, hour_of_day, order_count')
+        .eq('branch_id', branchId)
+      setHeatmapRows(buildHeatmapFrom(heatData ?? []))
 
       // 7-day summary
       const weekAgo = new Date()
@@ -407,7 +399,7 @@ export function DashboardPage() {
         .gte('sale_date', weekStart)
         .order('sale_date')
 
-      if (weekData && weekData.length > 0) {
+      if (weekData) {
         const max = Math.max(...weekData.map((d: any) => d.total_orders || 1))
         setDailySales(weekData.map((d: any) => {
           const date = new Date(d.sale_date + 'T12:00:00')
@@ -437,7 +429,9 @@ export function DashboardPage() {
 
       if (cashData) setCashAlert({ difference: cashData.difference_amount })
 
-    } catch (_) { /* use mock data */ }
+    } catch {
+      // Sin datos no se inventa nada: las secciones muestran su estado vacío.
+    }
     setLoading(false)
   }, [branchId])
 
@@ -551,6 +545,11 @@ export function DashboardPage() {
               </div>
 
               {/* Full list */}
+              {serviceKpis.length === 0 && (
+                <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', padding: '12px 0' }}>
+                  Todavía no hay servicios facturados hoy.
+                </div>
+              )}
               {serviceKpis.map((svc, i) => (
                 <ServiceKPIRow key={svc.service_id} svc={svc} idx={i} max={maxCount} />
               ))}

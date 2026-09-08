@@ -35,6 +35,7 @@ export const SCREENS: readonly ScreenDef[] = [
   { key: 'orders',      path: '/orders',      label: 'Órdenes de trabajo',       permission: 'screens.orders',      section: 'caja' },
 
   { key: 'dashboard',   path: '/dashboard',   label: 'Resumen del día',          permission: 'screens.dashboard',   section: 'administracion' },
+  { key: 'sales',       path: '/sales',       label: 'Ventas',                   permission: 'screens.sales',       section: 'administracion' },
   { key: 'customers',   path: '/customers',   label: 'Clientes',                 permission: 'screens.customers',   section: 'administracion' },
   { key: 'analytics',   path: '/analytics',   label: 'Inteligencia de negocio',  permission: 'screens.analytics',   section: 'administracion' },
   { key: 'receivables', path: '/receivables', label: 'Cuentas por cobrar',       permission: 'screens.receivables', section: 'administracion' },
