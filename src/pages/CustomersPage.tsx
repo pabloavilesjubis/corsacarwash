@@ -1,16 +1,13 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { useForm } from 'react-hook-form'
-import { z } from 'zod'
-import { zodResolver } from '@hookform/resolvers/zod'
 import toast from 'react-hot-toast'
 import { useAuth } from '../hooks/useAuth'
 import { ClipButton } from '../components/ui/ClipButton'
+import { CustomerFormPanel } from '../components/CustomerFormPanel'
 import {
   searchCustomers,
   getCustomerVehicles,
   getCustomerMetrics,
   getMembershipPlans,
-  createCustomer,
   updateCustomer,
   checkPlateConflict,
   addVehicleToCustomer,
@@ -24,7 +21,7 @@ import type { Vehicle } from '../types'
 type FilterType = 'todos' | 'frecuente' | 'riesgo' | 'nuevo' | 'corporativo'
 
 interface Panel {
-  type: 'view' | 'new'
+  type: 'view' | 'new' | 'edit'
   customerId?: string
 }
 
@@ -53,28 +50,19 @@ function classifySegment(c: CustomerWithStats): FilterType {
   return 'nuevo'
 }
 
-// ─── Schema ─────────────────────────────────────────────────
-
-const newClientSchema = z.object({
-  first_name: z.string().min(1, 'Nombre requerido'),
-  last_name: z.string().optional(),
-  email: z.string().email('Email inválido').optional().or(z.literal('')),
-  phone: z.string().optional(),
-})
-
-type NewClientForm = z.infer<typeof newClientSchema>
-
 // ─── Side Panel ─────────────────────────────────────────────
 
 function ViewPanel({
   customer,
   onClose,
   onUpdated,
+  onEdit,
   orgId,
 }: {
   customer: CustomerWithStats
   onClose: () => void
   onUpdated: () => void
+  onEdit: () => void
   orgId: string
 }) {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
@@ -138,6 +126,28 @@ function ViewPanel({
     setSaving(false)
   }
 
+  /** Guarda un campo suelto; si la base lo rechaza, avisa y restaura. */
+  const quickEdit = async (
+    field: 'email' | 'phone',
+    value: string,
+    input: HTMLInputElement,
+  ) => {
+    const current = customer[field] ?? ''
+    if (value === current) return
+    try {
+      await updateCustomer(customer.id, { [field]: value || null })
+      onUpdated()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : ''
+      toast.error(
+        /ccf_requires_fiscal_data/.test(message)
+          ? 'Este cliente emite CCF: no puede quedarse sin teléfono ni correo'
+          : 'No se pudo guardar el cambio'
+      )
+      input.value = current
+    }
+  }
+
   const idLine = customer.customer_type === 'individual'
     ? customer.dui ? `DUI ${customer.dui}` : 'Sin DUI registrado'
     : customer.nit ? `NIT ${customer.nit}` : 'Sin NIT registrado'
@@ -146,36 +156,39 @@ function ViewPanel({
     <div className="side-panel">
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>{displayName}</div>
           <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{idLine}</div>
+          {/* El POS lee esto para decidir qué documento emitir. */}
+          <span
+            className={`badge ${customer.fiscal_document_type === 'ccf' ? 'badge-green' : 'badge-neutral'}`}
+            style={{ marginTop: 6, display: 'inline-block' }}
+          >
+            {customer.fiscal_document_type === 'ccf' ? 'Crédito fiscal' : 'Consumidor final'}
+          </span>
         </div>
         <button className="panel-close" onClick={onClose} aria-label="Cerrar panel">×</button>
       </div>
 
-      {/* Email / Phone */}
+      <button className="btn btn-ghost" onClick={onEdit}>Editar ficha</button>
+
+      {/* Email / Phone — edición rápida.
+          Un cliente marcado como CCF tiene un CHECK en la base que exige
+          teléfono y correo; vaciarlos acá falla. Antes el error se tragaba en
+          silencio y el input seguía mostrando el valor nuevo sin haberse
+          guardado, así que ahora se avisa y se restaura el valor real. */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <input
           className="corsa-input"
           defaultValue={customer.email ?? ''}
           placeholder="Email"
-          onBlur={async e => {
-            if (e.target.value !== customer.email) {
-              await updateCustomer(customer.id, { email: e.target.value }).catch(() => {})
-              onUpdated()
-            }
-          }}
+          onBlur={e => quickEdit('email', e.target.value, e.target)}
         />
         <input
           className="corsa-input"
           defaultValue={customer.phone ?? ''}
           placeholder="Teléfono"
-          onBlur={async e => {
-            if (e.target.value !== customer.phone) {
-              await updateCustomer(customer.id, { phone: e.target.value }).catch(() => {})
-              onUpdated()
-            }
-          }}
+          onBlur={e => quickEdit('phone', e.target.value, e.target)}
         />
       </div>
 
@@ -284,72 +297,6 @@ function ViewPanel({
   )
 }
 
-// ─── New Customer Panel ──────────────────────────────────────
-
-function NewPanel({
-  onClose,
-  onCreated,
-  orgId,
-}: {
-  onClose: () => void
-  onCreated: (id: string) => void
-  orgId: string
-}) {
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<NewClientForm>({
-    resolver: zodResolver(newClientSchema),
-  })
-
-  const onSubmit = async (data: NewClientForm) => {
-    try {
-      const customer = await createCustomer({
-        first_name: data.first_name,
-        last_name: data.last_name,
-        email: data.email || undefined,
-        phone: data.phone || undefined,
-        customer_type: 'individual',
-        organization_id: orgId,
-      })
-      const created = customer as any
-      toast.success('Cliente guardado')
-      onCreated(created.id)
-    } catch { toast.error('No se pudo guardar el cliente') }
-  }
-
-  return (
-    <div className="side-panel">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Nuevo cliente</div>
-        <button className="panel-close" onClick={onClose} aria-label="Cerrar">×</button>
-      </div>
-
-      <form onSubmit={handleSubmit(onSubmit)} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div>
-          <input {...register('first_name')} className="corsa-input" placeholder="Nombre *"/>
-          {errors.first_name && <div style={{ color: 'var(--color-danger-text)', fontSize: 12, marginTop: 3 }}>{errors.first_name.message}</div>}
-        </div>
-        <input {...register('last_name')} className="corsa-input" placeholder="Apellido"/>
-        <div>
-          <input {...register('email')} className="corsa-input" placeholder="Correo" type="email"/>
-          {errors.email && <div style={{ color: 'var(--color-danger-text)', fontSize: 12, marginTop: 3 }}>{errors.email.message}</div>}
-        </div>
-        <input {...register('phone')} className="corsa-input" placeholder="Teléfono"/>
-
-        <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
-          Podrás registrar sus vehículos y asociar una membresía después de guardar.
-        </div>
-
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          style={{ textAlign: 'center', fontSize: 13.5, fontWeight: 700, color: '#fff', background: 'var(--corsa-green)', borderRadius: 5, padding: 10, cursor: 'pointer', border: 'none' }}
-        >
-          {isSubmitting ? 'Guardando…' : 'Guardar cliente'}
-        </button>
-      </form>
-    </div>
-  )
-}
-
 // ─── Main Customers Page ─────────────────────────────────────
 
 const FILTER_DEFS: { id: FilterType; label: string }[] = [
@@ -452,6 +399,7 @@ export function CustomersPage() {
           <div style={{ display: 'flex', padding: '10px 16px', borderBottom: '1px solid var(--border)', fontSize: 11.5, fontWeight: 600, color: 'var(--text-secondary)' }}>
             <div style={{ flex: 2.2 }}>Cliente</div>
             <div style={{ flex: 1.6 }}>Contacto</div>
+            <div style={{ flex: 1 }}>Documento</div>
             <div style={{ flex: 0.8, textAlign: 'center' }}>Vehículos</div>
             <div style={{ flex: 1 }}>Última visita</div>
             <div style={{ flex: 1.3 }}>Membresía</div>
@@ -491,6 +439,11 @@ export function CustomersPage() {
                         <div style={{ fontSize: 12.5, color: 'var(--text-primary)' }} className="truncate">{c.email ?? '—'}</div>
                         <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{c.phone ?? '—'}</div>
                       </td>
+                      <td>
+                        <span className={`badge ${c.fiscal_document_type === 'ccf' ? 'badge-green' : 'badge-neutral'}`}>
+                          {c.fiscal_document_type === 'ccf' ? 'CCF' : 'Consumidor final'}
+                        </span>
+                      </td>
                       <td style={{ textAlign: 'center', fontSize: 13, fontWeight: 600 }}>
                         {c.vehicle_count ?? 0}
                       </td>
@@ -519,16 +472,18 @@ export function CustomersPage() {
               customer={selectedCustomer}
               onClose={() => setPanel(null)}
               onUpdated={() => loadCustomers(search)}
+              onEdit={() => setPanel({ type: 'edit', customerId: selectedCustomer.id })}
               orgId={orgId}
             />
-          ) : panel.type === 'new' ? (
-            <NewPanel
+          ) : panel.type === 'new' || (panel.type === 'edit' && selectedCustomer) ? (
+            <CustomerFormPanel
+              customer={panel.type === 'edit' ? selectedCustomer ?? undefined : undefined}
+              orgId={orgId}
               onClose={() => setPanel(null)}
-              onCreated={id => {
+              onSaved={id => {
                 setPanel({ type: 'view', customerId: id })
                 loadCustomers(search)
               }}
-              orgId={orgId}
             />
           ) : null
         )}

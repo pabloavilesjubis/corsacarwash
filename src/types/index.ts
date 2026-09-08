@@ -105,6 +105,9 @@ export interface Permission {
 
 export type CustomerType = 'individual' | 'company'
 
+/** Documento tributario que requiere el cliente (El Salvador). */
+export type FiscalDocumentType = 'fcf' | 'ccf'
+
 export interface Customer {
   id: UUID
   organization_id: UUID
@@ -127,6 +130,24 @@ export interface Customer {
   preferred_branch_id: UUID | null
   source: string | null
   notes: string | null
+
+  // ── Datos fiscales para DTE (ver 0029_customer_fiscal_dte.sql) ──
+  /** 'ccf' obliga a tener el receptor completo; 'fcf' no exige nada. */
+  fiscal_document_type: FiscalDocumentType
+  /** CAT-022, sólo receptor de FCF: 36=NIT, 13=DUI, 02, 03, 37. */
+  fiscal_doc_type: string | null
+  /** Número para los tipos 02/03/37. NIT y DUI viven en sus propias columnas. */
+  fiscal_doc_number: string | null
+  /** CAT-019 — actividad económica. */
+  cod_actividad: string | null
+  desc_actividad: string | null
+  /** CAT-012 / CAT-013 — dirección estructurada que exige el DTE. */
+  fiscal_departamento: string | null
+  fiscal_municipio: string | null
+  fiscal_complemento: string | null
+  /** Correo de envío del DTE; si está vacío se usa `email`. */
+  billing_email: string | null
+
   active: boolean
   created_at: string
   updated_at: string

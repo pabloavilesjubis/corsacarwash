@@ -78,13 +78,37 @@ export async function getCustomerMetrics(customerId: string) {
   return data
 }
 
-export async function createCustomer(payload: {
-  first_name?: string
-  last_name?: string
-  legal_name?: string
-  phone?: string
-  email?: string
+/**
+ * Campos que la ficha de cliente puede escribir.
+ * Los fiscales van juntos porque el CHECK de CCF en la base los evalúa como
+ * conjunto: mandar la mitad hace fallar el insert entero.
+ */
+export interface CustomerWritableFields {
   customer_type: 'individual' | 'company'
+  first_name?: string | null
+  last_name?: string | null
+  legal_name?: string | null
+  trade_name?: string | null
+  phone?: string | null
+  email?: string | null
+  dui?: string | null
+  nit?: string | null
+  nrc?: string | null
+  address?: string | null
+  notes?: string | null
+  // Fiscales — ver 0029_customer_fiscal_dte.sql
+  fiscal_document_type?: 'fcf' | 'ccf'
+  fiscal_doc_type?: string | null
+  fiscal_doc_number?: string | null
+  cod_actividad?: string | null
+  desc_actividad?: string | null
+  fiscal_departamento?: string | null
+  fiscal_municipio?: string | null
+  fiscal_complemento?: string | null
+  billing_email?: string | null
+}
+
+export async function createCustomer(payload: CustomerWritableFields & {
   organization_id: string
 }) {
   const { data, error } = await (supabase as any)
