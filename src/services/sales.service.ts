@@ -37,6 +37,19 @@ export interface Sale {
   /** Líneas tal como se facturaron; null en ventas anteriores a la 0030. */
   items: SaleItem[] | null
   customer_name: string
+  // Receptor tal como lo exige el MH en la representación gráfica.
+  customer_type: string | null
+  customer_trade_name: string | null
+  customer_nit: string | null
+  customer_nrc: string | null
+  customer_dui: string | null
+  customer_cod_actividad: string | null
+  customer_desc_actividad: string | null
+  customer_phone: string | null
+  customer_email: string | null
+  customer_departamento: string | null
+  customer_municipio: string | null
+  customer_direccion: string | null
   plate: string | null
   payment_method: string | null
   invoice_id: string | null

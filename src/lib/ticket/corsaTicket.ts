@@ -62,11 +62,20 @@ export interface TicketDte {
   fhProcesamiento?: string
 }
 
+/**
+ * Receptor del documento. Para un CCF el MH exige nombre, NIT, NRC, actividad
+ * económica, dirección, teléfono y correo (fe-ccf-v3.json); la representación
+ * impresa tiene que mostrarlos, no sólo el nombre.
+ */
 export interface TicketCliente {
   nombre?: string
   tipoDocumento?: string
   numeroDocumento?: string
   nrc?: string
+  actividad?: string
+  direccion?: string
+  telefono?: string
+  correo?: string
 }
 
 /** Lo que el equipo de piso necesita leer de un vistazo. */
@@ -208,9 +217,14 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
 
   const clienteBlock = cli?.nombre && cli.nombre !== 'Consumidor Final'
     ? `<div class="kv-block">
-         <div class="kv-row"><span class="k">Cliente</span><span class="v">${esc(cli.nombre)}</span></div>
+         <div class="kv-label-row">Receptor</div>
+         <div class="kv-row"><span class="k">Nombre</span><span class="v">${esc(cli.nombre)}</span></div>
          ${cli.numeroDocumento ? `<div class="kv-row"><span class="k">${esc(cli.tipoDocumento || 'Doc')}</span><span class="v mono">${esc(cli.numeroDocumento)}</span></div>` : ''}
          ${cli.nrc ? `<div class="kv-row"><span class="k">NRC</span><span class="v mono">${esc(cli.nrc)}</span></div>` : ''}
+         ${cli.actividad ? `<div class="kv-row"><span class="k">Actividad</span><span class="v">${esc(cli.actividad)}</span></div>` : ''}
+         ${cli.direccion ? `<div class="kv-row"><span class="k">Dirección</span><span class="v">${esc(cli.direccion)}</span></div>` : ''}
+         ${cli.telefono ? `<div class="kv-row"><span class="k">Teléfono</span><span class="v">${esc(cli.telefono)}</span></div>` : ''}
+         ${cli.correo ? `<div class="kv-row"><span class="k">Correo</span><span class="v wrap">${esc(cli.correo)}</span></div>` : ''}
        </div>`
     : `<div class="kv-block"><div class="kv-row"><span class="k">Cliente</span><span class="v">Consumidor Final</span></div></div>`
 
@@ -340,6 +354,11 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
   .fecha-row { font-size: 10px; font-weight: 700; text-align: right; margin-top: 2px; }
 
   .kv-block { margin: 3px 0; text-align: left; }
+  .kv-label-row {
+    font-size: 9px; font-weight: 900; letter-spacing: 0.1em;
+    text-transform: uppercase; border-bottom: 1px solid #000;
+    padding-bottom: 1px; margin-bottom: 2px;
+  }
   .kv-row { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; font-weight: 700; padding: 1px 0; }
   .kv-row .k { flex-shrink: 0; }
   .kv-row .v { text-align: right; word-break: break-word; font-weight: 400; }

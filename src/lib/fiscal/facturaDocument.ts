@@ -14,6 +14,7 @@
 
 import type { Sale } from '../../services/sales.service'
 import { EMISOR } from '../ticket/fromSale'
+import { findDepartamento, findMunicipio } from '../mh-catalogs'
 
 export interface FacturaDte {
   numeroControl?: string
@@ -55,6 +56,15 @@ export function buildFacturaHTML(sale: Sale, dte: FacturaDte = {}): string {
   const subtotal = Number(sale.subtotal || 0)
   const iva = Number(sale.tax_total || 0)
   const total = Number(sale.total || 0)
+
+  // La dirección del receptor se arma con los nombres de catálogo: el MH la
+  // transmite como códigos, pero en el papel tienen que leerse.
+  const dep = sale.customer_departamento ? findDepartamento(sale.customer_departamento) : undefined
+  const mun = (sale.customer_departamento && sale.customer_municipio)
+    ? findMunicipio(sale.customer_departamento, sale.customer_municipio)
+    : undefined
+  const direccionReceptor = [sale.customer_direccion, mun?.nombre, dep?.nombre]
+    .filter(Boolean).join(', ')
 
   const fecha = new Date(sale.created_at).toLocaleString('es-SV', {
     day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -105,7 +115,8 @@ export function buildFacturaHTML(sale: Sale, dte: FacturaDte = {}): string {
   .parties { display: flex; gap: 14px; margin: 18px 0 14px; }
   .party { flex: 1; border: 1px solid #ccc; border-radius: 4px; padding: 10px 12px; }
   .party-title { font-size: 8.5px; font-weight: 800; letter-spacing: 0.09em; text-transform: uppercase; color: #555; margin-bottom: 5px; }
-  .party-row { font-size: 10.5px; }
+  .party-row { font-size: 10.5px; line-height: 1.5; }
+  .party .mono { font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
 
   table { width: 100%; border-collapse: collapse; margin-top: 6px; }
   th { background: #f1f1ef; font-size: 9px; text-transform: uppercase; letter-spacing: 0.07em;
@@ -163,6 +174,16 @@ export function buildFacturaHTML(sale: Sale, dte: FacturaDte = {}): string {
       <div class="party">
         <div class="party-title">Receptor</div>
         <div class="party-row"><strong>${esc(sale.customer_name)}</strong></div>
+        ${sale.customer_trade_name && sale.customer_trade_name !== sale.customer_name
+          ? `<div class="party-row">Nombre comercial: ${esc(sale.customer_trade_name)}</div>` : ''}
+        ${sale.customer_nit ? `<div class="party-row">NIT: <span class="mono">${esc(sale.customer_nit)}</span></div>` : ''}
+        ${sale.customer_dui && !sale.customer_nit ? `<div class="party-row">DUI: <span class="mono">${esc(sale.customer_dui)}</span></div>` : ''}
+        ${sale.customer_nrc ? `<div class="party-row">NRC: <span class="mono">${esc(sale.customer_nrc)}</span></div>` : ''}
+        ${sale.customer_desc_actividad
+          ? `<div class="party-row">Actividad: ${esc(sale.customer_desc_actividad)}${sale.customer_cod_actividad ? ` (${esc(sale.customer_cod_actividad)})` : ''}</div>` : ''}
+        ${direccionReceptor ? `<div class="party-row">Dirección: ${esc(direccionReceptor)}</div>` : ''}
+        ${sale.customer_phone ? `<div class="party-row">Tel.: ${esc(sale.customer_phone)}</div>` : ''}
+        ${sale.customer_email ? `<div class="party-row">Correo: ${esc(sale.customer_email)}</div>` : ''}
         ${sale.plate ? `<div class="party-row">Vehículo: ${esc(sale.plate)}</div>` : ''}
       </div>
       <div class="party">

@@ -58,7 +58,18 @@ export function buildTicketArgsFromSale(sale: Sale, branchName?: string): Ticket
       iva,
       metodoPago: sale.payment_method ?? undefined,
     },
-    cliente: { nombre: sale.customer_name },
+    cliente: {
+      nombre: sale.customer_name,
+      // El MH exige el receptor completo en un CCF; para una FCF estos campos
+      // simplemente vienen vacíos y el ticket no los dibuja.
+      tipoDocumento: sale.customer_nit ? 'NIT' : sale.customer_dui ? 'DUI' : undefined,
+      numeroDocumento: sale.customer_nit ?? sale.customer_dui ?? undefined,
+      nrc: sale.customer_nrc ?? undefined,
+      actividad: sale.customer_desc_actividad ?? undefined,
+      direccion: sale.customer_direccion ?? undefined,
+      telefono: sale.customer_phone ?? undefined,
+      correo: sale.customer_email ?? undefined,
+    },
     // El DTE todavía no se transmite: el ticket sale sin número de control ni
     // QR, y el generador ya contempla ese caso.
     dte: {
