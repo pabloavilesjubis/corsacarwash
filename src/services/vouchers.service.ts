@@ -47,7 +47,9 @@ export async function fetchVouchers(f: VoucherFilters = {}): Promise<VoucherRow[
   let q = (supabase as any)
     .from('v_vouchers')
     .select('*')
-    .order('code', { ascending: false })
+    // Por correlativo, no por código: el código es un número de validación al
+    // azar, así que ordenar por él daría una secuencia sin ningún sentido.
+    .order('sequence_number', { ascending: false })
     .limit(f.limit ?? 1000)
 
   if (f.status) q = q.eq('status', f.status)

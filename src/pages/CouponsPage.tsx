@@ -16,7 +16,7 @@ import {
   fetchVouchers, fetchBatchVouchers,
   type VoucherRow, type VoucherFilters,
 } from '../services/vouchers.service'
-import { printVouchers } from '../lib/vouchers/voucherDocument'
+import { printVouchers, printSingleVoucher } from '../lib/vouchers/voucherDocument'
 
 const ESTADOS = [
   { id: '', label: 'Todos' },
@@ -95,6 +95,14 @@ export function CouponsPage() {
   const reimprimir = async (batchId: string) => {
     try {
       printVouchers(await fetchBatchVouchers(batchId))
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'No se pudo generar el PDF')
+    }
+  }
+
+  const descargarUno = (v: VoucherRow) => {
+    try {
+      printSingleVoucher(v)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'No se pudo generar el PDF')
     }
@@ -197,19 +205,19 @@ export function CouponsPage() {
             <table className="corsa-table">
               <thead>
                 <tr>
-                  <th>Cupón</th><th>Correlativo</th><th>Cliente</th><th>Servicio</th>
+                  <th>Correlativo</th><th>N° de validación</th><th>Cliente</th><th>Servicio</th>
                   <th>Estado</th><th>Emitido</th><th>Canjeado</th>
-                  <th style={{ textAlign: 'right' }}>Valor</th><th></th>
+                  <th style={{ textAlign: 'right' }}>Valor</th><th>Descargar</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map(r => (
                   <tr key={r.id}
                       style={{ cursor: 'default', background: r.validation_token === token ? 'var(--subtle-bg)' : undefined }}>
-                    <td className="font-mono" style={{ fontSize: 13.5, fontWeight: 700 }}>{r.code}</td>
-                    <td className="font-mono" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                    <td className="font-mono" style={{ fontSize: 13, fontWeight: 700 }}>
                       {String(r.sequence_number).padStart(6, '0')}
                     </td>
+                    <td className="font-mono" style={{ fontSize: 13.5, fontWeight: 700 }}>{r.code}</td>
                     <td style={{ fontSize: 13 }} className="truncate">
                       {r.customer_name}
                       {r.is_gift && <span className="badge badge-orange" style={{ marginLeft: 6 }}>Regalía</span>}
@@ -230,11 +238,16 @@ export function CouponsPage() {
                     <td style={{ textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
                       {r.is_gift ? 'Regalía' : money(r.unit_value)}
                     </td>
-                    <td>
-                      <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 12 }}
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <button className="btn btn-ghost" style={{ padding: '4px 9px', fontSize: 12, marginRight: 4 }}
+                              onClick={() => descargarUno(r)}
+                              title={`Descargar sólo el cupón ${r.code}, en una hoja a su medida`}>
+                        Este cupón
+                      </button>
+                      <button className="btn btn-ghost" style={{ padding: '4px 9px', fontSize: 12 }}
                               onClick={() => reimprimir(r.batch_id)}
-                              title={`Reimprimir los ${r.batch_quantity} cupones de esta venta`}>
-                        PDF del lote
+                              title={`Descargar los ${r.batch_quantity} cupones de esta venta`}>
+                        Lote ({r.batch_quantity})
                       </button>
                     </td>
                   </tr>

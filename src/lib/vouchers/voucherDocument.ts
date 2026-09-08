@@ -70,7 +70,12 @@ function voucherCard(v: VoucherRow): string {
   </section>`
 }
 
-export function buildVouchersHTML(vouchers: VoucherRow[]): string {
+/**
+ * @param unico  ajusta la hoja al tamaño de un solo cupón. El cupón mantiene
+ *               sus medidas exactas — lo que cambia es el papel, para no
+ *               desperdiciar dos tercios de una carta al reimprimir uno solo.
+ */
+export function buildVouchersHTML(vouchers: VoucherRow[], unico = false): string {
   const paginas: VoucherRow[][] = []
   for (let i = 0; i < vouchers.length; i += 3) paginas.push(vouchers.slice(i, i + 3))
 
@@ -84,7 +89,7 @@ export function buildVouchersHTML(vouchers: VoucherRow[]): string {
 <meta charset="UTF-8"/>
 <title>Cupones CORSA${rango}</title>
 <style>
-  @page { size: letter; margin: 8mm; }
+  @page { size: ${unico ? '216mm 101mm' : 'letter'}; margin: 8mm; }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: 'Helvetica Neue', Arial, sans-serif; color: #111; }
 
@@ -163,13 +168,22 @@ export function buildVouchersHTML(vouchers: VoucherRow[]): string {
 }
 
 /** Abre el lote completo listo para imprimir o guardar como un solo PDF. */
-export function printVouchers(vouchers: VoucherRow[]): void {
+export function printVouchers(vouchers: VoucherRow[], unico = false): void {
   if (vouchers.length === 0) throw new Error('No hay cupones para imprimir')
-  const w = window.open('', `corsa_cupones_${vouchers[0].batch_id}`, 'width=900,height=1000')
+  const w = window.open(
+    '',
+    `corsa_cupones_${unico ? vouchers[0].id : vouchers[0].batch_id}`,
+    'width=900,height=1000'
+  )
   if (!w) {
     throw new Error('El navegador bloqueó la ventana. Permití popups para este sitio.')
   }
   w.document.open()
-  w.document.write(buildVouchersHTML(vouchers))
+  w.document.write(buildVouchersHTML(vouchers, unico))
   w.document.close()
+}
+
+/** Un cupón solo, en una hoja a su medida. */
+export function printSingleVoucher(voucher: VoucherRow): void {
+  printVouchers([voucher], true)
 }
