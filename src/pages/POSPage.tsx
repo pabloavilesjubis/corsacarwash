@@ -55,6 +55,9 @@ const PAYMENT_METHODS = [
   { id: 'transferencia', label: 'Transferencia'  },
   { id: 'membresia',     label: 'Membresía'      },
   { id: 'credito',       label: 'Crédito emp.'   },
+  // El cupón se paga por adelantado: elegirlo acá reemplaza el teclado del
+  // monto por el del número de cupón, y el cobro pasa a ser un canje.
+  { id: 'cupon',         label: 'Cupón'          },
 ]
 const KEYPAD_KEYS = ['1','2','3','4','5','6','7','8','9','.','0','⌫']
 
@@ -719,137 +722,14 @@ function BillingModal({ total, paymentMethod, customer, onConfirm, onCancel }: B
   )
 }
 
-// ─── Modal: cobrar con cupón ──────────────────────────────────
-
-/**
- * Canje en caja. El cajero teclea el número, ve qué incluye el cupón y recién
- * entonces confirma: canjear es irreversible y de un solo uso, así que se
- * consulta antes de consumir.
- */
-function VoucherRedeemModal({ branchId, onRedeemed, onCancel }: {
-  branchId: string
-  onRedeemed: (r: Awaited<ReturnType<typeof redeemVoucher>>, v: VoucherLookup) => void
-  onCancel: () => void
-}) {
-  const [code, setCode] = useState('')
-  const [buscando, setBuscando] = useState(false)
-  const [found, setFound] = useState<VoucherLookup | null>(null)
-  const [notFound, setNotFound] = useState(false)
-  const [canjeando, setCanjeando] = useState(false)
-
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
-    document.addEventListener('keydown', h)
-    return () => document.removeEventListener('keydown', h)
-  }, [onCancel])
-
-  const buscar = async () => {
-    if (!code.trim()) return
-    setBuscando(true); setFound(null); setNotFound(false)
-    try {
-      const v = await lookupVoucher(code)
-      if (v) setFound(v); else setNotFound(true)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'No se pudo consultar el cupón')
-    }
-    setBuscando(false)
-  }
-
-  const canjear = async () => {
-    if (!found) return
-    setCanjeando(true)
-    try {
-      const r = await redeemVoucher(found.code, branchId)
-      onRedeemed(r, found)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'No se pudo canjear el cupón')
-      setCanjeando(false)
-    }
-  }
-
-  const usable = found?.status === 'active'
-
-  return createPortal(
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 20 }}
-      onClick={e => { if (e.target === e.currentTarget) onCancel() }}>
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, width: '100%', maxWidth: 460, boxShadow: '0 24px 64px rgba(0,0,0,0.25)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 22px', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 19 }}>Cobrar con cupón</div>
-          <button onClick={onCancel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 22 }}>×</button>
-        </div>
-
-        <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div className="field">
-            <label>Número de cupón (6 dígitos)</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                id="voucher-code"
-                className="corsa-input font-mono"
-                style={{ fontSize: 20, fontWeight: 800, letterSpacing: 2, textAlign: 'center' }}
-                value={code}
-                autoFocus
-                inputMode="numeric"
-                placeholder="123456"
-                onChange={e => { setCode(e.target.value); setFound(null); setNotFound(false) }}
-                onKeyDown={e => { if (e.key === 'Enter') buscar() }}
-              />
-              <button className="btn btn-ghost" onClick={buscar} disabled={buscando || !code.trim()}>
-                {buscando ? '…' : 'Validar'}
-              </button>
-            </div>
-          </div>
-
-          {notFound && (
-            <div style={{ fontSize: 13, color: 'var(--color-danger-text)', background: 'var(--color-danger-bg, #FBE7E7)', padding: '10px 12px', borderRadius: 6 }}>
-              No existe ningún cupón con ese número.
-            </div>
-          )}
-
-          {found && (
-            <div style={{
-              border: `2px solid ${usable ? 'var(--corsa-green)' : 'var(--color-danger-text)'}`,
-              borderRadius: 8, padding: '12px 14px',
-              background: usable ? 'rgba(2,53,48,0.05)' : 'var(--color-danger-bg, #FBE7E7)',
-            }}>
-              <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6 }}>
-                {usable ? 'Cupón válido' : found.status === 'redeemed' ? 'Ya fue canjeado' : 'Cupón anulado'}
-              </div>
-              <div className="panel-row"><span style={{ color: 'var(--text-secondary)', fontSize: 12.5 }}>Servicio</span>
-                <span style={{ fontWeight: 700, fontSize: 12.5 }}>{found.service_name} {found.size}</span></div>
-              <div className="panel-row"><span style={{ color: 'var(--text-secondary)', fontSize: 12.5 }}>Aspirado</span>
-                <span style={{ fontWeight: 700, fontSize: 12.5 }}>{found.includes_aspirado ? 'Incluido' : 'No incluye'}</span></div>
-              <div className="panel-row"><span style={{ color: 'var(--text-secondary)', fontSize: 12.5 }}>Cliente</span>
-                <span style={{ fontWeight: 600, fontSize: 12.5 }}>{found.customer_name}</span></div>
-              {found.status === 'redeemed' && found.redeemed_at && (
-                <div style={{ fontSize: 12, color: 'var(--color-danger-text)', marginTop: 6 }}>
-                  Canjeado el {new Date(found.redeemed_at).toLocaleString('es-SV')}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div style={{ padding: '16px 22px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-          <button onClick={onCancel} className="btn btn-ghost">Cancelar</button>
-          <button
-            onClick={canjear}
-            disabled={!usable || canjeando}
-            style={{ fontSize: 13.5, fontWeight: 700, color: '#fff', background: usable ? 'var(--corsa-green)' : 'var(--text-secondary)', borderRadius: 5, padding: '9px 16px', border: 'none', cursor: usable ? 'pointer' : 'not-allowed', opacity: usable ? 1 : 0.5 }}
-          >
-            {canjeando ? 'Canjeando…' : 'Canjear e imprimir'}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
-  )
-}
-
 // ─── Main POS Page ────────────────────────────────────────────
 
 export function POSPage() {
   const { currentBranch, hasPermission } = useAuth()
   const puedeCanjearCupon = hasPermission('vouchers.redeem')
+  const metodosPago = PAYMENT_METHODS.filter(
+    pm => pm.id !== 'cupon' || puedeCanjearCupon
+  )
   const branchId = (currentBranch as any)?.id ?? null
 
   // Mode
@@ -870,7 +750,10 @@ export function POSPage() {
   const [selectedPayment, setSelectedPayment] = useState('efectivo')
   const [keypadValue, setKeypadValue] = useState('')
   const [showBillingModal, setShowBillingModal] = useState(false)
-  const [showVoucherModal, setShowVoucherModal] = useState(false)
+  const [voucherCode, setVoucherCode] = useState('')
+  const [voucherFound, setVoucherFound] = useState<VoucherLookup | null>(null)
+  const [voucherChecking, setVoucherChecking] = useState(false)
+  const [voucherMiss, setVoucherMiss] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   // Derived prices
@@ -893,11 +776,41 @@ export function POSPage() {
   const received = parseFloat(keypadValue) || 0
   const change = Math.max(0, received - total)
 
+  const pagaConCupon = selectedPayment === 'cupon'
+
   const handleKeypad = (k: string) => {
+    // Con cupón el mismo teclado escribe el número: el cajero no tiene que
+    // cambiar de dispositivo ni de zona de la pantalla.
+    if (pagaConCupon) {
+      if (k === '⌫') { setVoucherCode(v => v.slice(0, -1)); setVoucherFound(null); setVoucherMiss(false); return }
+      if (k === '.') return
+      if (voucherCode.length >= 6) return
+      setVoucherCode(v => v + k)
+      setVoucherFound(null); setVoucherMiss(false)
+      return
+    }
     if (k === '⌫') { setKeypadValue(v => v.slice(0, -1)); return }
     if (k === '.' && keypadValue.includes('.')) return
     setKeypadValue(v => v + k)
   }
+
+  const validarCupon = useCallback(async () => {
+    if (voucherCode.length < 6) return
+    setVoucherChecking(true); setVoucherFound(null); setVoucherMiss(false)
+    try {
+      const v = await lookupVoucher(voucherCode)
+      if (v) setVoucherFound(v); else setVoucherMiss(true)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'No se pudo consultar el cupón')
+    }
+    setVoucherChecking(false)
+  }, [voucherCode])
+
+  // Al completar los 6 dígitos se valida solo: es lo que el cajero va a hacer
+  // igual, y ahorra un clic con el cliente esperando.
+  useEffect(() => {
+    if (pagaConCupon && voucherCode.length === 6) validarCupon()
+  }, [pagaConCupon, voucherCode, validarCupon])
 
   const handleFleetVehicleSelected = (company: FleetCompany, vehicle: FleetVehicle) => {
     setFleetCompany(company)
@@ -917,36 +830,48 @@ export function POSPage() {
   }
 
   /**
-   * Canje de cupón. No pasa por pos_register_sale: el cobro ocurrió el día que
-   * se vendió el cupón, así que acá sólo se registra el servicio prestado y se
-   * imprime un comprobante sin contenido tributario.
+   * Canje. No pasa por pos_register_sale: el cobro ocurrió el día que se
+   * vendió el cupón, así que acá sólo se registra el servicio prestado — el
+   * RPC marca el cupón como usado con su fecha y hora — y se imprime un
+   * comprobante sin contenido tributario.
    */
-  const handleVoucherRedeemed = useCallback((
-    r: { code: string; order_number: string; service_name: string; size: string | null; includes_aspirado: boolean; unit_value: number; redeemed_at: string; order_id: string },
-    v: VoucherLookup,
-  ) => {
-    setShowVoucherModal(false)
+  const canjearCupon = useCallback(async () => {
+    if (!branchId || !voucherFound || voucherFound.status !== 'active') return
+    setSubmitting(true)
     try {
-      printCorsaTicket({
-        emisor: EMISOR,
-        operacion: {
-          servicio: r.service_name,
-          aspirado: r.includes_aspirado,
-          ordenNumero: r.order_number,
-        },
-        venta: { id: r.order_id, fecha: r.redeemed_at, lineas: [], total: 0 },
-        redencion: {
-          codigoCupon: r.code,
-          clienteNombre: v.customer_name,
-          valor: Number(r.unit_value || 0),
-          fecha: new Date(r.redeemed_at).toLocaleString('es-SV'),
-        },
+      const r = await redeemVoucher(voucherFound.code, branchId, {
+        vehicleId: customer?.vehicle?.id,
+        plate: customer?.vehicle?.plate,
       })
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'El canje se registró, pero no se pudo abrir el ticket')
+      try {
+        printCorsaTicket({
+          emisor: EMISOR,
+          operacion: {
+            servicio: r.service_name,
+            aspirado: r.includes_aspirado,
+            placa: customer?.vehicle?.plate,
+            ordenNumero: r.order_number,
+          },
+          venta: { id: r.order_id, fecha: r.redeemed_at, lineas: [], total: 0 },
+          redencion: {
+            codigoCupon: r.code,
+            clienteNombre: voucherFound.customer_name,
+            valor: Number(r.unit_value || 0),
+            fecha: new Date(r.redeemed_at).toLocaleString('es-SV'),
+          },
+        })
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'El canje se registró, pero no se pudo abrir el ticket')
+      }
+      toast.success(`Cupón ${r.code} canjeado · orden ${r.order_number}`)
+      setVoucherCode(''); setVoucherFound(null); setVoucherMiss(false)
+      setCustomer(null); setSelectedPayment('efectivo')
+      setWithAspirado(false); setKeypadValue('')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'No se pudo canjear el cupón')
     }
-    toast.success(`Cupón ${r.code} canjeado · orden ${r.order_number}`)
-  }, [])
+    setSubmitting(false)
+  }, [branchId, voucherFound, customer])
 
   const handleBillingConfirm = useCallback(async (billing: BillingInfo) => {
     setShowBillingModal(false)
@@ -1006,7 +931,12 @@ export function POSPage() {
     setSubmitting(false)
   }, [branchId, mode, fleetCompany, fleetVehicle, customer, svc, selectedSize, total, selectedPayment, withAspirado, aspiradoPrice, currentBranch])
 
-  const canCharge = mode === 'flotilla' ? !!fleetVehicle : true
+  // Con cupón el botón sólo se habilita si el cupón existe y está sin usar:
+  // canjear uno ya utilizado o inexistente falla en el servidor, y es mejor
+  // no dejar que el cajero lo intente delante del cliente.
+  const canCharge = pagaConCupon
+    ? voucherFound?.status === 'active'
+    : mode === 'flotilla' ? !!fleetVehicle : true
 
   return (
     <div className="pos-inner">
@@ -1229,7 +1159,7 @@ export function POSPage() {
             <div>
               <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 7 }}>Método de pago</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                {PAYMENT_METHODS.map(pm => (
+                {metodosPago.map(pm => (
                   <button key={pm.id} id={`pay-${pm.id}`} onClick={() => setSelectedPayment(pm.id)}
                     style={{ padding: '6px 10px', borderRadius: 5, fontSize: 12, fontWeight: 500, border: `1px solid ${selectedPayment === pm.id ? 'var(--corsa-green)' : 'var(--border)'}`, background: selectedPayment === pm.id ? 'var(--corsa-green)' : 'var(--surface)', color: selectedPayment === pm.id ? '#fff' : 'var(--text-primary)', cursor: 'pointer', transition: 'all 0.12s' }}>
                     {pm.label}
@@ -1238,18 +1168,57 @@ export function POSPage() {
               </div>
             </div>
 
-            {/* Keypad */}
+            {/* Keypad — monto recibido, o número de cupón si se paga con cupón */}
             <div>
-              <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Monto recibido</div>
-              <div style={{ border: '1.5px solid var(--border)', borderRadius: 6, padding: '8px 12px', marginBottom: 8, fontFamily: "'Archivo',sans-serif", fontSize: 20, fontWeight: 800, fontVariantNumeric: 'tabular-nums', minHeight: 42, color: 'var(--text-primary)' }}>
-                {keypadValue ? `$${keypadValue}` : <span style={{ color: 'var(--border)' }}>$0.00</span>}
+              <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                {pagaConCupon ? 'Número de cupón (6 dígitos)' : 'Monto recibido'}
               </div>
+              <div style={{ border: `1.5px solid ${pagaConCupon && voucherFound ? (voucherFound.status === 'active' ? 'var(--corsa-green)' : 'var(--color-danger-text)') : 'var(--border)'}`, borderRadius: 6, padding: '8px 12px', marginBottom: 8, fontFamily: pagaConCupon ? "'SF Mono', monospace" : "'Archivo',sans-serif", fontSize: 20, fontWeight: 800, letterSpacing: pagaConCupon ? 3 : 0, fontVariantNumeric: 'tabular-nums', minHeight: 42, color: 'var(--text-primary)', textAlign: pagaConCupon ? 'center' : 'left' }}>
+                {pagaConCupon
+                  ? (voucherCode || <span style={{ color: 'var(--border)' }}>------</span>)
+                  : (keypadValue ? `$${keypadValue}` : <span style={{ color: 'var(--border)' }}>$0.00</span>)}
+              </div>
+
+              {pagaConCupon && (
+                <div style={{ marginBottom: 8 }}>
+                  {voucherChecking && (
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Validando…</div>
+                  )}
+                  {voucherMiss && (
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-danger-text)' }}>
+                      No existe ningún cupón con ese número.
+                    </div>
+                  )}
+                  {voucherFound && (
+                    <div style={{
+                      border: `1.5px solid ${voucherFound.status === 'active' ? 'var(--corsa-green)' : 'var(--color-danger-text)'}`,
+                      borderRadius: 6, padding: '8px 10px',
+                      background: voucherFound.status === 'active' ? 'rgba(2,53,48,0.05)' : 'var(--color-danger-bg, #FBE7E7)',
+                    }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 3 }}>
+                        {voucherFound.status === 'active' ? 'Cupón válido'
+                          : voucherFound.status === 'redeemed' ? 'Ya fue canjeado' : 'Cupón anulado'}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-primary)' }}>
+                        {voucherFound.service_name} {voucherFound.size} ·{' '}
+                        {voucherFound.includes_aspirado ? 'con aspirado' : 'sin aspirado'}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>{voucherFound.customer_name}</div>
+                      {voucherFound.status === 'redeemed' && voucherFound.redeemed_at && (
+                        <div style={{ fontSize: 11.5, color: 'var(--color-danger-text)', marginTop: 3 }}>
+                          Usado el {new Date(voucherFound.redeemed_at).toLocaleString('es-SV')}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="keypad">
                 {KEYPAD_KEYS.map(k => (
                   <button key={k} id={`kp-${k}`} className="keypad-key" onClick={() => handleKeypad(k)}>{k}</button>
                 ))}
               </div>
-              {received > 0 && (
+              {received > 0 && !pagaConCupon && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 12.5, color: 'var(--text-secondary)' }}>
                   <span>Recibido: <strong>{fmt(received)}</strong></span>
                   {received >= total && <span style={{ color: 'var(--color-success-text)', fontWeight: 600 }}>Cambio: {fmt(change)}</span>}
@@ -1261,25 +1230,15 @@ export function POSPage() {
 
             <div className="clip-btn-wrap" style={{ opacity: (!canCharge || submitting) ? 0.55 : 1, pointerEvents: (!canCharge || submitting) ? 'none' : 'auto' }}>
               <div className="clip-btn-corner"/>
-              <button id="btn-charge" className="clip-btn large" onClick={() => setShowBillingModal(true)} disabled={!canCharge || submitting}>
-                {submitting ? 'Procesando…' : `Cobrar ${fmt(total)}`}
+              <button id="btn-charge" className="clip-btn large"
+                      onClick={() => pagaConCupon ? canjearCupon() : setShowBillingModal(true)}
+                      disabled={!canCharge || submitting}>
+                {submitting ? 'Procesando…'
+                  : pagaConCupon ? 'Canjear cupón e imprimir'
+                  : `Cobrar ${fmt(total)}`}
               </button>
             </div>
 
-            {/* Canje de cupón. En caja sólo se canjean cupones ya emitidos:
-                venderlos es cobrar por adelantado y vive en el POS
-                Administrativo, al que el cajero no entra. */}
-            {puedeCanjearCupon && (
-              <button
-                id="btn-voucher"
-                className="btn btn-ghost"
-                style={{ width: '100%', marginTop: 8 }}
-                onClick={() => setShowVoucherModal(true)}
-                disabled={submitting}
-              >
-                Cobrar con cupón
-              </button>
-            )}
           </div>
         </div>
       )}
@@ -1293,13 +1252,6 @@ export function POSPage() {
       )}
 
       {/* Billing Modal */}
-      {showVoucherModal && branchId && (
-        <VoucherRedeemModal
-          branchId={branchId}
-          onRedeemed={handleVoucherRedeemed}
-          onCancel={() => setShowVoucherModal(false)}
-        />
-      )}
       {showBillingModal && (
         <BillingModal
           customer={customer}
