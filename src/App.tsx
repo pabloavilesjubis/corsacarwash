@@ -1,9 +1,10 @@
 import { lazy, Suspense } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider } from './hooks/useAuth'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AppShell } from './layouts/AppShell'
+import { ScreenGuard, HomeRedirect } from './components/ScreenGuard'
 
 // Lazy-loaded pages
 const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })))
@@ -54,24 +55,28 @@ export default function App() {
               {/* Public */}
               <Route path="/login" element={<LoginPage/>}/>
 
-              {/* Protected — with AppShell */}
+              {/* Protected — with AppShell.
+                  Cada ruta pasa por ScreenGuard: sin el permiso de su pantalla
+                  no alcanza con escribir la URL. Los códigos viven en
+                  src/lib/screens.ts, que también alimenta el sidebar. */}
               <Route element={<AppShell/>}>
-                <Route path="/dashboard" element={<DashboardPage/>}/>
-                <Route path="/customers" element={<CustomersPage/>}/>
-                <Route path="/pos" element={<POSPage/>}/>
-                <Route path="/orders" element={<OrdersPage/>}/>
-                <Route path="/analytics" element={<PlaceholderPage/>}/>
-                <Route path="/receivables" element={<PlaceholderPage/>}/>
-                <Route path="/payables" element={<PlaceholderPage/>}/>
-                <Route path="/fleets" element={<FlotillasPage/>}/>
-                <Route path="/memberships" element={<PlaceholderPage/>}/>
-                <Route path="/settings" element={<PlaceholderPage/>}/>
-                <Route path="/users" element={<UsersPage/>}/>
-              </Route>
+                <Route path="/dashboard"   element={<ScreenGuard permission="screens.dashboard"><DashboardPage/></ScreenGuard>}/>
+                <Route path="/customers"   element={<ScreenGuard permission="screens.customers"><CustomersPage/></ScreenGuard>}/>
+                <Route path="/pos"         element={<ScreenGuard permission="screens.pos"><POSPage/></ScreenGuard>}/>
+                <Route path="/orders"      element={<ScreenGuard permission="screens.orders"><OrdersPage/></ScreenGuard>}/>
+                <Route path="/analytics"   element={<ScreenGuard permission="screens.analytics"><PlaceholderPage/></ScreenGuard>}/>
+                <Route path="/receivables" element={<ScreenGuard permission="screens.receivables"><PlaceholderPage/></ScreenGuard>}/>
+                <Route path="/payables"    element={<ScreenGuard permission="screens.payables"><PlaceholderPage/></ScreenGuard>}/>
+                <Route path="/fleets"      element={<ScreenGuard permission="screens.fleets"><FlotillasPage/></ScreenGuard>}/>
+                <Route path="/memberships" element={<ScreenGuard permission="screens.memberships"><PlaceholderPage/></ScreenGuard>}/>
+                <Route path="/settings"    element={<ScreenGuard permission="screens.settings"><PlaceholderPage/></ScreenGuard>}/>
+                <Route path="/users"       element={<ScreenGuard permission="users.manage"><UsersPage/></ScreenGuard>}/>
 
-              {/* Default */}
-              <Route path="/" element={<Navigate to="/dashboard" replace/>}/>
-              <Route path="*" element={<Navigate to="/dashboard" replace/>}/>
+                {/* Entrada y catch-all: a la primera pantalla accesible,
+                    no a /dashboard fijo (un Operador no lo tiene). */}
+                <Route path="/" element={<HomeRedirect/>}/>
+                <Route path="*" element={<HomeRedirect/>}/>
+              </Route>
             </Routes>
           </Suspense>
         </AuthProvider>

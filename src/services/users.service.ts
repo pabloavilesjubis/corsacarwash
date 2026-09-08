@@ -99,3 +99,38 @@ export function generateTempPassword(): string {
   crypto.getRandomValues(bytes)
   return Array.from(bytes, b => alphabet[b % alphabet.length]).join('')
 }
+
+// ─── Roles ↔ permisos (acceso a pantallas) ───────────────────
+
+export interface AdminPermission {
+  id: UUID
+  code: string
+  module: string
+  description: string | null
+}
+
+export async function listPermissions(): Promise<AdminPermission[]> {
+  const { data, error } = await (supabase.rpc as any)('admin_list_permissions')
+  if (error) throw error
+  return (data ?? []) as AdminPermission[]
+}
+
+/** Permisos otorgados hoy a cada rol, como mapa role_id → Set(permission_id). */
+export async function listRolePermissions(): Promise<Map<UUID, Set<UUID>>> {
+  const { data, error } = await (supabase.rpc as any)('admin_list_role_permissions')
+  if (error) throw error
+  const rows = (data ?? []) as { role_id: UUID; permission_ids: UUID[] }[]
+  return new Map(rows.map(r => [r.role_id, new Set(r.permission_ids ?? [])]))
+}
+
+/**
+ * Reemplaza el conjunto completo de permisos de un rol.
+ * El servidor rechaza tocar Super Admin y aplica anti-lockout.
+ */
+export async function setRolePermissions(roleId: UUID, permissionIds: UUID[]): Promise<void> {
+  const { error } = await (supabase.rpc as any)('admin_set_role_permissions', {
+    p_role_id: roleId,
+    p_permission_ids: permissionIds,
+  })
+  if (error) throw new Error(error.message)
+}

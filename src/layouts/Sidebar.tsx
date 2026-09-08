@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom'
 import { CorsaLogo } from '../components/ui/CorsaLogo'
 import { useAuth } from '../hooks/useAuth'
 import { useTheme } from '../contexts/ThemeContext'
+import { screensOfSection, type ScreenDef } from '../lib/screens'
 import type { Branch } from '../types'
 
 // ─── Icons ─────────────────────────────────────────────────
@@ -118,6 +119,27 @@ const icons = {
   ),
 }
 
+// Icono por clave de pantalla (src/lib/screens.ts). El "+" del POS es propio
+// porque la acción es "crear", no "ver la caja".
+const screenIcons: Record<string, React.ReactNode> = {
+  pos: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <line x1="12" y1="5" x2="12" y2="19"/>
+      <line x1="5" y1="12" x2="19" y2="12"/>
+    </svg>
+  ),
+  orders: icons.orders,
+  dashboard: icons.dashboard,
+  customers: icons.customers,
+  analytics: icons.analytics,
+  receivables: icons.receivable,
+  payables: icons.payable,
+  fleets: icons.fleets,
+  memberships: icons.memberships,
+  settings: icons.settings,
+  users: icons.users,
+}
+
 function getInitials(name: string): string {
   return name.split(' ').filter(Boolean).slice(0, 2)
     .map(w => w[0].toUpperCase()).join('')
@@ -197,6 +219,16 @@ export function Sidebar() {
   const initials = getInitials(displayName)
   const branchName = (currentBranch as Branch | null)?.name ?? 'CORSA'
 
+  const visible = (section: 'caja' | 'administracion') =>
+    screensOfSection(section).filter(sc => hasPermission(sc.permission))
+
+  const caja = visible('caja')
+  const admin = visible('administracion')
+
+  const renderLink = (sc: ScreenDef) => (
+    <SidebarLink key={sc.key} to={sc.path} icon={screenIcons[sc.key]} label={sc.label}/>
+  )
+
   return (
     <aside className="sidebar">
       {/* Logo */}
@@ -205,38 +237,27 @@ export function Sidebar() {
         <span className="sidebar-logo-text">CORSA</span>
       </div>
 
-      {/* Módulo Caja / POS */}
-      <div className="sidebar-section">
-        <SectionActive icon={icons.pos} label="Caja"/>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingLeft: 4 }}>
-          <SidebarLink to="/pos" icon={
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-              <line x1="12" y1="5" x2="12" y2="19"/>
-              <line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-          } label="Nueva orden"/>
+      {/* Navegación — derivada de src/lib/screens.ts y filtrada por permisos.
+          Una sección sin ninguna pantalla visible no se dibuja. */}
+      {caja.length > 0 && (
+        <div className="sidebar-section">
+          <SectionActive icon={icons.pos} label="Caja"/>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingLeft: 4 }}>
+            {caja.map(renderLink)}
+          </div>
         </div>
-      </div>
+      )}
 
-      <div className="sidebar-divider"/>
+      {caja.length > 0 && admin.length > 0 && <div className="sidebar-divider"/>}
 
-      {/* Módulo Administración */}
-      <div className="sidebar-section">
-        <SectionActive icon={icons.dashboard} label="Administración"/>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingLeft: 4 }}>
-          <SidebarLink to="/dashboard" icon={icons.dashboard} label="Resumen del día"/>
-          <SidebarLink to="/customers" icon={icons.customers} label="Clientes"/>
-          <SidebarLink to="/analytics" icon={icons.analytics} label="Inteligencia de negocio"/>
-          <SidebarLink to="/receivables" icon={icons.receivable} label="Cuentas por cobrar"/>
-          <SidebarLink to="/payables" icon={icons.payable} label="Cuentas por pagar"/>
-          <SidebarLink to="/fleets" icon={icons.fleets} label="Flotillas corporativas"/>
-          <SidebarLink to="/memberships" icon={icons.memberships} label="Membresías"/>
-          <SidebarLink to="/settings" icon={icons.settings} label="Configuración"/>
-          {hasPermission('users.manage') && (
-            <SidebarLink to="/users" icon={icons.users} label="Usuarios y roles"/>
-          )}
+      {admin.length > 0 && (
+        <div className="sidebar-section">
+          <SectionActive icon={icons.dashboard} label="Administración"/>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingLeft: 4 }}>
+            {admin.map(renderLink)}
+          </div>
         </div>
-      </div>
+      )}
 
       <div style={{ flex: 1 }}/>
 
