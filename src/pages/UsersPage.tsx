@@ -16,7 +16,9 @@ import {
   listPermissions, listRolePermissions, setRolePermissions,
   type AdminUser, type AdminRole, type AdminPermission,
 } from '../services/users.service'
-import { SCREENS, SCREEN_PERMISSION_CODES } from '../lib/screens'
+// ASSIGNABLE_SCREENS y no SCREENS: las pantallas ocultas no se ofrecen ni se
+// cuentan, o un rol figuraría con "8 de 12" sin poder llegar nunca a 12.
+import { ASSIGNABLE_SCREENS, SCREEN_PERMISSION_CODES } from '../lib/screens'
 
 const SUPER_ADMIN_ROLE_ID = '00000000-0000-0000-0002-000000000001'
 
@@ -423,7 +425,7 @@ function RoleScreensPanel({
         <>
           <div className="panel-section-label">Pantallas visibles</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {SCREENS.map(sc => {
+            {ASSIGNABLE_SCREENS.map(sc => {
               const perm = permByCode.get(sc.permission)
               const checked = perm ? selected.has(perm.id) : false
               return (
@@ -526,7 +528,7 @@ export function UsersPage() {
         if (code) codes.add(code)
       }
     }
-    return SCREENS.filter(sc => codes.has(sc.permission)).map(sc => sc.label)
+    return ASSIGNABLE_SCREENS.filter(sc => codes.has(sc.permission)).map(sc => sc.label)
   }, [rolePerms, codeById])
 
   const screenCountOfRole = useCallback(
@@ -632,7 +634,7 @@ export function UsersPage() {
                         </td>
                         <td><RoleChips names={u.role_names}/></td>
                         <td style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
-                          {screensOfRoles(u.role_ids).length} de {SCREENS.length}
+                          {screensOfRoles(u.role_ids).length} de {ASSIGNABLE_SCREENS.length}
                         </td>
                         <td>
                           <span className={`badge ${u.active ? 'badge-success' : 'badge-neutral'}`}>
@@ -677,7 +679,7 @@ export function UsersPage() {
                         </div>
                       </td>
                       <td style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
-                        {screenCountOfRole(r.id)} de {SCREENS.length}
+                        {screenCountOfRole(r.id)} de {ASSIGNABLE_SCREENS.length}
                       </td>
                       <td style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
                         {users.filter(u => u.role_ids.includes(r.id)).length}

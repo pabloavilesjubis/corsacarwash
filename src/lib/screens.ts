@@ -28,11 +28,19 @@ export interface ScreenDef {
   /** Código de permiso requerido para navegar a la pantalla. */
   permission: string
   section: ScreenSection
+  /**
+   * Fuera del menú y del editor de roles, pero la ruta sigue existiendo y
+   * protegida. Para módulos construidos que todavía no se usan en operación:
+   * ocultarlos evita confundir al equipo sin perder el trabajo hecho.
+   * Se vuelve a mostrar borrando esta línea.
+   */
+  hidden?: boolean
 }
 
 export const SCREENS: readonly ScreenDef[] = [
-  { key: 'pos',         path: '/pos',         label: 'Nueva orden',              permission: 'screens.pos',         section: 'caja' },
-  { key: 'orders',      path: '/orders',      label: 'Órdenes de trabajo',       permission: 'screens.orders',      section: 'caja' },
+  { key: 'pos',         path: '/pos',         label: 'POS',                      permission: 'screens.pos',         section: 'caja' },
+  // Órdenes de trabajo queda oculto: el flujo de taller no se usa todavía.
+  { key: 'orders',      path: '/orders',      label: 'Órdenes de trabajo',       permission: 'screens.orders',      section: 'caja', hidden: true },
 
   { key: 'dashboard',   path: '/dashboard',   label: 'Resumen del día',          permission: 'screens.dashboard',   section: 'administracion' },
   { key: 'sales',       path: '/sales',       label: 'Ventas',                   permission: 'screens.sales',       section: 'administracion' },
@@ -49,9 +57,13 @@ export const SCREENS: readonly ScreenDef[] = [
 /** Permisos que la pantalla de roles ofrece como "acceso a pantallas". */
 export const SCREEN_PERMISSION_CODES: readonly string[] = SCREENS.map(s => s.permission)
 
+/** Pantallas visibles en el menú de una sección. */
 export function screensOfSection(section: ScreenSection): ScreenDef[] {
-  return SCREENS.filter(s => s.section === section)
+  return SCREENS.filter(s => s.section === section && !s.hidden)
 }
+
+/** Pantallas que se ofrecen al configurar un rol. */
+export const ASSIGNABLE_SCREENS: ScreenDef[] = SCREENS.filter(s => !s.hidden)
 
 /**
  * Orden de preferencia para la pantalla de entrada.
@@ -72,8 +84,9 @@ export function firstAccessibleScreen(
   hasPermission: (code: string) => boolean
 ): ScreenDef | null {
   for (const key of HOME_PREFERENCE) {
-    const screen = SCREENS.find(s => s.key === key)
+    const screen = SCREENS.find(s => s.key === key && !s.hidden)
     if (screen && hasPermission(screen.permission)) return screen
   }
-  return SCREENS.find(s => hasPermission(s.permission)) ?? null
+  // Nunca se aterriza en una pantalla oculta: no habría cómo volver desde el menú.
+  return SCREENS.find(s => !s.hidden && hasPermission(s.permission)) ?? null
 }
