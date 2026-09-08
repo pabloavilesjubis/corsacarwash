@@ -113,6 +113,9 @@ interface FleetCompany {
   elite_price_s: number
   elite_price_m: number
   elite_price_l: number
+  /** El aspirado se negocia aparte y a precio único, sin importar el tamaño. */
+  aspirado_enabled: boolean
+  aspirado_price: number | null
 }
 
 interface FleetVehicle {
@@ -179,16 +182,27 @@ function FleetModal({ onVehicleSelected, onCancel }: FleetModalProps) {
     ;(async () => {
       setLoading(true)
       try {
+        // Precios desde fleet_pricing (0031); antes había que parsear el JSON
+        // que se guardaba en fleet_contracts.terms.
         const { data: fleets } = await (supabase as any)
           .from('fleets')
-          .select('id, name, customer_id, customers(id, trade_name, legal_name, nit), fleet_contracts(terms)')
+          .select(`id, name, customer_id,
+                   customers(id, trade_name, legal_name, nit),
+                   fleet_pricing(elite_per_size, elite_price, elite_price_s, elite_price_m, elite_price_l, aspirado_enabled, aspirado_price)`)
           .eq('organization_id', orgId)
           .eq('active', true)
 
         setCompanies((fleets ?? []).map((f: any) => {
           const c = f.customers ?? {}
-          let prices = { s: 12, m: 14, l: 15 }
-          try { const t = JSON.parse(f.fleet_contracts?.[0]?.terms ?? '{}'); prices = { s: t.elite_price_s ?? 12, m: t.elite_price_m ?? 14, l: t.elite_price_l ?? 15 } } catch { /* */ }
+          const fp = Array.isArray(f.fleet_pricing) ? f.fleet_pricing[0] : f.fleet_pricing
+          // Sin acuerdo cargado se usan los precios de lista del catálogo.
+          const lista = SERVICES.find(x => x.tier === 'elite')!.prices
+          const prices = !fp
+            ? { s: lista.S, m: lista.M, l: lista.L }
+            : fp.elite_per_size
+              ? { s: fp.elite_price_s, m: fp.elite_price_m, l: fp.elite_price_l }
+              : { s: fp.elite_price, m: fp.elite_price, l: fp.elite_price }
+
           return {
             customer_id: c.id,
             fleet_id: f.id,
@@ -198,6 +212,8 @@ function FleetModal({ onVehicleSelected, onCancel }: FleetModalProps) {
             elite_price_s: prices.s,
             elite_price_m: prices.m,
             elite_price_l: prices.l,
+            aspirado_enabled: fp?.aspirado_enabled ?? false,
+            aspirado_price: fp?.aspirado_price ?? null,
           }
         }))
       } catch { /* */ }
@@ -735,7 +751,11 @@ export function POSPage() {
     L: fleetCompany?.elite_price_l ?? 15,
   }
   const servicePrice = mode === 'flotilla' ? (fleetPrices[selectedSize] ?? svc.prices[selectedSize]) : svc.prices[selectedSize]
-  const aspiradoPrice = withAspirado ? ADDON_ASPIRADO.price : 0
+  // En flotilla manda el precio negociado; si no hay acuerdo, la tarifa de lista.
+  const aspiradoUnit = (mode === 'flotilla' && fleetCompany?.aspirado_enabled && fleetCompany.aspirado_price != null)
+    ? fleetCompany.aspirado_price
+    : ADDON_ASPIRADO.price
+  const aspiradoPrice = withAspirado ? aspiradoUnit : 0
   const total = servicePrice + aspiradoPrice
   const received = parseFloat(keypadValue) || 0
   const change = Math.max(0, received - total)
@@ -774,7 +794,7 @@ export function POSPage() {
         p_total:           total,
         p_payment_method:  selectedPayment,
         p_with_aspirado:   withAspirado,
-        p_aspirado_price:  withAspirado ? ADDON_ASPIRADO.price : 0,
+        p_aspirado_price:  aspiradoPrice,
         p_customer_id:     mode === 'flotilla' ? (fleetCompany?.customer_id ?? null) : (customer?.id ?? null),
         p_vehicle_id:      mode === 'flotilla' ? (fleetVehicle?.vehicle_id ?? null) : (customer?.vehicle?.id ?? null),
         p_doc_type:        billing.docType,
@@ -801,7 +821,7 @@ export function POSPage() {
             ? [customer.vehicle.brand, customer.vehicle.model, customer.vehicle.color].filter(Boolean).join(' ')
             : undefined,
           metodoPago: PAYMENT_METHODS.find(p => p.id === selectedPayment)?.label,
-          aspiradoPrecio: ADDON_ASPIRADO.price,
+          aspiradoPrecio: aspiradoPrice,
           branchName: (currentBranch as any)?.name,
         }))
       } catch (e) {
@@ -816,7 +836,7 @@ export function POSPage() {
       toast.error(err?.message ?? 'Error al crear la orden')
     }
     setSubmitting(false)
-  }, [branchId, mode, fleetCompany, fleetVehicle, customer, svc, selectedSize, total, selectedPayment, withAspirado, currentBranch])
+  }, [branchId, mode, fleetCompany, fleetVehicle, customer, svc, selectedSize, total, selectedPayment, withAspirado, aspiradoPrice, currentBranch])
 
   const canCharge = mode === 'flotilla' ? !!fleetVehicle : true
 

@@ -19,7 +19,7 @@ interface FleetCompany {
   nit: string | null
   email: string | null
   phone: string | null
-  address_line1: string | null
+  address: string | null
   // corporate_account fields
   account_id: string | null
   credit_limit: number
@@ -34,6 +34,8 @@ interface FleetCompany {
   elite_price_s: number | null
   elite_price_m: number | null
   elite_price_l: number | null
+  aspirado_enabled: boolean
+  aspirado_price: number | null
   vehicle_count: number
 }
 
@@ -65,14 +67,45 @@ interface CreateCompanyModalProps {
   onCancel: () => void
 }
 
+/** Cliente existente que puede convertirse en flotilla. */
+interface ExistingCustomer {
+  id: string
+  customer_type: string
+  trade_name: string | null
+  legal_name: string | null
+  nit: string | null
+  email: string | null
+  phone: string | null
+  address: string | null
+}
+
+function customerLabel(c: ExistingCustomer): string {
+  return c.trade_name || c.legal_name || '(sin nombre)'
+}
+
 function CreateCompanyModal({ orgId, onCreated, onCancel }: CreateCompanyModalProps) {
+  // Origen del cliente: buscarlo en el sistema o darlo de alta acá.
+  // Antes sólo existía la segunda opción, así que una empresa que ya era
+  // cliente terminaba duplicada al convertirla en flotilla.
+  const [origen, setOrigen] = useState<'existente' | 'nuevo'>('existente')
+
+  const [query, setQuery] = useState('')
+  const [resultados, setResultados] = useState<ExistingCustomer[]>([])
+  const [buscando, setBuscando] = useState(false)
+  const [elegido, setElegido] = useState<ExistingCustomer | null>(null)
+
   const [form, setForm] = useState({
     trade_name: '', legal_name: '', nit: '',
-    email: '', phone: '', address_line1: '',
-    credit_limit: '500',
-    elite_price_s: '8', elite_price_m: '10', elite_price_l: '11',
+    email: '', phone: '', address: '',
     fleet_name: '', fleet_code: '',
   })
+  const [elitePerSize, setElitePerSize] = useState(false)
+  const [elitePrice, setElitePrice] = useState('10.00')
+  const [eliteS, setEliteS] = useState('8.00')
+  const [eliteM, setEliteM] = useState('10.00')
+  const [eliteL, setEliteL] = useState('11.00')
+  const [aspirado, setAspirado] = useState(false)
+  const [aspiradoPrice, setAspiradoPrice] = useState('2.50')
   const [saving, setSaving] = useState(false)
 
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
@@ -83,54 +116,109 @@ function CreateCompanyModal({ orgId, onCreated, onCancel }: CreateCompanyModalPr
     return () => document.removeEventListener('keydown', h)
   }, [onCancel])
 
-  const handleSave = async () => {
-    if (!form.trade_name.trim() && !form.legal_name.trim()) {
-      toast.error('Ingresa el nombre de la empresa')
+  // Búsqueda de clientes ya registrados (empresas y personas: una flotilla
+  // puede estar a nombre de una persona natural).
+  useEffect(() => {
+    if (origen !== 'existente' || elegido || query.trim().length < 2) {
+      setResultados([])
       return
     }
+    const t = setTimeout(async () => {
+      setBuscando(true)
+      const term = query.trim()
+      const { data } = await (supabase as any)
+        .from('customers')
+        .select('id, customer_type, trade_name, legal_name, nit, email, phone, address')
+        .or(`trade_name.ilike.%${term}%,legal_name.ilike.%${term}%,nit.ilike.%${term}%,first_name.ilike.%${term}%,last_name.ilike.%${term}%`)
+        .eq('active', true)
+        .limit(8)
+      setResultados(data ?? [])
+      setBuscando(false)
+    }, 300)
+    return () => clearTimeout(t)
+  }, [query, origen, elegido])
+
+  const nombreEmpresa = elegido ? customerLabel(elegido) : form.trade_name.trim()
+
+  const handleSave = async () => {
+    if (origen === 'existente' && !elegido) {
+      toast.error('Elegí el cliente o creá uno nuevo')
+      return
+    }
+    if (origen === 'nuevo' && !form.trade_name.trim() && !form.legal_name.trim()) {
+      toast.error('Ingresá el nombre de la empresa')
+      return
+    }
+    const precioUnico = parseFloat(elitePrice)
+    if (!elitePerSize && !(precioUnico >= 0)) {
+      toast.error('Ingresá el precio ÉLITE negociado')
+      return
+    }
+    if (elitePerSize && [eliteS, eliteM, eliteL].some(v => !(parseFloat(v) >= 0))) {
+      toast.error('Completá los tres precios por tamaño')
+      return
+    }
+    if (aspirado && !(parseFloat(aspiradoPrice) >= 0)) {
+      toast.error('Ingresá el precio del aspirado')
+      return
+    }
+
     setSaving(true)
     try {
       const db = supabase as any
+      let customerId = elegido?.id
 
-      // 1. Create customer (company)
-      const { data: cust, error: custErr } = await db
-        .from('customers')
-        .insert({
-          organization_id: orgId,
-          customer_type: 'company',
-          trade_name: form.trade_name.trim() || null,
-          legal_name: form.legal_name.trim() || null,
-          nit: form.nit.trim() || null,
-          email: form.email.trim() || null,
-          phone: form.phone.trim() || null,
-          address_line1: form.address_line1.trim() || null,
-          status: 'active',
-        })
-        .select('id')
-        .single()
+      if (!customerId) {
+        // Las columnas son `address` y `active`: antes se insertaba
+        // address_line1 y status, que no existen en customers, y el alta
+        // fallaba entera.
+        const { data: cust, error: custErr } = await db
+          .from('customers')
+          .insert({
+            organization_id: orgId,
+            customer_type: 'company',
+            trade_name: form.trade_name.trim() || null,
+            legal_name: form.legal_name.trim() || null,
+            nit: form.nit.trim() || null,
+            email: form.email.trim() || null,
+            phone: form.phone.trim() || null,
+            address: form.address.trim() || null,
+            active: true,
+          })
+          .select('id')
+          .single()
+        if (custErr) throw custErr
+        customerId = cust.id
+      }
 
-      if (custErr) throw custErr
-
-      // 2. Create corporate account
-      const { error: accErr } = await db
+      // Cuenta corporativa sin crédito: la flotilla paga al momento. La cuenta
+      // se crea igual porque es lo que marca al cliente como corporativo.
+      const { data: cuenta } = await db
         .from('corporate_accounts')
-        .insert({
-          customer_id: cust.id,
-          credit_limit: parseFloat(form.credit_limit) || 500,
+        .select('id').eq('customer_id', customerId).maybeSingle()
+
+      if (!cuenta) {
+        const { error: accErr } = await db.from('corporate_accounts').insert({
+          customer_id: customerId,
+          credit_limit: 0,
+          credit_days: 0,
           credit_status: 'active',
           current_balance: 0,
           blocked: false,
         })
-      if (accErr) throw accErr
+        if (accErr) throw accErr
+      }
 
-      // 3. Create fleet
-      const fleetCode = form.fleet_code.trim() || form.trade_name.replace(/\s+/g, '-').toUpperCase().slice(0, 10)
+      const baseNombre = nombreEmpresa || 'FLOTILLA'
+      const fleetCode = form.fleet_code.trim()
+        || baseNombre.replace(/\s+/g, '-').toUpperCase().slice(0, 10)
+
       const { data: fleet, error: fleetErr } = await db
         .from('fleets')
         .insert({
           organization_id: orgId,
-          customer_id: cust.id,
-          name: form.fleet_name.trim() || form.trade_name.trim(),
+          customer_id: customerId,
+          name: form.fleet_name.trim() || baseNombre,
           code: fleetCode,
           active: true,
         })
@@ -138,136 +226,223 @@ function CreateCompanyModal({ orgId, onCreated, onCancel }: CreateCompanyModalPr
         .single()
       if (fleetErr) throw fleetErr
 
-      // 4. Fleet contract with credit limit
       await db.from('fleet_contracts').insert({
         fleet_id: fleet.id,
         starts_at: new Date().toISOString().split('T')[0],
         billing_frequency: 'monthly',
-        credit_limit: parseFloat(form.credit_limit) || 500,
-        credit_days: 30,
+        credit_limit: 0,
+        credit_days: 0,
         active: true,
       })
 
-      // 5. Store ÉLITE special prices as customer_price_agreements
-      // We'll use a simpler approach: store prices in a metadata JSON via upsert
-      // Since service IDs aren't known yet, store in fleet notes or use a simple prices table
-      // For now, store as fleet metadata using fleet_contracts terms field (JSON string)
-      await db.from('fleet_contracts')
-        .update({ terms: JSON.stringify({
-          elite_price_s: parseFloat(form.elite_price_s),
-          elite_price_m: parseFloat(form.elite_price_m),
-          elite_price_l: parseFloat(form.elite_price_l),
-        })})
-        .eq('fleet_id', fleet.id)
+      // Los precios van a fleet_pricing (0031), no serializados en terms.
+      const { error: priceErr } = await db.from('fleet_pricing').insert({
+        fleet_id: fleet.id,
+        elite_per_size: elitePerSize,
+        elite_price: elitePerSize ? null : parseFloat(elitePrice),
+        elite_price_s: elitePerSize ? parseFloat(eliteS) : null,
+        elite_price_m: elitePerSize ? parseFloat(eliteM) : null,
+        elite_price_l: elitePerSize ? parseFloat(eliteL) : null,
+        aspirado_enabled: aspirado,
+        aspirado_price: aspirado ? parseFloat(aspiradoPrice) : null,
+      })
+      if (priceErr) throw priceErr
 
-      toast.success(`Flotilla ${form.trade_name} creada ✓`)
+      toast.success(`Flotilla ${baseNombre} creada ✓`)
       onCreated()
     } catch (err: any) {
-      toast.error(err?.message ?? 'Error al crear la empresa')
+      toast.error(err?.message ?? 'Error al crear la flotilla')
     }
     setSaving(false)
   }
+
+  const seccion = (t: string, color = 'var(--corsa-green)') => (
+    <div style={{ fontSize: 12, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>{t}</div>
+  )
 
   return createPortal(
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 20 }}
       onClick={e => { if (e.target === e.currentTarget) onCancel() }}>
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.2)' }}>
 
-        {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 20, color: 'var(--text-primary)' }}>Nueva empresa de flotilla</div>
+          <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 20, color: 'var(--text-primary)' }}>Nueva flotilla</div>
           <button onClick={onCancel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 22 }}>×</button>
         </div>
 
         <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-          {/* Sección: Empresa */}
+          {/* ── Cliente ── */}
           <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--corsa-green)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Información de la empresa</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div className="field" style={{ gridColumn: '1/-1' }}>
-                <label>Nombre comercial *</label>
-                <input className="corsa-input" value={form.trade_name} onChange={e => set('trade_name', e.target.value)} placeholder="Ej: Distribuidora La Central"/>
-              </div>
-              <div className="field">
-                <label>Razón social</label>
-                <input className="corsa-input" value={form.legal_name} onChange={e => set('legal_name', e.target.value)} placeholder="S.A. de C.V."/>
-              </div>
-              <div className="field">
-                <label>NIT</label>
-                <input className="corsa-input" value={form.nit} onChange={e => set('nit', e.target.value)} placeholder="0614-010101-000-0"/>
-              </div>
-              <div className="field">
-                <label>Teléfono</label>
-                <input className="corsa-input" value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="2222-3333"/>
-              </div>
-              <div className="field">
-                <label>Email</label>
-                <input className="corsa-input" type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="facturacion@empresa.com"/>
-              </div>
-              <div className="field" style={{ gridColumn: '1/-1' }}>
-                <label>Dirección</label>
-                <input className="corsa-input" value={form.address_line1} onChange={e => set('address_line1', e.target.value)} placeholder="Calle Principal #123, San Salvador"/>
-              </div>
+            {seccion('Cliente')}
+            <div className="filter-pills" style={{ marginBottom: 12 }}>
+              <button className={`filter-pill${origen === 'existente' ? ' active' : ''}`}
+                      onClick={() => setOrigen('existente')}>Ya es cliente</button>
+              <button className={`filter-pill${origen === 'nuevo' ? ' active' : ''}`}
+                      onClick={() => { setOrigen('nuevo'); setElegido(null) }}>Registrar uno nuevo</button>
             </div>
+
+            {origen === 'existente' ? (
+              elegido ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderRadius: 7, border: '1.5px solid var(--corsa-green)', background: 'rgba(2,53,48,0.05)' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{customerLabel(elegido)}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 1 }}>
+                      {[elegido.nit ? `NIT ${elegido.nit}` : null, elegido.phone, elegido.email]
+                        .filter(Boolean).join(' · ') || 'Sin datos de contacto'}
+                    </div>
+                  </div>
+                  <button onClick={() => { setElegido(null); setQuery('') }}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 18 }}>×</button>
+                </div>
+              ) : (
+                <div style={{ position: 'relative' }}>
+                  <input className="corsa-input" value={query} onChange={e => setQuery(e.target.value)}
+                         placeholder="Buscá por nombre, razón social o NIT…" autoFocus/>
+                  {buscando && <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4 }}>Buscando…</div>}
+                  {resultados.length > 0 && (
+                    <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 300, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, boxShadow: '0 8px 24px rgba(0,0,0,0.14)', maxHeight: 220, overflowY: 'auto' }}>
+                      {resultados.map(c => (
+                        <button key={c.id} onClick={() => { setElegido(c); setResultados([]) }}
+                          style={{ width: '100%', textAlign: 'left', padding: '9px 13px', border: 'none', background: 'transparent', cursor: 'pointer', borderBottom: '1px solid var(--border)' }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{customerLabel(c)}</div>
+                          <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                            {c.nit ? `NIT ${c.nit}` : c.customer_type === 'company' ? 'Empresa' : 'Persona'}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {query.trim().length >= 2 && !buscando && resultados.length === 0 && (
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6 }}>
+                      Sin coincidencias. Podés registrarlo como cliente nuevo.
+                    </div>
+                  )}
+                </div>
+              )
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="field" style={{ gridColumn: '1/-1' }}>
+                  <label>Nombre comercial *</label>
+                  <input className="corsa-input" value={form.trade_name} onChange={e => set('trade_name', e.target.value)} placeholder="Ej: Distribuidora La Central"/>
+                </div>
+                <div className="field">
+                  <label>Razón social</label>
+                  <input className="corsa-input" value={form.legal_name} onChange={e => set('legal_name', e.target.value)} placeholder="S.A. de C.V."/>
+                </div>
+                <div className="field">
+                  <label>NIT</label>
+                  <input className="corsa-input" value={form.nit} onChange={e => set('nit', e.target.value)} placeholder="0614-010101-000-0"/>
+                </div>
+                <div className="field">
+                  <label>Teléfono</label>
+                  <input className="corsa-input" value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="2222-3333"/>
+                </div>
+                <div className="field">
+                  <label>Email</label>
+                  <input className="corsa-input" type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="facturacion@empresa.com"/>
+                </div>
+                <div className="field" style={{ gridColumn: '1/-1' }}>
+                  <label>Dirección</label>
+                  <input className="corsa-input" value={form.address} onChange={e => set('address', e.target.value)} placeholder="Calle Principal #123, San Salvador"/>
+                </div>
+                <div style={{ gridColumn: '1/-1', fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                  Para emitir CCF hacen falta más datos fiscales; se completan en Clientes.
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="divider"/>
 
-          {/* Sección: Flotilla */}
+          {/* ── Flotilla ── */}
           <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--corsa-green)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Datos de la flotilla</div>
+            {seccion('Datos de la flotilla')}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div className="field">
                 <label>Nombre de la flotilla</label>
-                <input className="corsa-input" value={form.fleet_name} onChange={e => set('fleet_name', e.target.value)} placeholder="Flotilla principal"/>
+                <input className="corsa-input" value={form.fleet_name} onChange={e => set('fleet_name', e.target.value)}
+                       placeholder={nombreEmpresa || 'Flotilla principal'}/>
               </div>
               <div className="field">
                 <label>Código</label>
                 <input className="corsa-input" value={form.fleet_code} onChange={e => set('fleet_code', e.target.value.toUpperCase())} placeholder="DIST-CENTRAL"/>
               </div>
-              <div className="field">
-                <label>Límite de crédito (US$)</label>
-                <input className="corsa-input" type="number" value={form.credit_limit} onChange={e => set('credit_limit', e.target.value)} min="0" step="50"/>
-              </div>
             </div>
           </div>
 
           <div className="divider"/>
 
-          {/* Sección: Precios ÉLITE especiales */}
+          {/* ── Precios ── */}
           <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--corsa-orange)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Precio especial ÉLITE</div>
-            <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 12 }}>
-              Precio negociado para el servicio ÉLITE. Deja en blanco para usar precio estándar (S$12 · M$14 · L$15).
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-              {[
-                { key: 'elite_price_s', label: 'S · Pequeño', placeholder: '12.00' },
-                { key: 'elite_price_m', label: 'M · Mediano', placeholder: '14.00' },
-                { key: 'elite_price_l', label: 'L · Grande',  placeholder: '15.00' },
-              ].map(f => (
-                <div key={f.key} className="field">
-                  <label>{f.label}</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 13, color: 'var(--text-secondary)', flexShrink: 0 }}>$</span>
+            {seccion('Precio negociado ÉLITE', 'var(--corsa-orange)')}
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12, cursor: 'pointer' }}>
+              <input type="checkbox" checked={elitePerSize}
+                     onChange={e => setElitePerSize(e.target.checked)}
+                     style={{ accentColor: 'var(--corsa-green)' }}/>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                Valor personalizado por tamaño
+              </span>
+            </label>
+
+            {elitePerSize ? (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                {[
+                  { label: 'S · Pequeño', v: eliteS, set: setEliteS },
+                  { label: 'M · Mediano', v: eliteM, set: setEliteM },
+                  { label: 'L · Grande',  v: eliteL, set: setEliteL },
+                ].map(f => (
+                  <div key={f.label} className="field">
+                    <label>{f.label}</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>$</span>
+                      <input className="corsa-input" type="number" step="0.50" min="0"
+                             value={f.v} onChange={e => f.set(e.target.value)}/>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="field">
+                <label>Precio para cualquier tamaño</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, maxWidth: 200 }}>
+                  <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>$</span>
+                  <input className="corsa-input" type="number" step="0.50" min="0"
+                         value={elitePrice} onChange={e => setElitePrice(e.target.value)}/>
+                </div>
+              </div>
+            )}
+
+            <div style={{ marginTop: 16 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
+                <input type="checkbox" checked={aspirado}
+                       onChange={e => setAspirado(e.target.checked)}
+                       style={{ accentColor: 'var(--corsa-green)' }}/>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                  Incluir aspirado de interiores
+                </span>
+              </label>
+              {aspirado && (
+                <div className="field" style={{ marginTop: 10 }}>
+                  <label>Precio del aspirado · cualquier tamaño</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, maxWidth: 200 }}>
+                    <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>$</span>
                     <input className="corsa-input" type="number" step="0.50" min="0"
-                      value={(form as any)[f.key]} onChange={e => set(f.key, e.target.value)}
-                      placeholder={f.placeholder}/>
+                           value={aspiradoPrice} onChange={e => setAspiradoPrice(e.target.value)}/>
                   </div>
                 </div>
-              ))}
+              )}
             </div>
           </div>
         </div>
 
-        {/* Footer */}
         <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
           <button onClick={onCancel} className="btn btn-ghost">Cancelar</button>
           <div className="clip-btn-wrap" style={{ opacity: saving ? 0.6 : 1 }}>
             <div className="clip-btn-corner"/>
             <button id="fleet-save" className="clip-btn" onClick={handleSave} disabled={saving}>
-              {saving ? 'Guardando…' : 'Crear empresa'}
+              {saving ? 'Guardando…' : 'Crear flotilla'}
             </button>
           </div>
         </div>
@@ -408,27 +583,35 @@ export function FlotillasPage() {
     if (!orgId) return
     setLoading(true)
     try {
-      // Load customers (company type) + join fleet + contract pricing
-      const { data: custs } = await (supabase as any)
-        .from('customers')
+      // Se consulta desde `fleets`, no desde `customers`.
+      // Antes se pedía la columna address_line1, que no existe en customers:
+      // la consulta fallaba entera y la pantalla quedaba vacía. Además
+      // filtraba customer_type='company', así que una flotilla a nombre de
+      // una persona nunca aparecía.
+      const { data: rows, error } = await (supabase as any)
+        .from('fleets')
         .select(`
-          id, customer_type, trade_name, legal_name, nit, email, phone, address_line1,
-          corporate_accounts(id, credit_limit, credit_status, current_balance, blocked),
-          fleets(id, name, code, active)
+          id, name, code, active, customer_id,
+          customers!inner(
+            id, customer_type, trade_name, legal_name, nit, email, phone, address,
+            corporate_accounts(id, credit_limit, credit_status, current_balance, blocked)
+          )
         `)
         .eq('organization_id', orgId)
-        .eq('customer_type', 'company')
-        .order('trade_name')
+        .eq('active', true)
 
-      if (!custs) { setLoading(false); return }
+      if (error) throw error
+      if (!rows) { setLoading(false); return }
 
-      // For each customer with a fleet, get vehicle count + pricing
       const result: FleetCompany[] = await Promise.all(
-        custs.map(async (c: any) => {
+        rows.map(async (row: any) => {
+          const c = row.customers ?? {}
           const acc = c.corporate_accounts?.[0]
-          const fleet = c.fleets?.[0]
+          const fleet = { id: row.id, name: row.name, code: row.code }
           let vehicleCount = 0
           let prices = { s: null as number | null, m: null as number | null, l: null as number | null }
+          let aspiradoEnabled = false
+          let aspiradoPrice: number | null = null
 
           if (fleet) {
             const { count } = await (supabase as any)
@@ -438,19 +621,21 @@ export function FlotillasPage() {
               .eq('active', true)
             vehicleCount = count ?? 0
 
-            // Get pricing from fleet_contracts.terms
-            const { data: contract } = await (supabase as any)
-              .from('fleet_contracts')
-              .select('terms')
+            // Precios desde fleet_pricing (0031). Antes había que parsear el
+            // JSON guardado en fleet_contracts.terms, un campo de texto libre.
+            const { data: fp } = await (supabase as any)
+              .from('fleet_pricing')
+              .select('elite_per_size, elite_price, elite_price_s, elite_price_m, elite_price_l, aspirado_enabled, aspirado_price')
               .eq('fleet_id', fleet.id)
-              .eq('active', true)
               .maybeSingle()
 
-            if (contract?.terms) {
-              try {
-                const t = JSON.parse(contract.terms)
-                prices = { s: t.elite_price_s ?? null, m: t.elite_price_m ?? null, l: t.elite_price_l ?? null }
-              } catch { /* */ }
+            if (fp) {
+              prices = fp.elite_per_size
+                ? { s: fp.elite_price_s, m: fp.elite_price_m, l: fp.elite_price_l }
+                // Precio único: el mismo para los tres tamaños.
+                : { s: fp.elite_price, m: fp.elite_price, l: fp.elite_price }
+              aspiradoEnabled = fp.aspirado_enabled
+              aspiradoPrice = fp.aspirado_price
             }
           }
 
@@ -462,7 +647,7 @@ export function FlotillasPage() {
             nit: c.nit,
             email: c.email,
             phone: c.phone,
-            address_line1: c.address_line1,
+            address: c.address ?? null,
             account_id: acc?.id ?? null,
             credit_limit: acc?.credit_limit ?? 0,
             credit_status: acc?.credit_status ?? 'active',
@@ -471,6 +656,8 @@ export function FlotillasPage() {
             fleet_id: fleet?.id ?? null,
             fleet_name: fleet?.name ?? null,
             fleet_code: fleet?.code ?? null,
+            aspirado_enabled: aspiradoEnabled,
+            aspirado_price: aspiradoPrice,
             elite_price_s: prices.s,
             elite_price_m: prices.m,
             elite_price_l: prices.l,
@@ -480,7 +667,11 @@ export function FlotillasPage() {
       )
 
       setCompanies(result)
-    } catch { /* */ }
+    } catch (err: any) {
+      // Antes el catch era mudo: la consulta rota no dejaba rastro y la
+      // pantalla simplemente aparecía vacía.
+      toast.error(err?.message ?? 'No se pudieron cargar las flotillas')
+    }
     setLoading(false)
   }, [orgId])
 
@@ -601,8 +792,10 @@ export function FlotillasPage() {
                     </div>
                     {c.blocked ? (
                       <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-danger-text)', background: 'var(--color-danger-tint)', padding: '2px 6px', borderRadius: 4 }}>Bloqueada</span>
-                    ) : c.credit_status !== 'active' ? (
-                      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-warning-text)', background: 'var(--color-warning-tint)', padding: '2px 6px', borderRadius: 4 }}>{c.credit_status}</span>
+                    ) : c.aspirado_enabled ? (
+                      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', background: 'var(--subtle-bg)', padding: '2px 6px', borderRadius: 4 }}>
+                        + aspirado {c.aspirado_price != null ? fmt(c.aspirado_price) : ''}
+                      </span>
                     ) : (
                       <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-success-text)', background: 'var(--color-success-tint)', padding: '2px 6px', borderRadius: 4 }}>Activa</span>
                     )}
@@ -632,36 +825,49 @@ export function FlotillasPage() {
                     {selected.phone && <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>📞 {selected.phone}</div>}
                     {selected.email && <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>✉ {selected.email}</div>}
                   </div>
-                  {selected.address_line1 && <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 6 }}>📍 {selected.address_line1}</div>}
+                  {selected.address && <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 6 }}>📍 {selected.address}</div>}
                 </div>
 
-                {/* Credit status */}
-                <div style={{ background: 'var(--subtle-bg)', borderRadius: 6, padding: '12px 16px', textAlign: 'right', minWidth: 160 }}>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', fontWeight: 600 }}>CRÉDITO DISPONIBLE</div>
-                  <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 22, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums', marginTop: 4 }}>
-                    {fmt(selected.credit_limit - selected.current_balance)}
-                  </div>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>de {fmt(selected.credit_limit)} límite</div>
-                  {/* Bar */}
-                  <div style={{ marginTop: 8, height: 4, borderRadius: 2, background: 'var(--border)', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${Math.min(100, selected.credit_limit > 0 ? (selected.current_balance / selected.credit_limit * 100) : 0)}%`, background: selected.current_balance > selected.credit_limit * 0.8 ? 'var(--color-danger)' : 'var(--corsa-green)', borderRadius: 2 }}/>
-                  </div>
-                </div>
+                {/* El bloque de crédito disponible se retira: hoy las flotillas
+                    pagan al momento. Las columnas de corporate_accounts siguen
+                    ahí para cuando se habilite el crédito. */}
               </div>
 
               {/* Special prices */}
-              {(selected.elite_price_s || selected.elite_price_m || selected.elite_price_l) && (
+              {(selected.elite_price_s || selected.elite_price_m || selected.elite_price_l || selected.aspirado_enabled) && (
                 <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--corsa-orange)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Precio especial ÉLITE</div>
-                  <div style={{ display: 'flex', gap: 16 }}>
-                    {[['S · Pequeños', selected.elite_price_s], ['M · Medianos', selected.elite_price_m], ['L · Grandes', selected.elite_price_l]].map(([label, price]) => (
-                      <div key={String(label)} style={{ textAlign: 'center' }}>
-                        <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 22, color: 'var(--corsa-orange)', fontVariantNumeric: 'tabular-nums' }}>
-                          {price ? `$${price}` : '—'}
+                  <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                    {/* Con precio único los tres tamaños coinciden: mostrar tres
+                        veces la misma cifra sugeriría una tarifa escalonada que
+                        no existe. */}
+                    {(selected.elite_price_s === selected.elite_price_m
+                      && selected.elite_price_m === selected.elite_price_l)
+                      ? (
+                        <div style={{ textAlign: 'center' }}>
+                          <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 22, color: 'var(--corsa-orange)', fontVariantNumeric: 'tabular-nums' }}>
+                            {selected.elite_price_s != null ? `$${selected.elite_price_s}` : '—'}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Cualquier tamaño</div>
                         </div>
-                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{label}</div>
+                      )
+                      : [['S · Pequeños', selected.elite_price_s], ['M · Medianos', selected.elite_price_m], ['L · Grandes', selected.elite_price_l]].map(([label, price]) => (
+                        <div key={String(label)} style={{ textAlign: 'center' }}>
+                          <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 22, color: 'var(--corsa-orange)', fontVariantNumeric: 'tabular-nums' }}>
+                            {price ? `$${price}` : '—'}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{label}</div>
+                        </div>
+                      ))}
+
+                    {selected.aspirado_enabled && (
+                      <div style={{ textAlign: 'center', paddingLeft: 16, borderLeft: '1px solid var(--border)' }}>
+                        <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 22, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+                          {selected.aspirado_price != null ? `$${selected.aspirado_price}` : '—'}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Aspirado · cualquier tamaño</div>
                       </div>
-                    ))}
+                    )}
                   </div>
                 </div>
               )}
