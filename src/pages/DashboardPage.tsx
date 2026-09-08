@@ -244,7 +244,7 @@ function Heatmap({ rows }: { rows: { label: string; cells: HourCell[] }[] }) {
       {tooltip && (
         <div style={{ marginTop: 10, fontSize: 12.5, color: 'var(--text-secondary)', textAlign: 'center' }}>
           <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{tooltip.label} {tooltip.hour}</span>
-          {' — '}{tooltip.count} servicios estimados
+          {' — '}{tooltip.count} {tooltip.count === 1 ? 'servicio' : 'servicios'}
         </div>
       )}
 
@@ -457,6 +457,20 @@ export function DashboardPage() {
   const totalRevenueSvc = serviceKpis.reduce((s, k) => s + k.revenue, 0)
   const maxCount = Math.max(...serviceKpis.map(s => s.count), 1)
 
+  // El pico salía escrito a mano ("Pico: 11am–12pm · Sábado"). Ahora se deriva
+  // de las celdas reales; sin ventas no se afirma nada.
+  const picoLabel = (() => {
+    let mejor: { dia: string; hora: string; count: number } | null = null
+    for (const row of heatmapRows) {
+      for (const cell of row.cells) {
+        if (cell.count > 0 && (!mejor || cell.count > mejor.count)) {
+          mejor = { dia: row.label, hora: cell.hour, count: cell.count }
+        }
+      }
+    }
+    return mejor ? `Pico: ${mejor.hora} · ${mejor.dia} (${mejor.count} servicios)` : null
+  })()
+
   return (
     <div className="page-inner">
 
@@ -567,21 +581,20 @@ export function DashboardPage() {
 
       </div>
 
-      {/* ── Mapa de calor ── */}
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '18px 20px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-          <div>
-            <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 17, color: 'var(--text-primary)' }}>
-              Mapa de calor · servicios por hora
-            </div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 3 }}>
-              Pasa el cursor sobre cada celda para ver el detalle estimado
-            </div>
+      {/* ── Mapa de calor ──
+          Acotado a media pantalla: las celdas usan aspect-ratio 1, así que a
+          ancho completo 13 columnas × 7 filas ocupaban un bloque enorme sin
+          aportar más información. */}
+      <div style={{
+        background: 'var(--surface)', border: '1px solid var(--border)',
+        borderRadius: 6, padding: '16px 18px', maxWidth: 560,
+      }}>
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 15, color: 'var(--text-primary)' }}>
+            Mapa de calor · servicios por hora
           </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 12, color: 'var(--text-secondary)', background: 'var(--subtle-bg)', padding: '4px 8px', borderRadius: 4 }}>
-              Pico: 11am–12pm · Sábado
-            </span>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+            {picoLabel ?? 'Sin ventas registradas todavía'}
           </div>
         </div>
         <Heatmap rows={heatmapRows} />
