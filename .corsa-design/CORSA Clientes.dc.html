@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+*{box-sizing:border-box;}
+body{margin:0;}
+a{color:#023530;text-decoration:underline;text-decoration-color:rgba(2,53,48,0.35);text-underline-offset:2px;}
+a:hover{color:#FF6A28;}
+::selection{background:#FF6A28;color:#ffffff;}
+input:focus-visible{outline:2px solid #FF6A28;outline-offset:1px;}
+</style>
+</helmet>
+<div data-screen-label="Clientes" style="display:flex;min-height:100vh;background:{{ pageBg }};font-family:'IBM Plex Sans',sans-serif;color:{{ textPrimary }}">
+
+  <aside style="width:240px;min-width:240px;background:#023530;color:#FFFFFF;display:flex;flex-direction:column;padding:20px 16px;gap:22px">
+    <div style="display:flex;align-items:center;gap:10px;padding:4px 4px 8px">
+      <svg viewBox="0 0 40 24" width="34" height="20" fill="none"><rect x="1" y="4" width="20" height="16" rx="8" transform="rotate(-18 11 12)" stroke="#FFFFFF" stroke-width="2.4"/><rect x="19" y="4" width="20" height="16" rx="8" transform="rotate(-18 29 12)" stroke="#FF6A28" stroke-width="2.4"/></svg>
+      <span style="font-family:'Archivo',sans-serif;font-weight:800;font-size:20px;letter-spacing:0.5px">CORSA</span>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.5);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.8)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="7" width="20" height="13" rx="1.5"/><path d="M6 7V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
+        <span style="font-size:14px;font-weight:500">Caja</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.5);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.8)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        <span style="font-size:14px;font-weight:500">Patio</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;background:rgba(255,255,255,0.12);border-left:3px solid #FF6A28;color:#FFFFFF">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF6A28" stroke-width="1.8"><line x1="4" y1="20" x2="4" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="20" y1="20" x2="20" y2="14"/></svg>
+        <span style="font-size:14px;font-weight:600">Administración</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.5);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.8)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <span style="font-size:14px;font-weight:500">Contabilidad</span>
+      </div>
+    </div>
+
+    <div style="height:1px;background:rgba(255,255,255,0.12);margin:2px 0"></div>
+
+    <div style="display:flex;flex-direction:column;gap:2px">
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.62);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:#FFFFFF">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="4" y1="20" x2="4" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="20" y1="20" x2="20" y2="14"/></svg>
+        <span style="font-size:14px">Resumen del día</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;background:rgba(255,255,255,0.14)">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span style="font-size:14px;font-weight:600;color:#FFFFFF">Clientes</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.62);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:#FFFFFF">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
+        <span style="font-size:14px">Inteligencia de negocio</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.62);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:#FFFFFF">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <span style="font-size:14px">Cuentas por cobrar</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.62);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:#FFFFFF">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <span style="font-size:14px">Cuentas por pagar</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.62);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:#FFFFFF">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="1" y="7" width="14" height="10"/><path d="M15 10h4l3 3v4h-7z"/><circle cx="6" cy="18" r="1.6"/><circle cx="17.5" cy="18" r="1.6"/></svg>
+        <span style="font-size:14px">Flotillas corporativas</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.62);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:#FFFFFF">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="5"/><polyline points="8.5 13 7 22 12 19 17 22 15.5 13"/></svg>
+        <span style="font-size:14px">Membresías</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.62);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:#FFFFFF">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span style="font-size:14px">Configuración</span>
+      </div>
+    </div>
+
+    <div style="flex:1"></div>
+
+    <div onClick="{{ toggleTheme }}" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:6px;background:rgba(255,255,255,0.06)" style-hover="background:rgba(255,255,255,0.1)" style-focus="outline:2px solid #FF6A28;outline-offset:2px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.9" y1="4.9" x2="6.3" y2="6.3"/><line x1="17.7" y1="17.7" x2="19.1" y2="19.1"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="4.9" y1="19.1" x2="6.3" y2="17.7"/><line x1="17.7" y1="6.3" x2="19.1" y2="4.9"/></svg>
+      <span style="font-size:13px;color:rgba(255,255,255,0.85);flex:1">Turno {{ turnoLabel }}</span>
+      <div style="width:30px;height:16px;border-radius:8px;background:rgba(255,255,255,0.25);position:relative">
+        <div style="width:12px;height:12px;border-radius:50%;background:#FF6A28;position:absolute;top:2px;left:{{ toggleDotLeft }}px;transition:left 0.15s ease"></div>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 4px">
+      <div style="width:32px;height:32px;border-radius:6px;background:#0B4A42;display:flex;align-items:center;justify-content:center;font-family:'Archivo',sans-serif;font-weight:700;font-size:13px">MC</div>
+      <div style="min-width:0">
+        <div style="font-size:13px;font-weight:600;color:#FFFFFF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">María Elena Cortez</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.55)">Administradora · Escalón</div>
+      </div>
+    </div>
+  </aside>
+
+  <div style="flex:1;min-width:0;padding:32px 40px 48px;display:flex;flex-direction:column;gap:18px">
+
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+      <div>
+        <h1 style="margin:0;font-family:'Archivo',sans-serif;font-weight:700;font-size:26px;color:{{ textPrimary }}">Clientes</h1>
+        <div style="margin-top:4px;font-size:13.5px;color:{{ textSecondary }}">{{ totalClients }} clientes · {{ totalVehicles }} vehículos registrados</div>
+      </div>
+      <div style="position:relative;border-radius:6px;overflow:hidden;clip-path:polygon(0 0, 100% 0, 100% 100%, 16px 100%, 0 calc(100% - 16px))">
+        <div style="position:absolute;bottom:0;left:0;width:16px;height:16px;background:#023530;clip-path:polygon(0 100%, 100% 100%, 0 0)"></div>
+        <div onClick="{{ openNew }}" style="background:#FF6A28;color:#FFFFFF;padding:11px 18px;font-weight:600;font-size:14px;cursor:pointer" style-hover="background:#E85A1C">+ Nuevo cliente</div>
+      </div>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <sc-for list="{{ filters }}" as="f" hint-placeholder-count="5">
+          <div onClick="{{ f.select }}" style="padding:7px 13px;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer;background:{{ f.bg }};color:{{ f.color }};border:1px solid {{ f.borderColor }}">{{ f.label }}</div>
+        </sc-for>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;background:{{ surface }};border:1px solid {{ border }};border-radius:6px;padding:8px 12px;min-width:260px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{{ textSecondary }}" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input value="{{ search }}" onChange="{{ onSearchChange }}" placeholder="Buscar por nombre, placa o DUI" style="border:none;outline:none;font-size:13.5px;flex:1;background:transparent;color:{{ textPrimary }};font-family:'IBM Plex Sans',sans-serif"></input>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">
+
+      <div style="flex:2 1 560px;min-width:480px;background:{{ surface }};border:1px solid {{ border }};border-radius:6px;overflow:hidden">
+        <div style="display:flex;padding:10px 16px;border-bottom:1px solid {{ border }};font-size:11.5px;font-weight:600;color:{{ textSecondary }}">
+          <div style="flex:2.2">Cliente</div>
+          <div style="flex:1.6">Contacto</div>
+          <div style="flex:0.8;text-align:center">Vehículos</div>
+          <div style="flex:1">Última visita</div>
+          <div style="flex:1.3">Membresía</div>
+        </div>
+        <sc-for list="{{ filteredClients }}" as="c" hint-placeholder-count="6">
+          <div onClick="{{ c.select }}" style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid {{ border }};cursor:pointer;background:{{ c.rowBg }}" style-hover="background:{{ subtleBg }}">
+            <div style="flex:2.2;min-width:0">
+              <div style="font-size:13.5px;font-weight:600;color:{{ textPrimary }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.name }}</div>
+              <div style="font-size:11.5px;color:{{ textSecondary }};margin-top:2px">{{ c.segmentLabel }}</div>
+            </div>
+            <div style="flex:1.6;min-width:0">
+              <div style="font-size:12.5px;color:{{ textPrimary }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.email }}</div>
+              <div style="font-size:12px;color:{{ textSecondary }}">{{ c.phone }}</div>
+            </div>
+            <div style="flex:0.8;text-align:center;font-size:13px;font-weight:600;color:{{ textPrimary }}">{{ c.vehicleCount }}</div>
+            <div style="flex:1;font-size:12.5px;color:{{ textSecondary }}">{{ c.lastVisitText }}</div>
+            <div style="flex:1.3">
+              <span style="font-size:11.5px;font-weight:600;color:{{ c.membershipColor }};background:{{ c.membershipTint }};padding:3px 8px;border-radius:4px">{{ c.membershipLabel }}</span>
+            </div>
+          </div>
+        </sc-for>
+        <sc-if value="{{ noResults }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:36px 20px;text-align:center">
+            <div style="font-size:14px;font-weight:600;color:{{ textPrimary }}">No encontramos clientes con esos datos</div>
+            <div style="font-size:13px;color:{{ textSecondary }};margin-top:6px">Probá con el nombre completo, el DUI o la placa del vehículo.</div>
+          </div>
+        </sc-if>
+      </div>
+
+      <sc-if value="{{ panelOpen }}" hint-placeholder-val="{{ true }}">
+        <div style="flex:1 1 340px;min-width:300px;max-width:380px;background:{{ surface }};border:1px solid {{ border }};border-radius:6px;padding:18px;display:flex;flex-direction:column;gap:14px">
+
+          <sc-if value="{{ isViewPanel }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start">
+              <div>
+                <div style="font-size:16px;font-weight:700;color:{{ textPrimary }}">{{ selName }}</div>
+                <div style="font-size:12px;color:{{ textSecondary }}">{{ selIdLine }}</div>
+              </div>
+              <div onClick="{{ closePanel }}" style="cursor:pointer;color:{{ textSecondary }};font-size:18px;line-height:1;padding:2px">×</div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <input value="{{ selEmail }}" onChange="{{ onEmailChange }}" style="border:1px solid {{ border }};border-radius:5px;padding:8px 10px;font-size:13px;color:{{ textPrimary }};font-family:'IBM Plex Sans',sans-serif;background:{{ pageBg }}"></input>
+              <input value="{{ selPhone }}" onChange="{{ onPhoneChange }}" style="border:1px solid {{ border }};border-radius:5px;padding:8px 10px;font-size:13px;color:{{ textPrimary }};font-family:'IBM Plex Sans',sans-serif;background:{{ pageBg }}"></input>
+            </div>
+
+            <div style="font-size:12.5px;color:{{ textSecondary }}">{{ selVisits }} visitas · US${{ selAvgSpend }} promedio acumulado · última visita {{ selLastVisitText }}</div>
+
+            <div style="height:1px;background:{{ border }}"></div>
+
+            <div>
+              <div style="font-size:12.5px;font-weight:600;color:{{ textSecondary }};margin-bottom:8px">Vehículos</div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <sc-for list="{{ selVehicles }}" as="v" hint-placeholder-count="1">
+                  <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;background:{{ pageBg }};border-radius:5px">
+                    <span style="font-size:13px;font-weight:600;color:{{ textPrimary }};font-variant-numeric:tabular-nums">{{ v.plate }}</span>
+                    <span style="font-size:12px;color:{{ textSecondary }}">{{ v.make }}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display:flex;gap:6px;margin-top:8px">
+                <input value="{{ newVehiclePlate }}" onChange="{{ onNewPlateChange }}" placeholder="Placa (P 123-456)" style="flex:1;border:1px solid {{ border }};border-radius:5px;padding:7px 9px;font-size:12.5px;color:{{ textPrimary }};font-family:'IBM Plex Sans',sans-serif;background:{{ pageBg }}"></input>
+                <input value="{{ newVehicleMake }}" onChange="{{ onNewMakeChange }}" placeholder="Marca / modelo" style="flex:1;border:1px solid {{ border }};border-radius:5px;padding:7px 9px;font-size:12.5px;color:{{ textPrimary }};font-family:'IBM Plex Sans',sans-serif;background:{{ pageBg }}"></input>
+              </div>
+              <div onClick="{{ addVehicle }}" style="margin-top:6px;text-align:center;font-size:12.5px;font-weight:600;color:#023530;border:1px solid {{ border }};border-radius:5px;padding:7px;cursor:pointer" style-hover="background:{{ subtleBg }}">Agregar vehículo</div>
+
+              <sc-if value="{{ hasConflict }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:8px;display:flex;gap:8px;align-items:flex-start;background:#FBE7E7;border:1px solid #E24B4B;border-radius:5px;padding:10px">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B23232" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  <div style="flex:1">
+                    <div style="font-size:12px;color:#8C2626">La placa {{ conflictPlate }} ya está registrada a nombre de {{ conflictOwnerName }}.</div>
+                    <div style="display:flex;gap:10px;margin-top:6px">
+                      <a href="#" onClick="{{ confirmTransfer }}" style="font-size:12px;font-weight:600;color:#8C2626">Transferir a este cliente</a>
+                      <a href="#" onClick="{{ cancelConflict }}" style="font-size:12px;color:#8C2626">Cancelar</a>
+                    </div>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+
+            <div style="height:1px;background:{{ border }}"></div>
+
+            <div>
+              <div style="font-size:12.5px;font-weight:600;color:{{ textSecondary }};margin-bottom:8px">Membresía</div>
+              <sc-if value="{{ selHasMembership }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:5px;background:{{ selMembershipTint }}">
+                  <div style="width:8px;height:8px;border-radius:50%;background:{{ selMembershipColor }};flex-shrink:0"></div>
+                  <div style="font-size:12.5px;font-weight:600;color:{{ selMembershipColor }}">{{ selMembershipPlan }}</div>
+                </div>
+              </sc-if>
+              <sc-if value="{{ selNoMembership }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex;flex-direction:column;gap:6px">
+                  <sc-for list="{{ plans }}" as="p" hint-placeholder-count="3">
+                    <div onClick="{{ p.select }}" style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border:1px solid {{ border }};border-radius:5px;cursor:pointer" style-hover="background:{{ subtleBg }}">
+                      <div>
+                        <div style="font-size:12.5px;font-weight:600;color:{{ textPrimary }}">{{ p.name }}</div>
+                        <div style="font-size:11px;color:{{ textSecondary }}">{{ p.detail }}</div>
+                      </div>
+                      <div style="font-size:12.5px;font-weight:700;color:{{ textPrimary }};font-variant-numeric:tabular-nums">US${{ p.priceText }}/mes</div>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isNewPanel }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div style="font-size:16px;font-weight:700;color:{{ textPrimary }}">Nuevo cliente</div>
+              <div onClick="{{ closePanel }}" style="cursor:pointer;color:{{ textSecondary }};font-size:18px;line-height:1;padding:2px">×</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <input value="{{ newClientName }}" onChange="{{ onNewClientNameChange }}" placeholder="Nombre completo o razón social" style="border:1px solid {{ border }};border-radius:5px;padding:9px 10px;font-size:13px;color:{{ textPrimary }};font-family:'IBM Plex Sans',sans-serif;background:{{ pageBg }}"></input>
+              <input value="{{ newClientEmail }}" onChange="{{ onNewClientEmailChange }}" placeholder="Correo" style="border:1px solid {{ border }};border-radius:5px;padding:9px 10px;font-size:13px;color:{{ textPrimary }};font-family:'IBM Plex Sans',sans-serif;background:{{ pageBg }}"></input>
+              <input value="{{ newClientPhone }}" onChange="{{ onNewClientPhoneChange }}" placeholder="Teléfono" style="border:1px solid {{ border }};border-radius:5px;padding:9px 10px;font-size:13px;color:{{ textPrimary }};font-family:'IBM Plex Sans',sans-serif;background:{{ pageBg }}"></input>
+            </div>
+            <div style="font-size:11.5px;color:{{ textSecondary }}">Podrás registrar sus vehículos y asociar una membresía después de guardar.</div>
+            <div onClick="{{ saveNewClient }}" style="text-align:center;font-size:13.5px;font-weight:700;color:#FFFFFF;background:#023530;border-radius:5px;padding:10px;cursor:pointer" style-hover="background:#0B4A42">Guardar cliente</div>
+          </sc-if>
+
+        </div>
+      </sc-if>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;$preview&quot;: {&quot;width&quot;: 1440, &quot;height&quot;: 1000},
+  &quot;theme&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;light&quot;, &quot;options&quot;: [&quot;light&quot;, &quot;dark&quot;], &quot;tsType&quot;: &quot;'light'|'dark'&quot;, &quot;section&quot;: &quot;Apariencia&quot;}
+}">
+const SAMPLE_CLIENTS = [
+  { id: 'c1', type: 'persona', name: 'Carlos Alberto Mejía', email: 'carlos.mejia@gmail.com', phone: '7012-3456', idLine: 'DUI 03245678-9', vehicles: [{ plate: 'P 812-004', make: 'Toyota Hilux' }], visits: 14, lastVisitDays: 6, avgSpend: 284.00, membership: { status: 'activa', plan: 'Ilimitado Pickup' }, segment: 'frecuente' },
+  { id: 'c2', type: 'persona', name: 'Ana Beatriz Menjívar', email: 'ana.menjivar@hotmail.com', phone: '7788-2210', idLine: 'DUI 04981123-4', vehicles: [{ plate: 'P 118-560', make: 'Kia Rio' }], visits: 9, lastVisitDays: 2, avgSpend: 162.00, membership: { status: 'por_vencer', plan: 'Ilimitado Sedán' }, segment: 'frecuente' },
+  { id: 'c3', type: 'empresa', name: 'Corporación Café Quezaltepeque, S.A. de C.V.', email: 'administracion@cafequeza.com.sv', phone: '2245-9080', idLine: 'NIT 0614-070511-102-3 · NRC 145678-2', vehicles: [{ plate: 'C 044-812', make: 'Nissan Frontier' }, { plate: 'C 118-320', make: 'Toyota Hiace' }], visits: 41, lastVisitDays: 1, avgSpend: 612.00, membership: { status: 'activa', plan: 'Flotilla Corporativa' }, segment: 'corporativo' },
+  { id: 'c4', type: 'persona', name: 'Rodrigo Alfredo Panameño', email: 'r.panameno@yahoo.com', phone: '7899-4432', idLine: 'DUI 06712340-1', vehicles: [{ plate: 'P 205-774', make: 'Nissan Sentra' }], visits: 4, lastVisitDays: 21, avgSpend: 48.00, membership: { status: 'ninguna' }, segment: 'riesgo' },
+  { id: 'c5', type: 'persona', name: 'Karla Patricia Handal', email: 'karla.handal@gmail.com', phone: '7654-1198', idLine: 'DUI 05123098-7', vehicles: [{ plate: 'P 502-337', make: 'Hyundai Tucson' }, { plate: 'P 671-004', make: 'Suzuki Swift' }], visits: 11, lastVisitDays: 3, avgSpend: 298.00, membership: { status: 'activa', plan: 'Ilimitado SUV' }, segment: 'frecuente' },
+  { id: 'c6', type: 'persona', name: 'Óscar Iván Salazar', email: 'oscar.salazar92@gmail.com', phone: '7211-6685', idLine: 'DUI 07456812-3', vehicles: [{ plate: 'P 348-921', make: 'Toyota Hilux' }], visits: 1, lastVisitDays: 5, avgSpend: 12.00, membership: { status: 'ninguna' }, segment: 'nuevo' },
+  { id: 'c7', type: 'empresa', name: 'Distribuidora La Central, S.A. de C.V.', email: 'compras@lacentral.com.sv', phone: '2298-7744', idLine: 'NIT 0614-220814-103-5 · NRC 167890-1', vehicles: [{ plate: 'C 227-115', make: 'Isuzu NPR' }, { plate: 'C 227-116', make: 'Isuzu NPR' }], visits: 18, lastVisitDays: 4, avgSpend: 410.00, membership: { status: 'activa', plan: 'Flotilla Pickup' }, segment: 'corporativo' },
+  { id: 'c8', type: 'persona', name: 'Marta Elena Rivas', email: 'marta.rivas@outlook.com', phone: '7433-8820', idLine: 'DUI 02876543-2', vehicles: [{ plate: 'P 990-214', make: 'Chevrolet Spark' }], visits: 2, lastVisitDays: 48, avgSpend: 22.00, membership: { status: 'ninguna' }, segment: 'riesgo' },
+];
+const PLAN_DEFS = [
+  { id: 'basico', name: 'Básico', price: 25, detail: '4 lavados básicos al mes' },
+  { id: 'ilimitado_sedan', name: 'Ilimitado Sedán', price: 35, detail: 'Lavados ilimitados, 1 sedán' },
+  { id: 'ilimitado_suv', name: 'Ilimitado SUV / Pickup', price: 45, detail: 'Lavados ilimitados, 1 SUV o pickup' },
+];
+
+class Component extends DCLogic {
+  state = {
+    dark: this.props.theme === 'dark',
+    clients: SAMPLE_CLIENTS,
+    activeFilter: 'todos',
+    search: '',
+    panel: { type: 'view', clientId: 'c1' },
+    newVehiclePlate: '', newVehicleMake: '',
+    conflict: null,
+    newClientName: '', newClientEmail: '', newClientPhone: '',
+  };
+
+  toggleTheme = () => this.setState(s => ({ dark: !s.dark }));
+  setFilter = (id) => this.setState({ activeFilter: id });
+  onSearchChange = (e) => this.setState({ search: e.target.value });
+  selectClient = (id) => this.setState({ panel: { type: 'view', clientId: id }, conflict: null, newVehiclePlate: '', newVehicleMake: '' });
+  openNew = () => this.setState({ panel: { type: 'new' }, newClientName: '', newClientEmail: '', newClientPhone: '' });
+  closePanel = () => this.setState({ panel: null, conflict: null });
+
+  onEmailChange = (e) => this.updateSelected({ email: e.target.value });
+  onPhoneChange = (e) => this.updateSelected({ phone: e.target.value });
+  updateSelected(patch) {
+    const id = this.state.panel && this.state.panel.clientId;
+    this.setState(s => ({ clients: s.clients.map(c => c.id === id ? { ...c, ...patch } : c) }));
+  }
+
+  onNewPlateChange = (e) => this.setState({ newVehiclePlate: e.target.value });
+  onNewMakeChange = (e) => this.setState({ newVehicleMake: e.target.value });
+  addVehicle = () => {
+    const plate = this.state.newVehiclePlate.trim();
+    if (!plate) return;
+    const owner = this.state.clients.find(c => c.vehicles.some(v => v.plate.toLowerCase() === plate.toLowerCase()));
+    const currentId = this.state.panel.clientId;
+    if (owner && owner.id !== currentId) {
+      this.setState({ conflict: { plate, ownerId: owner.id, ownerName: owner.name, make: this.state.newVehicleMake || 'Vehículo' } });
+      return;
+    }
+    this.setState(s => ({
+      clients: s.clients.map(c => c.id === currentId ? { ...c, vehicles: [...c.vehicles, { plate, make: s.newVehicleMake || 'Sin especificar' }] } : c),
+      newVehiclePlate: '', newVehicleMake: '',
+    }));
+  };
+  confirmTransfer = () => {
+    const { plate, ownerId, make } = this.state.conflict;
+    const currentId = this.state.panel.clientId;
+    this.setState(s => ({
+      clients: s.clients.map(c => {
+        if (c.id === ownerId) return { ...c, vehicles: c.vehicles.filter(v => v.plate.toLowerCase() !== plate.toLowerCase()) };
+        if (c.id === currentId) return { ...c, vehicles: [...c.vehicles, { plate, make }] };
+        return c;
+      }),
+      conflict: null, newVehiclePlate: '', newVehicleMake: '',
+    }));
+  };
+  cancelConflict = () => this.setState({ conflict: null });
+
+  selectPlan = (planId) => {
+    const plan = PLAN_DEFS.find(p => p.id === planId);
+    const id = this.state.panel.clientId;
+    this.setState(s => ({ clients: s.clients.map(c => c.id === id ? { ...c, membership: { status: 'activa', plan: plan.name } } : c) }));
+  };
+
+  onNewClientNameChange = (e) => this.setState({ newClientName: e.target.value });
+  onNewClientEmailChange = (e) => this.setState({ newClientEmail: e.target.value });
+  onNewClientPhoneChange = (e) => this.setState({ newClientPhone: e.target.value });
+  saveNewClient = () => {
+    if (!this.state.newClientName.trim()) return;
+    const id = 'c' + (this.state.clients.length + 1) + '_' + Date.now();
+    const client = {
+      id, type: 'persona', name: this.state.newClientName, email: this.state.newClientEmail,
+      phone: this.state.newClientPhone, idLine: 'Sin documento registrado', vehicles: [],
+      visits: 0, lastVisitDays: 0, avgSpend: 0, membership: { status: 'ninguna' }, segment: 'nuevo',
+    };
+    this.setState(s => ({ clients: [client, ...s.clients], panel: { type: 'view', clientId: id } }));
+  };
+
+  renderVals() {
+    const dark = this.state.dark;
+    const pageBg = dark ? '#0B211D' : '#F3F6F5';
+    const surface = dark ? '#0F2A25' : '#FFFFFF';
+    const border = dark ? '#1D4038' : '#DCE4E1';
+    const textPrimary = dark ? '#F2F7F5' : '#10201C';
+    const textSecondary = dark ? '#9FBFB6' : '#52655F';
+    const subtleBg = dark ? '#123128' : '#F0F5F3';
+
+    const filterDefs = [
+      { id: 'todos', label: 'Todos' }, { id: 'frecuente', label: 'Frecuentes' },
+      { id: 'riesgo', label: 'En riesgo de fuga' }, { id: 'nuevo', label: 'Nuevos' },
+      { id: 'corporativo', label: 'Corporativos' },
+    ];
+    const filters = filterDefs.map(f => {
+      const active = f.id === this.state.activeFilter;
+      return { ...f, select: () => this.setFilter(f.id), bg: active ? '#023530' : surface, color: active ? '#FFFFFF' : textPrimary, borderColor: active ? '#023530' : border };
+    });
+
+    const segmentLabels = { frecuente: 'Cliente frecuente', riesgo: 'En riesgo de fuga', nuevo: 'Cliente nuevo', corporativo: 'Cuenta corporativa' };
+    const membershipStyles = {
+      activa: { color: '#157A52', tint: '#E4F5EE', label: (p) => p },
+      por_vencer: { color: '#9A6510', tint: '#FDF1DC', label: (p) => p + ' · por vencer' },
+      ninguna: { color: textSecondary, tint: subtleBg, label: () => 'Sin membresía' },
+    };
+    const search = this.state.search.trim().toLowerCase();
+    const filteredClients = this.state.clients
+      .filter(c => this.state.activeFilter === 'todos' || c.segment === this.state.activeFilter)
+      .filter(c => !search || c.name.toLowerCase().includes(search) || (c.idLine || '').toLowerCase().includes(search) || c.vehicles.some(v => v.plate.toLowerCase().includes(search)))
+      .map(c => {
+        const ms = membershipStyles[c.membership.status];
+        return {
+          ...c, select: () => this.selectClient(c.id),
+          segmentLabel: segmentLabels[c.segment],
+          vehicleCount: c.vehicles.length,
+          lastVisitText: c.lastVisitDays === 0 ? 'Sin visitas aún' : c.lastVisitDays === 1 ? 'hace 1 día' : `hace ${c.lastVisitDays} días`,
+          membershipColor: ms.color, membershipTint: ms.tint, membershipLabel: ms.label(c.membership.plan),
+          rowBg: this.state.panel && this.state.panel.clientId === c.id ? subtleBg : 'transparent',
+        };
+      });
+
+    const panel = this.state.panel;
+    const isViewPanel = !!panel && panel.type === 'view';
+    const isNewPanel = !!panel && panel.type === 'new';
+    let sel = {};
+    if (isViewPanel) {
+      const c = this.state.clients.find(x => x.id === panel.clientId) || this.state.clients[0];
+      const ms = membershipStyles[c.membership.status];
+      sel = {
+        selName: c.name, selIdLine: c.idLine, selEmail: c.email, selPhone: c.phone,
+        selVisits: c.visits, selAvgSpend: c.avgSpend.toFixed(2),
+        selLastVisitText: c.lastVisitDays === 0 ? 'sin visitas aún' : c.lastVisitDays === 1 ? 'hace 1 día' : `hace ${c.lastVisitDays} días`,
+        selVehicles: c.vehicles, selHasMembership: c.membership.status !== 'ninguna', selNoMembership: c.membership.status === 'ninguna',
+        selMembershipColor: ms.color, selMembershipTint: ms.tint, selMembershipPlan: ms.label(c.membership.plan),
+      };
+    }
+    const plans = PLAN_DEFS.map(p => ({ ...p, priceText: p.price.toFixed(2), select: () => this.selectPlan(p.id) }));
+
+    return {
+      dark, pageBg, surface, border, textPrimary, textSecondary, subtleBg,
+      toggleTheme: this.toggleTheme, turnoLabel: dark ? 'noche' : 'día', toggleDotLeft: dark ? 16 : 2,
+      totalClients: this.state.clients.length,
+      totalVehicles: this.state.clients.reduce((s, c) => s + c.vehicles.length, 0),
+      openNew: this.openNew, filters, search, onSearchChange: this.onSearchChange,
+      filteredClients, noResults: filteredClients.length === 0,
+      panelOpen: !!panel, isViewPanel, isNewPanel,
+      ...sel,
+      closePanel: this.closePanel, onEmailChange: this.onEmailChange, onPhoneChange: this.onPhoneChange,
+      newVehiclePlate: this.state.newVehiclePlate, newVehicleMake: this.state.newVehicleMake,
+      onNewPlateChange: this.onNewPlateChange, onNewMakeChange: this.onNewMakeChange, addVehicle: this.addVehicle,
+      hasConflict: !!this.state.conflict,
+      conflictPlate: this.state.conflict ? this.state.conflict.plate : '',
+      conflictOwnerName: this.state.conflict ? this.state.conflict.ownerName : '',
+      confirmTransfer: this.confirmTransfer, cancelConflict: this.cancelConflict,
+      plans,
+      newClientName: this.state.newClientName, newClientEmail: this.state.newClientEmail, newClientPhone: this.state.newClientPhone,
+      onNewClientNameChange: this.onNewClientNameChange, onNewClientEmailChange: this.onNewClientEmailChange, onNewClientPhoneChange: this.onNewClientPhoneChange,
+      saveNewClient: this.saveNewClient,
+    };
+  }
+}
+
+</script>
+</body>
+</html>

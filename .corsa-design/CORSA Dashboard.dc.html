@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+*{box-sizing:border-box;}
+body{margin:0;}
+a{color:#023530;text-decoration:underline;text-decoration-color:rgba(2,53,48,0.35);text-underline-offset:2px;}
+a:hover{color:#FF6A28;}
+::selection{background:#FF6A28;color:#ffffff;}
+</style>
+</helmet>
+<div data-screen-label="Dashboard del día" style="display:flex;min-height:100vh;background:{{ pageBg }};font-family:'IBM Plex Sans',sans-serif;color:{{ textPrimary }}">
+
+  <aside style="width:240px;min-width:240px;background:#023530;color:#FFFFFF;display:flex;flex-direction:column;padding:20px 16px;gap:22px">
+    <div style="display:flex;align-items:center;gap:10px;padding:4px 4px 8px">
+      <svg viewBox="0 0 40 24" width="34" height="20" fill="none"><rect x="1" y="4" width="20" height="16" rx="8" transform="rotate(-18 11 12)" stroke="#FFFFFF" stroke-width="2.4"/><rect x="19" y="4" width="20" height="16" rx="8" transform="rotate(-18 29 12)" stroke="#FF6A28" stroke-width="2.4"/></svg>
+      <span style="font-family:'Archivo',sans-serif;font-weight:800;font-size:20px;letter-spacing:0.5px">CORSA</span>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.5);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.8)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="7" width="20" height="13" rx="1.5"/><path d="M6 7V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
+        <span style="font-size:14px;font-weight:500">Caja</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.5);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.8)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        <span style="font-size:14px;font-weight:500">Patio</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;background:rgba(255,255,255,0.12);border-left:3px solid #FF6A28;color:#FFFFFF">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF6A28" stroke-width="1.8"><line x1="4" y1="20" x2="4" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="20" y1="20" x2="20" y2="14"/></svg>
+        <span style="font-size:14px;font-weight:600">Administración</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.5);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.8)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <span style="font-size:14px;font-weight:500">Contabilidad</span>
+      </div>
+    </div>
+
+    <div style="height:1px;background:rgba(255,255,255,0.12);margin:2px 0"></div>
+
+    <div style="display:flex;flex-direction:column;gap:2px">
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;background:rgba(255,255,255,0.14)">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="1.8"><line x1="4" y1="20" x2="4" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="20" y1="20" x2="20" y2="14"/></svg>
+        <span style="font-size:14px;font-weight:600;color:#FFFFFF">Resumen del día</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.62);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:#FFFFFF">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span style="font-size:14px">Clientes</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.62);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:#FFFFFF">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
+        <span style="font-size:14px">Inteligencia de negocio</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.62);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:#FFFFFF">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <span style="font-size:14px">Cuentas por cobrar</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.62);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:#FFFFFF">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <span style="font-size:14px">Cuentas por pagar</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.62);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:#FFFFFF">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="1" y="7" width="14" height="10"/><path d="M15 10h4l3 3v4h-7z"/><circle cx="6" cy="18" r="1.6"/><circle cx="17.5" cy="18" r="1.6"/></svg>
+        <span style="font-size:14px">Flotillas corporativas</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.62);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:#FFFFFF">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="5"/><polyline points="8.5 13 7 22 12 19 17 22 15.5 13"/></svg>
+        <span style="font-size:14px">Membresías</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.62);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:#FFFFFF">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span style="font-size:14px">Configuración</span>
+      </div>
+    </div>
+
+    <div style="flex:1"></div>
+
+    <div onClick="{{ toggleTheme }}" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:6px;background:rgba(255,255,255,0.06)" style-hover="background:rgba(255,255,255,0.1)" style-focus="outline:2px solid #FF6A28;outline-offset:2px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.9" y1="4.9" x2="6.3" y2="6.3"/><line x1="17.7" y1="17.7" x2="19.1" y2="19.1"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="4.9" y1="19.1" x2="6.3" y2="17.7"/><line x1="17.7" y1="6.3" x2="19.1" y2="4.9"/></svg>
+      <span style="font-size:13px;color:rgba(255,255,255,0.85);flex:1">Turno {{ turnoLabel }}</span>
+      <div style="width:30px;height:16px;border-radius:8px;background:rgba(255,255,255,0.25);position:relative">
+        <div style="width:12px;height:12px;border-radius:50%;background:#FF6A28;position:absolute;top:2px;left:{{ toggleDotLeft }}px;transition:left 0.15s ease"></div>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 4px">
+      <div style="width:32px;height:32px;border-radius:6px;background:#0B4A42;display:flex;align-items:center;justify-content:center;font-family:'Archivo',sans-serif;font-weight:700;font-size:13px">MC</div>
+      <div style="min-width:0">
+        <div style="font-size:13px;font-weight:600;color:#FFFFFF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">María Elena Cortez</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.55)">Administradora · Escalón</div>
+      </div>
+    </div>
+  </aside>
+
+  <div style="flex:1;min-width:0;padding:32px 40px 48px;display:flex;flex-direction:column;gap:22px">
+
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:24px;flex-wrap:wrap">
+      <div>
+        <h1 style="margin:0;font-family:'Archivo',sans-serif;font-weight:700;font-size:28px;color:{{ textPrimary }}">Hola, María Elena</h1>
+        <div style="margin-top:4px;font-size:14px;color:{{ textSecondary }}">Lunes 7 de septiembre de 2026 · Sucursal Escalón, San Salvador</div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:8px;background:{{ surface }};border:1px solid {{ border }};border-radius:6px;padding:9px 12px;min-width:260px">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="{{ textSecondary }}" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <span style="font-size:14px;color:{{ textSecondary }};flex:1">Buscar por placa… P 123-456</span>
+          <span style="font-size:11px;color:{{ textSecondary }};border:1px solid {{ border }};border-radius:4px;padding:2px 6px">F2</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;background:{{ surface }};border:1px solid {{ border }};border-radius:6px;padding:9px 12px;cursor:pointer;color:{{ textPrimary }};font-size:14px;font-weight:500">
+          Sucursal Escalón
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="{{ textPrimary }}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+      </div>
+    </div>
+
+    <sc-if value="{{ showCashAlert }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;align-items:flex-start;gap:12px;background:#FDF1DC;border:1px solid #F0A93A;border-radius:6px;padding:14px 16px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9A6510" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:14px;color:#7A5109">Diferencia sin justificar en el cierre de anoche</div>
+          <div style="font-size:13px;color:#8A6510;margin-top:2px">El corte de caja del turno de domingo (8:00 p.m.) quedó con una diferencia de -US$4.50 entre lo esperado y lo contado. Revísalo antes de abrir el turno de hoy.</div>
+        </div>
+        <a href="#" style="font-size:13px;font-weight:600;color:#7A5109;white-space:nowrap">Revisar cierre de caja</a>
+      </div>
+    </sc-if>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px">
+      <div style="position:relative;background:#023530;color:#FFFFFF;border-radius:6px;padding:20px;clip-path:polygon(0 0, calc(100% - 26px) 0, 100% 26px, 100% 100%, 0 100%);overflow:hidden">
+        <div style="position:absolute;top:0;right:0;width:26px;height:26px;background:#FF6A28;clip-path:polygon(100% 0, 100% 100%, 0 0)"></div>
+        <div style="font-size:14px;color:rgba(255,255,255,0.8)">Ventas de hoy</div>
+        <div style="margin-top:8px;font-family:'Archivo',sans-serif;font-weight:800;font-size:36px;font-variant-numeric:tabular-nums">{{ ventasHoy }}</div>
+        <div style="margin-top:8px;display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:600;color:#8FE3BE">
+          <span>▲</span><span>12% vs. ayer</span>
+        </div>
+      </div>
+
+      <div style="background:{{ surface }};border:1px solid {{ border }};border-radius:6px;padding:20px">
+        <div style="font-size:14px;color:{{ textSecondary }}">Vehículos atendidos</div>
+        <div style="margin-top:8px;display:flex;align-items:baseline;gap:6px">
+          <span style="font-family:'Archivo',sans-serif;font-weight:800;font-size:32px;font-variant-numeric:tabular-nums;color:{{ textPrimary }}">47</span>
+          <span style="font-size:13px;color:{{ textSecondary }}">/ meta 60</span>
+        </div>
+        <div style="margin-top:10px;height:6px;border-radius:3px;background:{{ border }};overflow:hidden">
+          <div style="height:100%;width:78%;background:#023530;border-radius:3px"></div>
+        </div>
+      </div>
+
+      <div style="background:{{ surface }};border:1px solid {{ border }};border-radius:6px;padding:20px">
+        <div style="font-size:14px;color:{{ textSecondary }}">Ticket promedio</div>
+        <div style="margin-top:8px;font-family:'Archivo',sans-serif;font-weight:800;font-size:32px;font-variant-numeric:tabular-nums;color:{{ textPrimary }}">US$27.61</div>
+        <div style="margin-top:8px;display:inline-flex;font-size:12px;font-weight:600;color:#157A52;background:#E4F5EE;padding:3px 8px;border-radius:4px">Sobre meta de US$25.00</div>
+      </div>
+
+      <div style="background:{{ surface }};border:1px solid {{ border }};border-radius:6px;padding:20px">
+        <div style="font-size:14px;color:{{ textSecondary }}">Efectivo en caja</div>
+        <div style="margin-top:8px;font-family:'Archivo',sans-serif;font-weight:800;font-size:32px;font-variant-numeric:tabular-nums;color:{{ textPrimary }}">US$612.75</div>
+        <div style="margin-top:8px;font-size:13px;color:{{ textSecondary }}">Turno actual · corte 2:00 p.m.</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:16px">
+      <div style="background:{{ surface }};border:1px solid {{ border }};border-radius:6px;padding:18px 20px;display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="font-family:'Archivo',sans-serif;font-weight:700;font-size:17px;color:{{ textPrimary }}">Operación ahora</div>
+          <a href="#" style="font-size:13px">Ver flujo completo</a>
+        </div>
+        <div style="display:flex;gap:12px">
+          <sc-for list="{{ machines }}" as="mq" hint-placeholder-count="2">
+            <div style="flex:1;border:1px solid {{ border }};border-left-width:4px;border-left-color:{{ mq.accentColor }};border-radius:5px;padding:12px">
+              <div style="font-size:11.5px;color:{{ textSecondary }};font-weight:600">Máquina {{ mq.id }}</div>
+              <sc-if value="{{ mq.isLibre }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:10px;font-size:13px;color:{{ textSecondary }}">Libre</div>
+              </sc-if>
+              <sc-if value="{{ mq.isOccupied }}" hint-placeholder-val="{{ true }}">
+                <div style="margin-top:4px;font-size:15px;font-weight:700;color:{{ textPrimary }};font-variant-numeric:tabular-nums">{{ mq.plate }}</div>
+                <div style="font-size:11.5px;color:{{ textSecondary }};margin-top:2px">{{ mq.vehicle }} · Programa {{ mq.programa }}</div>
+                <div style="margin-top:8px;display:inline-block;font-size:11px;font-weight:600;color:{{ mq.textColor }};background:{{ mq.tintColor }};padding:2px 7px;border-radius:4px">{{ mq.minutes }} min</div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <div style="font-size:12px;font-weight:600;color:{{ textSecondary }};margin-bottom:2px">Flujo de hoy</div>
+          <sc-for list="{{ flujoHoy }}" as="f" hint-placeholder-count="4">
+            <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid {{ border }}">
+              <div style="font-size:13px;font-weight:600;color:{{ textPrimary }};font-variant-numeric:tabular-nums;width:78px;flex-shrink:0">{{ f.plate }}</div>
+              <div style="font-size:12.5px;color:{{ textSecondary }};flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ f.vehicle }}</div>
+              <div style="font-size:11px;font-weight:600;color:{{ f.stageColor }};background:{{ f.stageTint }};padding:2px 7px;border-radius:4px;flex-shrink:0">{{ f.stage }}</div>
+              <div style="font-size:11px;color:{{ textSecondary }};width:64px;text-align:right;flex-shrink:0">{{ f.time }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="background:{{ surface }};border:1px solid {{ border }};border-radius:6px;padding:18px 20px;display:flex;flex-direction:column;gap:6px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <div style="font-family:'Archivo',sans-serif;font-weight:700;font-size:17px;color:{{ textPrimary }}">Membresías por vencer esta semana</div>
+          <span style="font-size:13px;font-weight:600;color:{{ textPrimary }};background:{{ subtleBg }};padding:4px 9px;border-radius:4px">{{ membershipCount }}</span>
+        </div>
+        <sc-for list="{{ memberships }}" as="m" hint-placeholder-count="5">
+          <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid {{ border }}">
+            <div style="width:30px;height:30px;border-radius:6px;background:{{ subtleBg }};color:{{ textPrimary }};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">{{ m.initials }}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13.5px;font-weight:600;color:{{ textPrimary }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.name }}</div>
+              <div style="font-size:12px;color:{{ textSecondary }}">{{ m.plan }}</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="font-size:12px;font-weight:700;color:{{ m.badgeColor }};background:{{ m.badgeTint }};padding:2px 7px;border-radius:4px;display:inline-block">{{ m.dias }} días</div>
+              <div style="font-size:11.5px;color:{{ textSecondary }};margin-top:3px">{{ m.fecha }}</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:16px">
+      <div style="background:{{ surface }};border:1px solid {{ border }};border-radius:6px;padding:18px 20px;display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <div style="font-family:'Archivo',sans-serif;font-weight:700;font-size:17px;color:{{ textPrimary }}">Saldo por cobrar</div>
+          <a href="#" style="font-size:13px">Ver cuentas por cobrar</a>
+        </div>
+        <div style="font-family:'Archivo',sans-serif;font-weight:800;font-size:28px;color:{{ textPrimary }};font-variant-numeric:tabular-nums">US$3,940.20</div>
+        <div style="display:flex;height:14px;border-radius:3px;overflow:hidden">
+          <sc-for list="{{ receivableBuckets }}" as="b" hint-placeholder-count="5">
+            <div style="height:100%;width:{{ b.pct }}%;background:{{ b.color }}"></div>
+          </sc-for>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <sc-for list="{{ receivableBuckets }}" as="b" hint-placeholder-count="5">
+            <div style="display:flex;align-items:center;gap:8px;font-size:13px">
+              <div style="width:8px;height:8px;border-radius:2px;background:{{ b.color }};flex-shrink:0"></div>
+              <div style="flex:1;color:{{ textSecondary }}">{{ b.label }}</div>
+              <div style="font-weight:600;color:{{ textPrimary }};font-variant-numeric:tabular-nums">{{ b.amountText }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="background:{{ surface }};border:1px solid {{ border }};border-radius:6px;padding:18px 20px;display:flex;flex-direction:column;gap:10px">
+        <div style="font-family:'Archivo',sans-serif;font-weight:700;font-size:17px;color:{{ textPrimary }}">Servicios vendidos hoy</div>
+        <sc-for list="{{ serviciosPorTipo }}" as="s" hint-placeholder-count="4">
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid {{ border }}">
+            <div style="flex:1">
+              <div style="font-size:13.5px;font-weight:600;color:{{ textPrimary }}">{{ s.label }}</div>
+              <div style="height:5px;border-radius:3px;background:{{ subtleBg }};margin-top:5px;overflow:hidden">
+                <div style="height:100%;width:{{ s.pct }}%;background:#023530"></div>
+              </div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="font-size:13.5px;font-weight:700;color:{{ textPrimary }};font-variant-numeric:tabular-nums">{{ s.count }}</div>
+              <div style="font-size:11px;color:{{ textSecondary }};font-variant-numeric:tabular-nums">{{ s.revenueText }}</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:16px">
+      <div style="background:{{ surface }};border:1px solid {{ border }};border-radius:6px;padding:18px 20px;display:flex;flex-direction:column;gap:10px">
+        <div style="font-family:'Archivo',sans-serif;font-weight:700;font-size:17px;color:{{ textPrimary }}">Servicios por día (últimos 7 días)</div>
+        <div style="display:flex;align-items:flex-end;gap:10px;height:150px;padding-top:6px">
+          <sc-for list="{{ serviciosPorDia }}" as="d" hint-placeholder-count="7">
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:6px;height:100%">
+              <div style="font-size:11px;font-weight:600;color:{{ textPrimary }};font-variant-numeric:tabular-nums">{{ d.count }}</div>
+              <div style="width:100%;max-width:30px;height:{{ d.pct }}%;background:{{ d.barColor }};border-radius:2px 2px 0 0"></div>
+              <div style="font-size:11px;color:{{ textSecondary }}">{{ d.label }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="background:{{ surface }};border:1px solid {{ border }};border-radius:6px;padding:18px 20px;display:flex;flex-direction:column;gap:10px">
+        <div style="font-family:'Archivo',sans-serif;font-weight:700;font-size:17px;color:{{ textPrimary }}">Mapa de calor · servicios por hora</div>
+        <div style="display:flex;flex-direction:column;gap:3px">
+          <sc-for list="{{ heatmapRows }}" as="row" hint-placeholder-count="7">
+            <div style="display:flex;align-items:center;gap:3px">
+              <div style="width:26px;font-size:10.5px;color:{{ textSecondary }};flex-shrink:0">{{ row.label }}</div>
+              <div style="display:flex;gap:2px;flex:1">
+                <sc-for list="{{ row.cells }}" as="cell" hint-placeholder-count="13">
+                  <div style="flex:1;aspect-ratio:1;border-radius:2px;background:{{ cell.color }}"></div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+          <div style="display:flex;align-items:center;gap:3px;margin-top:2px">
+            <div style="width:26px;flex-shrink:0"></div>
+            <div style="display:flex;gap:2px;flex:1">
+              <sc-for list="{{ salesByHour }}" as="h" hint-placeholder-count="13">
+                <div style="flex:1;text-align:center;font-size:9px;color:{{ textSecondary }}">{{ h.hour }}</div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;$preview&quot;: {&quot;width&quot;: 1440, &quot;height&quot;: 1000},
+  &quot;theme&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;light&quot;, &quot;options&quot;: [&quot;light&quot;, &quot;dark&quot;], &quot;tsType&quot;: &quot;'light'|'dark'&quot;, &quot;section&quot;: &quot;Apariencia&quot;},
+  &quot;showCashDiscrepancy&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Estados&quot;}
+}">
+class Component extends DCLogic {
+  state = { dark: this.props.theme === 'dark' };
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.theme !== this.props.theme) {
+      this.setState({ dark: this.props.theme === 'dark' });
+    }
+  }
+
+  toggleTheme = () => this.setState(s => ({ dark: !s.dark }));
+
+  renderVals() {
+    const dark = this.state.dark;
+    const pageBg = dark ? '#0B211D' : '#F3F6F5';
+    const surface = dark ? '#0F2A25' : '#FFFFFF';
+    const border = dark ? '#1D4038' : '#DCE4E1';
+    const textPrimary = dark ? '#F2F7F5' : '#10201C';
+    const textSecondary = dark ? '#9FBFB6' : '#52655F';
+    const subtleBg = dark ? '#123128' : '#F0F5F3';
+
+    const showCashAlert = this.props.showCashDiscrepancy ?? true;
+
+    const statusStyles = {
+      ok: { accentColor: '#1E9E6B', textColor: '#157A52', tintColor: '#E4F5EE' },
+      alerta: { accentColor: '#F0A93A', textColor: '#9A6510', tintColor: '#FDF1DC' },
+      critica: { accentColor: '#E24B4B', textColor: '#B23232', tintColor: '#FBE7E7' },
+      libre: { accentColor: border, textColor: textSecondary, tintColor: subtleBg },
+    };
+    const rawMachines = [
+      { id: 1, status: 'ok', plate: 'P 812-004', vehicle: 'Toyota Hilux', programa: 2, minutes: 6 },
+      { id: 2, status: 'libre' },
+    ];
+    const machines = rawMachines.map(m => ({
+      ...m,
+      isLibre: m.status === 'libre',
+      isOccupied: m.status !== 'libre',
+      ...statusStyles[m.status],
+    }));
+
+    const stageStyles = {
+      'En máquina': { stageColor: '#157A52', stageTint: '#E4F5EE' },
+      'Secado y detalle': { stageColor: '#9A6510', stageTint: '#FDF1DC' },
+      'Listo para entrega': { stageColor: '#023530', stageTint: subtleBg },
+      'Entregado': { stageColor: textSecondary, stageTint: subtleBg },
+    };
+    const flujoHoy = [
+      { plate: 'P 812-004', vehicle: 'Toyota Hilux', stage: 'En máquina', time: 'hace 4 min' },
+      { plate: 'P 205-774', vehicle: 'Nissan Sentra', stage: 'Secado y detalle', time: 'hace 12 min' },
+      { plate: 'P 118-560', vehicle: 'Kia Rio', stage: 'Listo para entrega', time: 'hace 18 min' },
+      { plate: 'C 044-812', vehicle: 'Nissan Frontier', stage: 'Entregado', time: 'hace 25 min' },
+    ].map(f => ({ ...f, ...stageStyles[f.stage] }));
+
+    const serviciosPorTipoRaw = [
+      { label: 'Programa 1 · Básico', count: 14, revenue: 112.00 },
+      { label: 'Programa 2 · Completo', count: 19, revenue: 228.00 },
+      { label: 'Programa 3 · Premium + encerado', count: 9, revenue: 162.00 },
+      { label: 'Programa 4 · Detallado', count: 5, revenue: 135.00 },
+    ];
+    const maxServCount = Math.max(...serviciosPorTipoRaw.map(s => s.count));
+    const serviciosPorTipo = serviciosPorTipoRaw.map(s => ({
+      ...s, pct: Math.round(s.count / maxServCount * 100), revenueText: 'US$' + s.revenue.toFixed(2),
+    }));
+
+    const serviciosPorDiaRaw = [
+      { label: 'mar', count: 36 }, { label: 'mié', count: 42 }, { label: 'jue', count: 39 },
+      { label: 'vie', count: 44 }, { label: 'sáb', count: 61 }, { label: 'dom', count: 52 }, { label: 'lun (hoy)', count: 47 },
+    ];
+    const maxDia = Math.max(...serviciosPorDiaRaw.map(d => d.count));
+    const serviciosPorDia = serviciosPorDiaRaw.map((d, i) => ({
+      ...d, pct: Math.round(d.count / maxDia * 100),
+      barColor: i === serviciosPorDiaRaw.length - 1 ? '#FF6A28' : '#023530',
+    }));
+
+    const hourWeights = [0.29, 0.47, 0.68, 0.85, 0.78, 0.63, 0.71, 0.58, 0.73, 0.92, 1.0, 0.8, 0.44];
+    const dayWeights = [
+      { label: 'Mar', w: 0.55 }, { label: 'Mié', w: 0.65 }, { label: 'Jue', w: 0.6 }, { label: 'Vie', w: 0.7 },
+      { label: 'Sáb', w: 1.0 }, { label: 'Dom', w: 0.82 }, { label: 'Lun', w: 0.72 },
+    ];
+    const heatmapRows = dayWeights.map(d => ({
+      label: d.label,
+      cells: hourWeights.map(hw => {
+        const intensity = hw * d.w;
+        return { color: `rgba(2,53,48,${(0.12 + intensity * 0.78).toFixed(2)})` };
+      }),
+    }));
+
+    const memberships = [
+      { name: 'Ana Beatriz Menjívar', plan: 'Ilimitado Sedán', dias: 2, fecha: 'miér. 9 sep', initials: 'AM' },
+      { name: 'Corporación Café Quezaltepeque, S.A. de C.V.', plan: 'Flotilla · 6 vehículos', dias: 3, fecha: 'jue. 10 sep', initials: 'CQ' },
+      { name: 'Rodrigo Alfredo Panameño', plan: 'Básico 4 lavados', dias: 4, fecha: 'vie. 11 sep', initials: 'RP' },
+      { name: 'Distribuidora La Central', plan: 'Flotilla Pickup', dias: 5, fecha: 'sáb. 12 sep', initials: 'DC' },
+      { name: 'Karla Patricia Handal', plan: 'Ilimitado SUV', dias: 6, fecha: 'dom. 13 sep', initials: 'KH' },
+    ].map(m => ({
+      ...m,
+      badgeColor: m.dias <= 2 ? '#B23232' : m.dias <= 4 ? '#9A6510' : textPrimary,
+      badgeTint: m.dias <= 2 ? '#FBE7E7' : m.dias <= 4 ? '#FDF1DC' : subtleBg,
+    }));
+
+    const total = 3940.20;
+    const receivableBuckets = [
+      { label: 'Corriente', amount: 1120.00, color: '#1E9E6B' },
+      { label: '1–30 días', amount: 1540.20, color: '#F0A93A' },
+      { label: '31–60 días', amount: 780.00, color: '#C9871B' },
+      { label: '61–90 días', amount: 340.00, color: '#E24B4B' },
+      { label: '+90 días', amount: 160.00, color: '#8A1F1F' },
+    ].map(b => ({ ...b, pct: (b.amount / total * 100).toFixed(1), amountText: 'US$' + b.amount.toFixed(2) }));
+
+    const hours = [
+      { hour: '7a', amount: 43 }, { hour: '8a', amount: 68 }, { hour: '9a', amount: 100 },
+      { hour: '10a', amount: 124 }, { hour: '11a', amount: 114 }, { hour: '12p', amount: 92 },
+      { hour: '1p', amount: 103 }, { hour: '2p', amount: 85 }, { hour: '3p', amount: 107 },
+      { hour: '4p', amount: 135 }, { hour: '5p', amount: 146 }, { hour: '6p', amount: 117 }, { hour: '7p', amount: 64 },
+    ];
+    const maxH = Math.max(...hours.map(h => h.amount));
+    const salesByHour = hours.map(h => ({ ...h, pct: Math.round(h.amount / maxH * 100) }));
+
+    return {
+      dark, pageBg, surface, border, textPrimary, textSecondary, subtleBg,
+      showCashAlert, machines, flujoHoy,
+      serviciosPorTipo, serviciosPorDia, heatmapRows,
+      memberships, membershipCount: memberships.length,
+      receivableBuckets, salesByHour,
+      toggleTheme: this.toggleTheme,
+      turnoLabel: dark ? 'noche' : 'día',
+      toggleDotLeft: dark ? 16 : 2,
+    };
+  }
+}
+
+</script>
+</body>
+</html>

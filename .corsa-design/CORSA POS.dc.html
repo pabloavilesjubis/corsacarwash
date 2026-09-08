@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+*{box-sizing:border-box;}
+body{margin:0;}
+a{color:#023530;text-decoration:underline;text-decoration-color:rgba(2,53,48,0.35);text-underline-offset:2px;}
+a:hover{color:#FF6A28;}
+::selection{background:#FF6A28;color:#ffffff;}
+</style>
+</helmet>
+<div data-screen-label="POS / Nueva orden" style="display:flex;min-height:100vh;background:{{ pageBg }};font-family:'IBM Plex Sans',sans-serif;color:{{ textPrimary }}">
+
+  <aside style="width:220px;min-width:220px;background:#023530;color:#FFFFFF;display:flex;flex-direction:column;padding:20px 14px;gap:22px">
+    <div style="display:flex;align-items:center;gap:10px;padding:4px 4px 8px">
+      <svg viewBox="0 0 40 24" width="32" height="19" fill="none"><rect x="1" y="4" width="20" height="16" rx="8" transform="rotate(-18 11 12)" stroke="#FFFFFF" stroke-width="2.4"/><rect x="19" y="4" width="20" height="16" rx="8" transform="rotate(-18 29 12)" stroke="#FF6A28" stroke-width="2.4"/></svg>
+      <span style="font-family:'Archivo',sans-serif;font-weight:800;font-size:19px;letter-spacing:0.5px">CORSA</span>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;background:rgba(255,255,255,0.12);border-left:3px solid #FF6A28;color:#FFFFFF">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#FF6A28" stroke-width="1.8"><rect x="2" y="7" width="20" height="13" rx="1.5"/><path d="M6 7V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
+        <span style="font-size:14px;font-weight:600">Caja</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.5);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.8)">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        <span style="font-size:14px;font-weight:500">Patio</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.5);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.8)">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="4" y1="20" x2="4" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="20" y1="20" x2="20" y2="14"/></svg>
+        <span style="font-size:14px;font-weight:500">Administración</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.5);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.8)">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <span style="font-size:14px;font-weight:500">Contabilidad</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.5);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.8)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span style="font-size:14px;font-weight:500">Clientes</span>
+      </div>
+    </div>
+
+    <div style="height:1px;background:rgba(255,255,255,0.12);margin:2px 0"></div>
+
+    <div style="display:flex;flex-direction:column;gap:2px">
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;background:rgba(255,255,255,0.14)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <span style="font-size:14px;font-weight:600;color:#FFFFFF">Nueva orden</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.62);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:#FFFFFF">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <span style="font-size:14px">Órdenes del turno</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;color:rgba(255,255,255,0.62);cursor:pointer" style-hover="background:rgba(255,255,255,0.06);color:#FFFFFF">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="7" width="20" height="13" rx="1.5"/><path d="M6 7V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
+        <span style="font-size:14px">Cierre de caja</span>
+      </div>
+    </div>
+
+    <div style="flex:1"></div>
+
+    <div onClick="{{ toggleTheme }}" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:6px;background:rgba(255,255,255,0.06)" style-hover="background:rgba(255,255,255,0.1)" style-focus="outline:2px solid #FF6A28;outline-offset:2px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.9" y1="4.9" x2="6.3" y2="6.3"/><line x1="17.7" y1="17.7" x2="19.1" y2="19.1"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="4.9" y1="19.1" x2="6.3" y2="17.7"/><line x1="17.7" y1="6.3" x2="19.1" y2="4.9"/></svg>
+      <span style="font-size:13px;color:rgba(255,255,255,0.85);flex:1">Turno {{ turnoLabel }}</span>
+      <div style="width:30px;height:16px;border-radius:8px;background:rgba(255,255,255,0.25);position:relative">
+        <div style="width:12px;height:12px;border-radius:50%;background:#FF6A28;position:absolute;top:2px;left:{{ toggleDotLeft }}px;transition:left 0.15s ease"></div>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 4px">
+      <div style="width:30px;height:30px;border-radius:6px;background:#0B4A42;display:flex;align-items:center;justify-content:center;font-family:'Archivo',sans-serif;font-weight:700;font-size:12px">RL</div>
+      <div style="min-width:0">
+        <div style="font-size:13px;font-weight:600;color:#FFFFFF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Rosa López</div>
+        <div style="font-size:11.5px;color:rgba(255,255,255,0.55)">Cajera · Escalón</div>
+      </div>
+    </div>
+  </aside>
+
+  <div style="flex:1;min-width:0;padding:26px 32px 40px;display:flex;flex-direction:column;gap:18px">
+
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <h1 style="margin:0;font-family:'Archivo',sans-serif;font-weight:700;font-size:24px;color:{{ textPrimary }}">Nueva orden</h1>
+      <div style="font-size:12.5px;color:{{ textSecondary }}">Enter avanza al siguiente campo · Esc cancela la orden</div>
+    </div>
+
+    <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">
+
+      <div style="display:flex;flex-direction:column;gap:14px;flex:1 1 300px;min-width:280px;max-width:340px">
+        <div style="background:{{ surface }};border:1px solid {{ border }};border-radius:6px;padding:14px">
+          <div style="font-size:12.5px;font-weight:600;color:{{ textSecondary }};margin-bottom:8px">Buscar vehículo</div>
+          <div style="display:flex;align-items:center;gap:8px;border:1.5px solid #023530;border-radius:6px;padding:11px 12px;background:{{ surface }}">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#023530" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <span style="font-size:15px;font-weight:600;color:{{ textPrimary }};font-variant-numeric:tabular-nums;flex:1">P 812-004</span>
+          </div>
+          <div style="font-size:11.5px;color:{{ textSecondary }};margin-top:6px">Formato: P (particular) · C (comercial) · AB (moto)</div>
+        </div>
+
+        <sc-if value="{{ orderStarted }}" hint-placeholder-val="{{ true }}">
+          <div style="background:{{ surface }};border:1px solid {{ border }};border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start">
+              <div>
+                <div style="font-size:15px;font-weight:700;color:{{ textPrimary }}">Carlos Alberto Mejía</div>
+                <div style="font-size:12.5px;color:{{ textSecondary }}">DUI 03245678-9</div>
+              </div>
+              <span style="font-size:11px;font-weight:600;color:#157A52;background:#E4F5EE;padding:3px 8px;border-radius:4px">Frecuente</span>
+            </div>
+            <div style="height:1px;background:{{ border }}"></div>
+            <div>
+              <div style="font-size:13.5px;font-weight:600;color:{{ textPrimary }}">Toyota Hilux 2022 · Gris</div>
+              <div style="font-size:12.5px;color:{{ textSecondary }};font-variant-numeric:tabular-nums">Placa P 812-004</div>
+              <div style="font-size:12px;color:{{ textSecondary }};margin-top:4px">Nota: retrovisor izquierdo con rayón previo</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:5px;background:{{ membership.tint }}">
+              <div style="width:8px;height:8px;border-radius:50%;background:{{ membership.dot }};flex-shrink:0"></div>
+              <div style="font-size:12.5px;font-weight:600;color:{{ membership.text }};flex:1">{{ membership.label }}</div>
+            </div>
+            <div style="font-size:12px;color:{{ textSecondary }}">14 visitas · US$284.00 acumulado · última visita hace 6 días</div>
+            <sc-if value="{{ customerOverdue }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;gap:8px;align-items:flex-start;background:#FBE7E7;border:1px solid #E24B4B;border-radius:5px;padding:10px">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B23232" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <div style="font-size:12px;color:#8C2626">Saldo vencido de US$340.00 hace más de 60 días. No se puede autorizar crédito de empresa hasta regularizar.</div>
+              </div>
+            </sc-if>
+          </div>
+        </sc-if>
+        <sc-if value="{{ orderNotStarted }}" hint-placeholder-val="{{ false }}">
+          <div style="background:{{ surface }};border:1px dashed {{ border }};border-radius:6px;padding:24px 16px;text-align:center;color:{{ textSecondary }}">
+            <div style="font-size:13.5px;font-weight:600;color:{{ textPrimary }}">Escribe una placa para comenzar</div>
+            <div style="font-size:12.5px;margin-top:6px">Si el vehículo ya visitó CORSA antes, vas a ver su historial y su membresía al instante.</div>
+          </div>
+        </sc-if>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:14px;flex:2 1 380px;min-width:320px">
+        <div style="background:{{ surface }};border:1px solid {{ border }};border-radius:6px;padding:14px">
+          <div style="font-size:12.5px;font-weight:600;color:{{ textSecondary }};margin-bottom:10px">Tipo de vehículo</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <sc-for list="{{ vehicleTypes }}" as="vt" hint-placeholder-count="5">
+              <div onClick="{{ vt.select }}" style="padding:8px 14px;border-radius:5px;font-size:13.5px;font-weight:600;cursor:pointer;background:{{ vt.bg }};color:{{ vt.color }};border:1px solid {{ vt.borderColor }}">{{ vt.label }}</div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="background:{{ surface }};border:1px solid {{ border }};border-radius:6px;padding:14px">
+          <div style="font-size:12.5px;font-weight:600;color:{{ textSecondary }};margin-bottom:10px">Servicio</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
+            <sc-for list="{{ services }}" as="svc" hint-placeholder-count="3">
+              <div onClick="{{ svc.select }}" style="border:1.5px solid {{ svc.borderColor }};border-radius:6px;padding:12px;cursor:pointer;background:{{ svc.bg }}">
+                <div style="font-size:14px;font-weight:600;color:{{ textPrimary }}">{{ svc.label }}</div>
+                <div style="margin-top:6px;font-family:'Archivo',sans-serif;font-weight:800;font-size:18px;color:{{ textPrimary }};font-variant-numeric:tabular-nums">{{ svc.priceText }}</div>
+                <div style="font-size:11px;color:{{ textSecondary }};margin-top:2px">IVA 13% incluido</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="background:{{ surface }};border:1px solid {{ border }};border-radius:6px;padding:14px">
+          <div style="font-size:12.5px;font-weight:600;color:{{ textSecondary }};margin-bottom:10px">Servicios adicionales</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <sc-for list="{{ additionals }}" as="ad" hint-placeholder-count="6">
+              <div onClick="{{ ad.toggle }}" style="display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:5px;font-size:13px;font-weight:500;cursor:pointer;background:{{ ad.bg }};color:{{ ad.color }};border:1px solid {{ ad.borderColor }}">
+                <span>{{ ad.label }}</span>
+                <span style="font-variant-numeric:tabular-nums;font-weight:600">+{{ ad.priceText }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="background:{{ surface }};border:1px solid {{ border }};border-radius:6px;padding:14px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div style="font-size:12.5px;font-weight:600;color:{{ textSecondary }}">Asignación</div>
+            <span style="font-size:11.5px;font-weight:700;color:#FFFFFF;background:#023530;padding:3px 9px;border-radius:4px">Programa {{ programNumber }}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div>
+              <div style="font-size:12px;color:{{ textSecondary }};margin-bottom:6px">Operador</div>
+              <div style="display:flex;flex-direction:column;gap:5px">
+                <sc-for list="{{ washers }}" as="w" hint-placeholder-count="4">
+                  <div onClick="{{ w.select }}" style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-radius:5px;cursor:{{ w.cursor }};background:{{ w.bg }};opacity:{{ w.opacity }}">
+                    <span style="font-size:13px;color:{{ textPrimary }};font-weight:{{ w.weight }}">{{ w.name }}</span>
+                    <span style="font-size:11px;color:{{ w.statusColor }}">{{ w.statusText }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:12px;color:{{ textSecondary }};margin-bottom:6px">Máquina</div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px">
+                <sc-for list="{{ machines }}" as="mach" hint-placeholder-count="2">
+                  <div onClick="{{ mach.select }}" style="min-width:64px;height:34px;padding:0 10px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:700;cursor:pointer;background:{{ mach.bg }};color:{{ mach.color }};border:1.5px solid {{ mach.borderColor }}">Máquina {{ mach.num }}</div>
+                </sc-for>
+              </div>
+              <sc-if value="{{ machineHasConflict }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:8px;font-size:11.5px;color:#B23232">Máquina {{ conflictMachineNum }} ocupada con P 205-774 — elegí la otra</div>
+              </sc-if>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="background:{{ surface }};border:1px solid {{ border }};border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:14px;flex:1 1 340px;min-width:300px;max-width:380px">
+
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <sc-for list="{{ stages }}" as="st" hint-placeholder-count="5">
+            <div style="display:flex;align-items:center;gap:4px;flex:1">
+              <div style="width:20px;height:20px;border-radius:50%;background:{{ st.dotBg }};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <sc-if value="{{ st.done }}" hint-placeholder-val="{{ false }}">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </sc-if>
+              </div>
+              <sc-if value="{{ st.hasConnector }}" hint-placeholder-val="{{ true }}">
+                <svg width="18" height="9" viewBox="0 0 20 10" fill="none" style="flex:1;min-width:8px;color:{{ st.connectorColor }}"><rect x="1" y="1" width="10" height="8" rx="4" transform="rotate(-15 6 5)" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="1" width="10" height="8" rx="4" transform="rotate(-15 14 5)" stroke="currentColor" stroke-width="1.4"/></svg>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+        <div style="font-size:12px;color:{{ textSecondary }};margin-top:-8px">{{ currentStageLabel }}</div>
+
+        <sc-if value="{{ membershipState_vencida }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:8px;align-items:flex-start;background:#FDF1DC;border:1px solid #F0A93A;border-radius:5px;padding:10px">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9A6510" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <div style="font-size:12px;color:#7A5109">Membresía vencida el 2 de septiembre. Este lavado se cobra a precio de mostrador.</div>
+          </div>
+        </sc-if>
+
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;justify-content:space-between;font-size:13.5px">
+            <span style="color:{{ textPrimary }}">{{ selectedServiceLabel }}</span>
+            <span style="font-weight:600;color:{{ textPrimary }};font-variant-numeric:tabular-nums">{{ mainPriceText }}</span>
+          </div>
+          <sc-for list="{{ selectedAdditionalsList }}" as="ad" hint-placeholder-count="1">
+            <div style="display:flex;justify-content:space-between;font-size:13.5px">
+              <span style="color:{{ textPrimary }}">{{ ad.label }}</span>
+              <span style="font-weight:600;color:{{ textPrimary }};font-variant-numeric:tabular-nums">{{ ad.priceText }}</span>
+            </div>
+          </sc-for>
+          <div style="display:flex;justify-content:space-between;font-size:13.5px">
+            <span style="color:{{ textSecondary }}">Propina para {{ assignedWasherName }}</span>
+            <span style="font-weight:600;color:{{ textPrimary }};font-variant-numeric:tabular-nums">US$2.00</span>
+          </div>
+          <a href="#" style="font-size:12px;align-self:flex-start">Aplicar descuento (requiere motivo)</a>
+        </div>
+
+        <div style="height:1px;background:{{ border }}"></div>
+
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span style="font-family:'Archivo',sans-serif;font-weight:700;font-size:15px;color:{{ textPrimary }}">Total a cobrar</span>
+          <span style="font-family:'Archivo',sans-serif;font-weight:800;font-size:26px;color:{{ textPrimary }};font-variant-numeric:tabular-nums">{{ totalText }}</span>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="font-size:12px;font-weight:600;color:{{ textSecondary }}">Método de pago</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            <sc-for list="{{ paymentMethods }}" as="pm" hint-placeholder-count="6">
+              <div style="display:flex;align-items:center;gap:5px;padding:7px 10px;border-radius:5px;font-size:12.5px;font-weight:500;background:{{ pm.bg }};color:{{ pm.color }};border:1px solid {{ pm.borderColor }};cursor:{{ pm.cursor }}">
+                <sc-if value="{{ pm.locked }}" hint-placeholder-val="{{ false }}">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                </sc-if>
+                <span>{{ pm.label }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;justify-content:space-between;font-size:13px">
+            <span style="color:{{ textSecondary }}">Efectivo</span>
+            <span style="font-weight:600;color:{{ textPrimary }};font-variant-numeric:tabular-nums">{{ efectivoPortion }}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px">
+            <span style="color:{{ textSecondary }}">Tarjeta</span>
+            <span style="font-weight:600;color:{{ textPrimary }};font-variant-numeric:tabular-nums">{{ tarjetaPortion }}</span>
+          </div>
+        </div>
+
+        <sc-if value="{{ paymentDeclined }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:8px;align-items:flex-start;background:#FBE7E7;border:1px solid #E24B4B;border-radius:5px;padding:10px">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B23232" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+            <div style="font-size:12px;color:#8C2626">Tarjeta terminada en 4521 rechazada — fondos insuficientes. Probá con otro método o cobrá en efectivo.</div>
+          </div>
+        </sc-if>
+
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
+          <sc-for list="{{ keypadKeys }}" as="k" hint-placeholder-count="12">
+            <div style="text-align:center;padding:10px 0;border-radius:5px;background:{{ subtleBg }};font-size:15px;font-weight:600;color:{{ textPrimary }};cursor:pointer">{{ k }}</div>
+          </sc-for>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:{{ textSecondary }}">
+          <span>Recibido US$10.00</span>
+          <span>Cambio US$6.00</span>
+        </div>
+
+        <div style="position:relative;border-radius:6px;overflow:hidden;clip-path:polygon(0 0, 100% 0, 100% 100%, 18px 100%, 0 calc(100% - 18px))">
+          <div style="position:absolute;bottom:0;left:0;width:18px;height:18px;background:#023530;clip-path:polygon(0 100%, 100% 100%, 0 0)"></div>
+          <div style="background:#FF6A28;color:#FFFFFF;text-align:center;padding:14px;font-family:'Archivo',sans-serif;font-weight:800;font-size:16px;cursor:pointer" style-hover="background:#E85A1C">Cobrar {{ totalText }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;$preview&quot;: {&quot;width&quot;: 1440, &quot;height&quot;: 1000},
+  &quot;theme&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;light&quot;, &quot;options&quot;: [&quot;light&quot;, &quot;dark&quot;], &quot;tsType&quot;: &quot;'light'|'dark'&quot;, &quot;section&quot;: &quot;Apariencia&quot;},
+  &quot;orderStarted&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Estados&quot;},
+  &quot;membershipState&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;activa&quot;, &quot;options&quot;: [&quot;activa&quot;, &quot;vencida&quot;, &quot;sin_membresia&quot;], &quot;tsType&quot;: &quot;'activa'|'vencida'|'sin_membresia'&quot;, &quot;section&quot;: &quot;Estados&quot;},
+  &quot;paymentResult&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;ninguno&quot;, &quot;options&quot;: [&quot;ninguno&quot;, &quot;rechazado&quot;], &quot;tsType&quot;: &quot;'ninguno'|'rechazado'&quot;, &quot;section&quot;: &quot;Estados&quot;},
+  &quot;machineConflict&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Estados&quot;},
+  &quot;customerOverdue&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Estados&quot;}
+}">
+class Component extends DCLogic {
+  state = {
+    dark: this.props.theme === 'dark',
+    vehicleType: 'pickup',
+    serviceId: 'completo',
+    additionalIds: ['aspirado'],
+    assignedWasher: 'Kevin',
+    assignedMachine: 1,
+  };
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.theme !== this.props.theme) this.setState({ dark: this.props.theme === 'dark' });
+  }
+
+  toggleTheme = () => this.setState(s => ({ dark: !s.dark }));
+  selectType = (id) => this.setState({ vehicleType: id });
+  selectService = (id) => this.setState({ serviceId: id });
+  toggleAdditional = (id) => this.setState(s => ({
+    additionalIds: s.additionalIds.includes(id) ? s.additionalIds.filter(x => x !== id) : [...s.additionalIds, id],
+  }));
+  selectWasher = (name, available) => { if (available) this.setState({ assignedWasher: name }); };
+  selectMachine = (num, occupied) => { if (!occupied) this.setState({ assignedMachine: num }); };
+
+  renderVals() {
+    const dark = this.state.dark;
+    const pageBg = dark ? '#0B211D' : '#F3F6F5';
+    const surface = dark ? '#0F2A25' : '#FFFFFF';
+    const border = dark ? '#1D4038' : '#DCE4E1';
+    const textPrimary = dark ? '#F2F7F5' : '#10201C';
+    const textSecondary = dark ? '#9FBFB6' : '#52655F';
+    const subtleBg = dark ? '#123128' : '#F0F5F3';
+
+    const membershipState = this.props.membershipState || 'activa';
+    const paymentDeclined = (this.props.paymentResult || 'ninguno') === 'rechazado';
+    const machineConflict = !!this.props.machineConflict;
+    const customerOverdue = !!this.props.customerOverdue;
+    const orderStarted = this.props.orderStarted !== false;
+
+    const typeDefs = [
+      { id: 'sedan', label: 'Sedán' }, { id: 'pickup', label: 'Pickup' }, { id: 'suv', label: 'SUV' },
+      { id: 'microbus', label: 'Microbús' }, { id: 'moto', label: 'Moto' },
+    ];
+    const vehicleTypes = typeDefs.map(t => {
+      const active = t.id === this.state.vehicleType;
+      return {
+        ...t,
+        select: () => this.selectType(t.id),
+        bg: active ? '#023530' : surface,
+        color: active ? '#FFFFFF' : textPrimary,
+        borderColor: active ? '#023530' : border,
+      };
+    });
+
+    const priceMatrix = {
+      basico: { sedan: 6, pickup: 8, suv: 8, microbus: 10, moto: 4 },
+      completo: { sedan: 9, pickup: 12, suv: 12, microbus: 15, moto: 6 },
+      premium: { sedan: 14, pickup: 18, suv: 18, microbus: 22, moto: 9 },
+    };
+    const serviceDefs = [
+      { id: 'basico', label: 'Lavado básico' },
+      { id: 'completo', label: 'Lavado completo' },
+      { id: 'premium', label: 'Premium + encerado' },
+    ];
+    const vt = this.state.vehicleType;
+    const covered = membershipState === 'activa';
+    const services = serviceDefs.map(s => {
+      const active = s.id === this.state.serviceId;
+      const price = priceMatrix[s.id][vt];
+      const priceText = active && covered ? 'Incluido' : 'US$' + price.toFixed(2);
+      return {
+        ...s, select: () => this.selectService(s.id), priceText,
+        bg: active ? subtleBg : surface,
+        borderColor: active ? '#023530' : border,
+      };
+    });
+
+    const additionalDefs = [
+      { id: 'encerado', label: 'Encerado', price: 6 },
+      { id: 'faros', label: 'Pulido de faros', price: 10 },
+      { id: 'aspirado', label: 'Aspirado profundo', price: 5 },
+      { id: 'motor', label: 'Lavado de motor', price: 8 },
+      { id: 'vestiduras', label: 'Tratamiento de vestiduras', price: 12 },
+      { id: 'desinfeccion', label: 'Desinfección', price: 4 },
+    ];
+    const additionals = additionalDefs.map(a => {
+      const on = this.state.additionalIds.includes(a.id);
+      return {
+        ...a, toggle: () => this.toggleAdditional(a.id), priceText: 'US$' + a.price.toFixed(2),
+        bg: on ? '#023530' : surface, color: on ? '#FFFFFF' : textPrimary,
+        borderColor: on ? '#023530' : border,
+      };
+    });
+    const selectedAdditionalsList = additionalDefs
+      .filter(a => this.state.additionalIds.includes(a.id))
+      .map(a => ({ label: a.label, priceText: 'US$' + a.price.toFixed(2) }));
+
+    const washerDefs = [
+      { name: 'Josué', available: false }, { name: 'Kevin', available: true },
+      { name: 'Marvin', available: true }, { name: 'Wendy', available: false },
+    ];
+    const washers = washerDefs.map(w => {
+      const selected = w.name === this.state.assignedWasher;
+      return {
+        ...w, select: () => this.selectWasher(w.name, w.available),
+        cursor: w.available ? 'pointer' : 'not-allowed', opacity: w.available ? 1 : 0.45,
+        weight: selected ? 700 : 500,
+        bg: selected ? subtleBg : 'transparent',
+        statusText: w.available ? 'Libre' : 'Ocupado',
+        statusColor: w.available ? '#157A52' : textSecondary,
+      };
+    });
+
+    const machineStatus = [machineConflict ? 1 : 0, 0];
+    const machines = machineStatus.map((occ, i) => {
+      const num = i + 1;
+      const selected = num === this.state.assignedMachine;
+      const conflict = machineConflict && num === 1 && selected;
+      return {
+        num, select: () => this.selectMachine(num, !!occ && num !== this.state.assignedMachine),
+        bg: conflict ? '#FBE7E7' : selected ? '#023530' : occ ? subtleBg : surface,
+        color: conflict ? '#B23232' : selected ? '#FFFFFF' : occ ? textSecondary : textPrimary,
+        borderColor: conflict ? '#E24B4B' : selected ? '#023530' : border,
+      };
+    });
+    const machineHasConflict = machineConflict && this.state.assignedMachine === 1;
+
+    const programMap = { basico: 1, completo: 2, premium: 3 };
+    const machineExtraIds = ['encerado', 'vestiduras'];
+    const programNumber = this.state.additionalIds.some(id => machineExtraIds.includes(id)) ? 4 : programMap[this.state.serviceId];
+
+    const stageDefs = [
+      { label: 'Recibido', done: true }, { label: 'En máquina', done: true, current: true },
+      { label: 'Secado y detalle', done: false }, { label: 'Listo', done: false }, { label: 'Entregado', done: false },
+    ];
+    const stages = stageDefs.map((s, i) => ({
+      ...s, dotBg: s.done ? '#023530' : border,
+      hasConnector: i < stageDefs.length - 1,
+      connectorColor: stageDefs[i + 1] && stageDefs[i + 1].done ? '#023530' : border,
+    }));
+    const currentStageLabel = stageDefs.find(s => s.current)?.label || '';
+
+    const mainPrice = covered ? 0 : priceMatrix[this.state.serviceId][vt];
+    const addTotal = additionalDefs.filter(a => this.state.additionalIds.includes(a.id)).reduce((s, a) => s + a.price, 0);
+    const tip = 2;
+    const total = mainPrice + addTotal + tip;
+    const selectedServiceLabel = serviceDefs.find(s => s.id === this.state.serviceId)?.label + (covered ? ' (membresía)' : '');
+
+    const paymentDefs = [
+      { id: 'efectivo', label: 'Efectivo', active: true },
+      { id: 'tarjeta', label: 'Tarjeta', active: true },
+      { id: 'transferencia', label: 'Transferencia' },
+      { id: 'credito', label: 'Crédito de empresa', locked: customerOverdue },
+      { id: 'membresia', label: 'Membresía' },
+      { id: 'cupon', label: 'Cupón' },
+    ];
+    const paymentMethods = paymentDefs.map(p => ({
+      ...p,
+      bg: p.active ? '#023530' : p.locked ? subtleBg : surface,
+      color: p.active ? '#FFFFFF' : p.locked ? textSecondary : textPrimary,
+      borderColor: p.active ? '#023530' : border,
+      cursor: p.locked ? 'not-allowed' : 'pointer',
+    }));
+
+    const cardPortion = Math.min(3, total);
+    const cashPortion = Math.max(0, total - cardPortion);
+
+    return {
+      dark, pageBg, surface, border, textPrimary, textSecondary, subtleBg,
+      turnoLabel: dark ? 'noche' : 'día', toggleTheme: this.toggleTheme, toggleDotLeft: dark ? 16 : 2,
+      orderStarted, orderNotStarted: !orderStarted,
+      membership: membershipState === 'activa'
+        ? { label: 'Membresía activa · Ilimitado Pickup', dot: '#1E9E6B', tint: '#E4F5EE', text: '#157A52' }
+        : membershipState === 'vencida'
+        ? { label: 'Membresía vencida el 2 sep', dot: '#F0A93A', tint: '#FDF1DC', text: '#9A6510' }
+        : { label: 'Sin membresía activa', dot: textSecondary, tint: subtleBg, text: textSecondary },
+      membershipState_vencida: membershipState === 'vencida',
+      customerOverdue,
+      vehicleTypes, services, additionals, selectedAdditionalsList,
+      washers, assignedWasherName: this.state.assignedWasher,
+      machines, machineHasConflict, conflictMachineNum: 1, programNumber,
+      stages, currentStageLabel,
+      selectedServiceLabel,
+      mainPriceText: covered ? 'Incluido' : 'US$' + mainPrice.toFixed(2),
+      totalText: 'US$' + total.toFixed(2),
+      paymentMethods, paymentDeclined,
+      efectivoPortion: 'US$' + cashPortion.toFixed(2),
+      tarjetaPortion: 'US$' + cardPortion.toFixed(2),
+      keypadKeys: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'],
+    };
+  }
+}
+
+</script>
+</body>
+</html>
