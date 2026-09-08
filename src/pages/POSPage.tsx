@@ -774,7 +774,10 @@ export function POSPage() {
     setFleetCompany(company)
     setFleetVehicle(vehicle)
     setShowFleetModal(false)
-    setWithAspirado(false)
+    // Si el acuerdo de la flotilla incluye aspirado, viene marcado: es parte
+    // del servicio contratado y olvidarlo significa no cobrarlo. El cajero
+    // puede destildarlo si el cliente lo rechaza.
+    setWithAspirado(Boolean(company.aspirado_enabled))
   }
 
   const handleModeChange = (m: OrderMode) => {
@@ -1009,7 +1012,9 @@ export function POSPage() {
                   <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{ADDON_ASPIRADO.label}</div>
                   <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 1 }}>
                     Sin importar tamaño del vehículo
-                    {usaAspiradoFlotilla && <span style={{ color: 'var(--corsa-orange)' }}> · Precio flotilla</span>}
+                    {usaAspiradoFlotilla && (
+                      <span style={{ color: 'var(--corsa-orange)' }}> · Incluido en el plan de la flotilla</span>
+                    )}
                   </div>
                 </div>
                 {/* El importe estaba escrito a mano como "+$3": la tarjeta
