@@ -226,7 +226,9 @@ function CreateCompanyModal({ orgId, onCreated, onCancel }: CreateCompanyModalPr
         .single()
       if (fleetErr) throw fleetErr
 
-      await db.from('fleet_contracts').insert({
+      // El error se revisa: antes se ignoraba y la RLS faltante lo rechazaba
+      // en silencio, dejando flotillas sin contrato.
+      const { error: contractErr } = await db.from('fleet_contracts').insert({
         fleet_id: fleet.id,
         starts_at: new Date().toISOString().split('T')[0],
         billing_frequency: 'monthly',
@@ -234,6 +236,7 @@ function CreateCompanyModal({ orgId, onCreated, onCancel }: CreateCompanyModalPr
         credit_days: 0,
         active: true,
       })
+      if (contractErr) throw contractErr
 
       // Los precios van a fleet_pricing (0031), no serializados en terms.
       const { error: priceErr } = await db.from('fleet_pricing').insert({
@@ -462,10 +465,30 @@ interface AddVehicleModalProps {
   onCancel: () => void
 }
 
-function AddVehicleModal({ fleetId, customerId, onAdded, onCancel }: Omit<AddVehicleModalProps, 'orgId'> & { orgId?: string }) {
+function AddVehicleModal({ fleetId, customerId, orgId, onAdded, onCancel }: AddVehicleModalProps) {
   const [form, setForm] = useState({ plate: '', brand: '', model: '', year: '', color: '', cost_center: '' })
+  const [tipos, setTipos] = useState<{ id: string; code: string; name: string }[]>([])
+  const [tipoId, setTipoId] = useState('')
   const [saving, setSaving] = useState(false)
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
+
+  // vehicles.vehicle_type_id es NOT NULL: sin elegir tipo no se puede dar de
+  // alta el vehículo, así que el selector es obligatorio.
+  useEffect(() => {
+    if (!orgId) return
+    ;(async () => {
+      const { data } = await (supabase as any)
+        .from('vehicle_types')
+        .select('id, code, name')
+        .eq('organization_id', orgId)
+        .eq('active', true)
+        .order('sort_order')
+      setTipos(data ?? [])
+      // Sedán es el caso más común en flotillas administrativas.
+      const sedan = (data ?? []).find((t: any) => t.code === 'SEDAN')
+      setTipoId(sedan?.id ?? data?.[0]?.id ?? '')
+    })()
+  }, [orgId])
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
@@ -474,38 +497,64 @@ function AddVehicleModal({ fleetId, customerId, onAdded, onCancel }: Omit<AddVeh
   }, [onCancel])
 
   const handleSave = async () => {
-    if (!form.plate.trim()) { toast.error('La placa es requerida'); return }
+    const plate = form.plate.trim().toUpperCase()
+    if (!plate) { toast.error('La placa es requerida'); return }
+    if (!tipoId) { toast.error('Elegí el tipo de vehículo'); return }
+
     setSaving(true)
     try {
       const db = supabase as any
-      // 1. Create vehicle
-      const { data: veh, error: vehErr } = await db
-        .from('vehicles')
-        .insert({
-          customer_id: customerId,
-          plate: form.plate.trim().toUpperCase(),
-          brand: form.brand.trim() || null,
-          model: form.model.trim() || null,
-          year: form.year ? parseInt(form.year) : null,
-          color: form.color.trim() || null,
-          status: 'active',
-        })
-        .select('id')
-        .single()
-      if (vehErr) throw vehErr
+      const normalizada = plate.replace(/[^A-Z0-9]/g, '')
 
-      // 2. Add to fleet_vehicles
+      // Un auto puede estar ya registrado como vehículo de un cliente y recién
+      // ahora sumarse a la flotilla. Antes se creaba uno nuevo con la misma
+      // placa y quedaban dos fichas del mismo carro.
+      const { data: existente } = await db
+        .from('vehicles')
+        .select('id, plate')
+        .eq('organization_id', orgId)
+        .eq('normalized_plate', normalizada)
+        .maybeSingle()
+
+      let vehicleId = existente?.id
+
+      if (!vehicleId) {
+        // El insert fallaba por tres motivos a la vez: mandaba `status`, que
+        // no existe (es `active`), y omitía organization_id y vehicle_type_id,
+        // ambos NOT NULL.
+        const { data: veh, error: vehErr } = await db
+          .from('vehicles')
+          .insert({
+            organization_id: orgId,
+            customer_id: customerId,
+            vehicle_type_id: tipoId,
+            plate,
+            brand: form.brand.trim() || null,
+            model: form.model.trim() || null,
+            year: form.year ? parseInt(form.year) : null,
+            color: form.color.trim() || null,
+            active: true,
+          })
+          .select('id')
+          .single()
+        if (vehErr) throw vehErr
+        vehicleId = veh.id
+      }
+
+      // Si ya estaba en la flotilla se reactiva en vez de duplicar la fila.
       const { error: fvErr } = await db
         .from('fleet_vehicles')
-        .insert({
+        .upsert({
           fleet_id: fleetId,
-          vehicle_id: veh.id,
+          vehicle_id: vehicleId,
           cost_center: form.cost_center.trim() || null,
           active: true,
-        })
+        }, { onConflict: 'fleet_id,vehicle_id' })
       if (fvErr) throw fvErr
 
-      toast.success(`Vehículo ${form.plate.toUpperCase()} agregado ✓`)
+      toast.success(existente
+        ? `${plate} ya estaba registrado y se sumó a la flotilla ✓`
+        : `Vehículo ${plate} agregado ✓`)
       onAdded()
     } catch (err: any) {
       toast.error(err?.message ?? 'Error al agregar el vehículo')
@@ -526,6 +575,13 @@ function AddVehicleModal({ fleetId, customerId, onAdded, onCancel }: Omit<AddVeh
             <div className="field" style={{ gridColumn: '1/-1' }}>
               <label>Placa *</label>
               <input className="corsa-input" value={form.plate} onChange={e => set('plate', e.target.value.toUpperCase())} placeholder="P 123-456" style={{ fontWeight: 700, letterSpacing: 1 }}/>
+            </div>
+            <div className="field" style={{ gridColumn: '1/-1' }}>
+              <label>Tipo de vehículo *</label>
+              <select className="corsa-input" value={tipoId} onChange={e => setTipoId(e.target.value)}>
+                {tipos.length === 0 && <option value="">Cargando…</option>}
+                {tipos.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
             </div>
             <div className="field">
               <label>Marca</label>

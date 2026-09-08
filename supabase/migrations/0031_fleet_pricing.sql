@@ -140,3 +140,71 @@ comment on function public.fleet_elite_price(uuid, text) is
   'Precio ÉLITE negociado para una flotilla y tamaño. Null si la flotilla no tiene acuerdo cargado.';
 
 grant execute on function public.fleet_elite_price(uuid, text) to authenticated;
+
+
+-- ─────────────────────────────────────────────
+-- RLS FALTANTE — fleet_vehicles y fleet_contracts
+--
+-- 0019 les creó sólo la policy de SELECT. Con RLS habilitada y sin policy de
+-- escritura, Postgres rechaza todo INSERT/UPDATE: agregar un vehículo a una
+-- flotilla devolvía 403 y crear el contrato fallaba en silencio (el código no
+-- revisaba ese error, así que la flotilla quedaba sin contrato sin avisar).
+--
+-- Se sigue el mismo patrón que "fleets_manage": pertenecer a la organización
+-- y tener corporate.manage.
+-- ─────────────────────────────────────────────
+drop policy if exists "fleet_vehicles_manage" on public.fleet_vehicles;
+create policy "fleet_vehicles_manage"
+  on public.fleet_vehicles for all
+  using (
+    fleet_id in (
+      select id from public.fleets
+      where organization_id = public.get_my_organization_id()
+    )
+    and public.has_permission('corporate.manage')
+  )
+  with check (
+    fleet_id in (
+      select id from public.fleets
+      where organization_id = public.get_my_organization_id()
+    )
+    and public.has_permission('corporate.manage')
+  );
+
+drop policy if exists "fleet_contracts_manage" on public.fleet_contracts;
+create policy "fleet_contracts_manage"
+  on public.fleet_contracts for all
+  using (
+    fleet_id in (
+      select id from public.fleets
+      where organization_id = public.get_my_organization_id()
+    )
+    and public.has_permission('corporate.manage')
+  )
+  with check (
+    fleet_id in (
+      select id from public.fleets
+      where organization_id = public.get_my_organization_id()
+    )
+    and public.has_permission('corporate.manage')
+  );
+
+-- fleet_pricing se creó arriba con "for all", pero sin WITH CHECK explícito
+-- el INSERT se evalúa contra USING; se deja explícito por simetría.
+drop policy if exists "fleet_pricing_manage" on public.fleet_pricing;
+create policy "fleet_pricing_manage"
+  on public.fleet_pricing for all
+  using (
+    fleet_id in (
+      select f.id from public.fleets f
+      where f.organization_id = public.get_my_organization_id()
+    )
+    and public.has_permission('corporate.manage')
+  )
+  with check (
+    fleet_id in (
+      select f.id from public.fleets f
+      where f.organization_id = public.get_my_organization_id()
+    )
+    and public.has_permission('corporate.manage')
+  );
