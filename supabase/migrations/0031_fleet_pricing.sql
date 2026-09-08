@@ -57,6 +57,10 @@ comment on column public.fleet_pricing.elite_per_size is
 
 alter table public.fleet_pricing enable row level security;
 
+-- `create policy` no admite IF NOT EXISTS: sin el drop previo, re-correr la
+-- migración aborta con "policy already exists" y todo lo que viene después
+-- (incluidas las policies de escritura del final) nunca llega a aplicarse.
+drop policy if exists "fleet_pricing_select" on public.fleet_pricing;
 create policy "fleet_pricing_select"
   on public.fleet_pricing for select
   using (
@@ -64,16 +68,6 @@ create policy "fleet_pricing_select"
       select f.id from public.fleets f
       where f.organization_id = public.get_my_organization_id()
     )
-  );
-
-create policy "fleet_pricing_manage"
-  on public.fleet_pricing for all
-  using (
-    fleet_id in (
-      select f.id from public.fleets f
-      where f.organization_id = public.get_my_organization_id()
-    )
-    and public.has_permission('corporate.manage')
   );
 
 
