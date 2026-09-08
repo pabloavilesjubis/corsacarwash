@@ -75,6 +75,16 @@ export async function createUser(input: CreateUserInput): Promise<{ id: UUID; em
   })
 
   if (error) {
+    // Si la función no está desplegada, Supabase responde 404 al preflight y
+    // el navegador lo reporta como error de CORS. Sin este caso explícito el
+    // usuario ve "No se pudo crear el usuario" y no tiene por dónde empezar.
+    if (error.name === 'FunctionsFetchError') {
+      throw new Error(
+        'La función admin-create-user no está disponible. Si nunca se desplegó, ' +
+        'corré: supabase functions deploy admin-create-user'
+      )
+    }
+
     // La Edge Function devuelve { error } con mensaje accionable;
     // supabase-js lo envuelve en FunctionsHttpError.
     let message = 'No se pudo crear el usuario'
@@ -83,7 +93,12 @@ export async function createUser(input: CreateUserInput): Promise<{ id: UUID; em
       try {
         const body = await ctx.json()
         if (body?.error) message = body.error
-      } catch { /* se mantiene el mensaje genérico */ }
+      } catch {
+        // Un 404 del gateway no trae cuerpo JSON: la función no existe.
+        if (ctx.status === 404) {
+          message = 'La función admin-create-user no está desplegada en el proyecto.'
+        }
+      }
     }
     throw new Error(message)
   }
