@@ -81,6 +81,19 @@ export interface TicketOperacion {
   ordenNumero?: string
 }
 
+/**
+ * Canje de cupón. Cuando viene, el ticket reemplaza todo el bloque fiscal
+ * —documento, totales, IVA y QR— por un resumen del canje: el cupón ya se
+ * facturó el día que se vendió, y volver a imprimir importes acá haría parecer
+ * que hubo un segundo cobro.
+ */
+export interface TicketRedencion {
+  codigoCupon: string
+  clienteNombre: string
+  valor: number
+  fecha: string
+}
+
 export interface TicketArgs {
   emisor: TicketEmisor
   venta: TicketVenta
@@ -88,6 +101,7 @@ export interface TicketArgs {
   dte?: TicketDte
   cliente?: TicketCliente
   atendio?: string
+  redencion?: TicketRedencion
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -141,7 +155,7 @@ function marcaAspirado(aspirado: boolean): string {
 // ─── Generador ───────────────────────────────────────────────
 
 export function buildCorsaTicketHTML(args: TicketArgs): string {
-  const { emisor: e, venta: v, operacion: op, dte: d = {}, cliente: cli, atendio } = args
+  const { emisor: e, venta: v, operacion: op, dte: d = {}, cliente: cli, atendio, redencion } = args
 
   const programa = resolveServiceProgram(op.servicio)
   const tipoLabel = (d.tipoDte && DTE_LABELS[d.tipoDte])
@@ -224,11 +238,27 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
        </div>`
     : ''
 
+  const redencionBlock = redencion ? `
+    <div class="redencion">
+      <div class="redencion-title">Canje de cupón</div>
+      <div class="redencion-code">${esc(redencion.codigoCupon)}</div>
+      <div class="kv-block">
+        <div class="kv-row"><span class="k">Cliente</span><span class="v">${esc(redencion.clienteNombre)}</span></div>
+        <div class="kv-row"><span class="k">Servicio</span><span class="v">${esc(op.servicio)}</span></div>
+        <div class="kv-row"><span class="k">Aspirado</span><span class="v">${op.aspirado ? 'Incluido' : 'No incluye'}</span></div>
+        <div class="kv-row"><span class="k">Fecha</span><span class="v">${esc(redencion.fecha)}</span></div>
+      </div>
+      <div class="redencion-note">
+        Este comprobante no es un documento tributario.<br/>
+        El cupón fue facturado al momento de su compra.
+      </div>
+    </div>` : ''
+
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8"/>
-<title>Ticket ${esc(d.numeroControl || v.id || 'CORSA')}</title>
+<title>${redencion ? `Canje ${esc(redencion.codigoCupon)}` : `Ticket ${esc(d.numeroControl || v.id || 'CORSA')}`}</title>
 <style>
   /* ════════════════════════════════════════════════════════
      REGLA DE ORO (heredada del ticket de BEON):
@@ -346,6 +376,19 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
   .footer-thanks { font-size: 12px; font-weight: 900; }
   .footer-meta { font-size: 10px; font-weight: 600; margin-top: 2px; letter-spacing: 0.04em; }
 
+  /* Canje de cupón */
+  .redencion { margin: 8px 0 4px; text-align: center; }
+  .redencion-title {
+    font-size: 12px; font-weight: 900; letter-spacing: 0.12em;
+    text-transform: uppercase; border-top: 2px solid #000; border-bottom: 2px solid #000;
+    padding: 5px 0;
+  }
+  .redencion-code {
+    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+    font-size: 30px; font-weight: 900; letter-spacing: 0.06em; margin: 6px 0 2px;
+  }
+  .redencion-note { font-size: 10px; font-weight: 600; line-height: 1.35; margin-top: 6px; }
+
   /* Espacio para que la cuchilla no corte información */
   .bottom-pad { height: 12px; }
 
@@ -369,6 +412,7 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
 
     <hr class="sep-solid"/>
 
+    ${redencion ? redencionBlock : `
     <div class="doc-type">
       <div class="doc-type-name">${esc(tipoLabel)}</div>
       ${e.ambiente ? `<div class="doc-type-amb">${esc(e.ambiente)}</div>` : ''}
@@ -396,7 +440,7 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
       ${v.metodoPago ? `<div class="pay-row"><span>Pago</span><span>${esc(v.metodoPago)}</span></div>` : ''}
     </div>
 
-    ${qrBlock}
+    ${qrBlock}`}
 
     <div class="footer">
       <div class="footer-thanks">¡Gracias por su preferencia!</div>

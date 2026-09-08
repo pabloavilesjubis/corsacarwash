@@ -130,6 +130,8 @@ const screenIcons: Record<string, React.ReactNode> = {
   ),
   orders: icons.orders,
   sales: icons.receivable,
+  pos_admin: icons.pos,
+  coupons: icons.memberships,
   dashboard: icons.dashboard,
   customers: icons.customers,
   analytics: icons.analytics,

@@ -317,6 +317,7 @@ export function DashboardPage() {
   const [loading, setLoading] = useState(false)
   const [activeOrders, setActiveOrders] = useState(0)
   const [cashAlert, setCashAlert] = useState<{ difference: number } | null>(null)
+  const [voucherStats, setVoucherStats] = useState({ revenue: 0, sold: 0, redeemed: 0 })
 
   const loadKPIs = useCallback(async () => {
     if (!branchId) return
@@ -324,28 +325,40 @@ export function DashboardPage() {
     try {
       const today = new Date().toISOString().split('T')[0]
 
-      // Daily KPIs from work_orders
+      // Totales del día desde v_daily_totals (0032), que separa plata de
+      // servicio. Calcularlo acá sumando work_orders mezclaría las tres
+      // naturalezas: una venta de cupones no presta servicio y un canje no
+      // ingresa plata, así que el ticket promedio saldría mal en ambos casos.
+      const { data: totales } = await (supabase as any)
+        .from('v_daily_totals')
+        .select('*')
+        .eq('branch_id', branchId)
+        .eq('sale_date', today)
+        .maybeSingle()
+
       const { data: orders } = await (supabase as any)
         .from('work_orders')
-        .select('total, status, payment_status')
+        .select('status, order_kind')
         .eq('branch_id', branchId)
         .gte('created_at', `${today}T00:00:00`)
 
-      if (orders) {
-        // Un día sin ventas es un dato, no un error: se muestran ceros.
-        const completed = orders.filter((o: any) => ['paid', 'delivered'].includes(o.status))
-        const cancelled = orders.filter((o: any) => o.status === 'cancelled')
-        const gross = completed.reduce((s: number, o: any) => s + (o.total || 0), 0)
-        setKpis({
-          gross_revenue: gross,
-          total_orders: orders.length,
-          completed_orders: completed.length,
-          avg_ticket: completed.length > 0 ? gross / completed.length : 0,
-          cancelled_orders: cancelled.length,
-          total_discounts: 0,
-        })
-        setActiveOrders(orders.filter((o: any) => !['delivered', 'cancelled'].includes(o.status)).length)
-      }
+      // Un día sin ventas es un dato, no un error: se muestran ceros.
+      setKpis({
+        gross_revenue: Number(totales?.gross_revenue ?? 0),
+        total_orders: Number(totales?.services_delivered ?? 0),
+        completed_orders: Number(totales?.services_delivered ?? 0),
+        avg_ticket: Number(totales?.avg_ticket ?? 0),
+        cancelled_orders: (orders ?? []).filter((o: any) => o.status === 'cancelled').length,
+        total_discounts: 0,
+      })
+      setVoucherStats({
+        revenue: Number(totales?.voucher_revenue ?? 0),
+        sold: Number(totales?.voucher_sales ?? 0),
+        redeemed: Number(totales?.vouchers_redeemed ?? 0),
+      })
+      setActiveOrders((orders ?? []).filter(
+        (o: any) => o.order_kind === 'service' && !['delivered', 'cancelled'].includes(o.status)
+      ).length)
 
       // Desglose por servicio del día.
       // No se usa v_service_performance: esa vista agrupa por MES, y la
@@ -580,6 +593,32 @@ export function DashboardPage() {
         </div>
 
       </div>
+
+      {/* ── Cupones del día ──
+          Se muestran aparte de los KPI principales a propósito: la venta de
+          cupones suma plata pero no servicios, y el canje suma servicio pero
+          no plata. Mezclarlos con el ticket promedio lo distorsionaría. */}
+      {(voucherStats.sold > 0 || voucherStats.redeemed > 0) && (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '14px 18px', display: 'flex', gap: 28, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 14 }}>Cupones</div>
+          <div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>Vendidos hoy</div>
+            <div style={{ fontSize: 18, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+              {voucherStats.sold} · {fmt(voucherStats.revenue)}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>Canjeados hoy</div>
+            <div style={{ fontSize: 18, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+              {voucherStats.redeemed}
+            </div>
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', flex: 1, minWidth: 220, lineHeight: 1.5 }}>
+            La venta suma al ingreso del día pero no cuenta como servicio.
+            El canje cuenta como servicio prestado, sin volver a sumar plata.
+          </div>
+        </div>
+      )}
 
       {/* ── Mapa de calor ──
           Acotado a media pantalla: las celdas usan aspect-ratio 1, así que a

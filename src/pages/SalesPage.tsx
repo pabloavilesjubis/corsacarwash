@@ -235,6 +235,7 @@ export function SalesPage() {
           { label: 'Ingreso bruto', value: money(totals.gross) },
           { label: 'IVA incluido', value: money(totals.tax) },
           { label: 'Ticket promedio', value: money(totals.average) },
+          { label: 'Cupones', value: `${totals.vouchersSold} vendidos · ${totals.vouchersRedeemed} canjes` },
           { label: 'Con aspirado', value: `${totals.withAspirado} de ${totals.count}` },
         ].map(k => (
           <div key={k.label} className="kpi-card">
@@ -297,10 +298,16 @@ export function SalesPage() {
                     <td className="font-mono" style={{ fontSize: 12.5, fontWeight: 600 }}>{s.order_number}</td>
                     <td style={{ fontSize: 13 }} className="truncate">{s.customer_name}</td>
                     <td style={{ fontSize: 13 }}>
-                      {s.service_name ?? '—'}
-                      {s.with_aspirado && (
-                        <span className="badge badge-neutral" style={{ marginLeft: 6 }}>+ aspirado</span>
-                      )}
+                      {s.order_kind === 'voucher_sale'
+                        ? <span className="badge badge-orange">Venta de {s.voucher_quantity ?? ''} cupones</span>
+                        : s.order_kind === 'voucher_redemption'
+                          ? <span className="badge badge-neutral">Canje de cupón</span>
+                          : <>
+                              {s.service_name ?? '—'}
+                              {s.with_aspirado && (
+                                <span className="badge badge-neutral" style={{ marginLeft: 6 }}>+ aspirado</span>
+                              )}
+                            </>}
                     </td>
                     <td className="font-mono" style={{ fontSize: 12.5 }}>{s.plate ?? '—'}</td>
                     <td style={{ fontSize: 12.5 }}>{s.payment_method ?? '—'}</td>
@@ -313,8 +320,12 @@ export function SalesPage() {
                     <td style={{ whiteSpace: 'nowrap' }}>
                       <IconAction icon={ICONS.ticket} label="Ticket térmico (PDF)"
                                   onClick={() => reimprimir(s)}/>
+                      {/* Un canje no genera documento fiscal: el cupón se
+                          facturó el día que se vendió. */}
                       <IconAction icon={ICONS.factura} label="Factura carta (PDF)"
-                                  onClick={() => verFactura(s)}/>
+                                  onClick={() => verFactura(s)}
+                                  disabled={s.order_kind === 'voucher_redemption'}
+                                  reason="un canje no genera documento fiscal"/>
                       <IconAction icon={ICONS.json} label="JSON del DTE"
                                   onClick={() => descargarJson(s)}
                                   disabled={!s.has_dte_payload}

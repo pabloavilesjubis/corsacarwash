@@ -24,6 +24,10 @@ export interface Sale {
   created_at: string
   sale_date: string
   status: string
+  /** 'service' | 'voucher_sale' | 'voucher_redemption' — ver 0032. */
+  order_kind: string
+  voucher_batch_id: string | null
+  voucher_quantity: number | null
   subtotal: number
   tax_total: number
   total: number
@@ -106,6 +110,8 @@ export interface SalesTotals {
   net: number
   average: number
   withAspirado: number
+  vouchersSold: number
+  vouchersRedeemed: number
 }
 
 /** Totales del conjunto ya filtrado — se calculan en el cliente sobre las filas visibles. */
@@ -113,13 +119,22 @@ export function summarize(sales: Sale[]): SalesTotals {
   const activas = sales.filter(s => s.status !== 'cancelled')
   const gross = activas.reduce((sum, s) => sum + Number(s.total || 0), 0)
   const tax = activas.reduce((sum, s) => sum + Number(s.tax_total || 0), 0)
+
+  // El ticket promedio se calcula sólo sobre servicios cobrados en el momento.
+  // Una venta de cupones lo inflaría (un solo cobro de cientos de dólares) y un
+  // canje lo hundiría (vale 0). Ver 0032_service_vouchers.sql.
+  const servicios = activas.filter(s => s.order_kind === 'service')
+  const grossServicios = servicios.reduce((sum, s) => sum + Number(s.total || 0), 0)
+
   return {
     count: activas.length,
     gross,
     tax,
     net: gross - tax,
-    average: activas.length ? gross / activas.length : 0,
+    average: servicios.length ? grossServicios / servicios.length : 0,
     withAspirado: activas.filter(s => s.with_aspirado).length,
+    vouchersSold: activas.filter(s => s.order_kind === 'voucher_sale').length,
+    vouchersRedeemed: activas.filter(s => s.order_kind === 'voucher_redemption').length,
   }
 }
 

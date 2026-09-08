@@ -39,11 +39,13 @@ export interface ScreenDef {
 
 export const SCREENS: readonly ScreenDef[] = [
   { key: 'pos',         path: '/pos',         label: 'POS',                      permission: 'screens.pos',         section: 'caja' },
+  { key: 'pos_admin',   path: '/pos-admin',   label: 'POS Administrativo',       permission: 'screens.pos_admin',   section: 'caja' },
   // Órdenes de trabajo queda oculto: el flujo de taller no se usa todavía.
   { key: 'orders',      path: '/orders',      label: 'Órdenes de trabajo',       permission: 'screens.orders',      section: 'caja', hidden: true },
 
   { key: 'dashboard',   path: '/dashboard',   label: 'Resumen del día',          permission: 'screens.dashboard',   section: 'administracion' },
   { key: 'sales',       path: '/sales',       label: 'Ventas',                   permission: 'screens.sales',       section: 'administracion' },
+  { key: 'coupons',     path: '/coupons',     label: 'Cupones',                  permission: 'screens.coupons',     section: 'administracion' },
   { key: 'customers',   path: '/customers',   label: 'Clientes',                 permission: 'screens.customers',   section: 'administracion' },
   { key: 'analytics',   path: '/analytics',   label: 'Inteligencia de negocio',  permission: 'screens.analytics',   section: 'administracion' },
   { key: 'receivables', path: '/receivables', label: 'Cuentas por cobrar',       permission: 'screens.receivables', section: 'administracion' },
