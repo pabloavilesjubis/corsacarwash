@@ -11,7 +11,7 @@
  * PostgREST. Si cambia una regla, cambian las dos.
  */
 
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -20,6 +20,7 @@ import {
   DEPARTAMENTOS, ACTIVIDADES_ECONOMICAS, TIPOS_DOCUMENTO_RECEPTOR,
   MH_PATTERNS, onlyDigits, getMunicipiosFor,
 } from '../lib/mh-catalogs'
+import { SearchSelect } from './ui/SearchSelect'
 import {
   createCustomer, updateCustomer,
   type CustomerWritableFields,
@@ -179,9 +180,12 @@ export function CustomerFormPanel({
   onSaved: (id: string) => void
 }) {
   const isEdit = Boolean(customer)
+  // Último valor que el espejo escribió en billing_email. Sirve para distinguir
+  // "el usuario nunca lo tocó" de "lo cambió a propósito".
+  const previousEmail = useRef(customer?.email ?? '')
 
   const {
-    register, handleSubmit, watch, setValue,
+    register, handleSubmit, watch, setValue, getValues,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -297,7 +301,24 @@ export function CustomerFormPanel({
           <input {...register('phone')} className="corsa-input" placeholder="2222-1111"/>
         </Field>
         <Field label="Correo" error={errors.email?.message}>
-          <input {...register('email')} className="corsa-input" placeholder="correo@ejemplo.com"/>
+          <input
+            {...register('email')}
+            className="corsa-input"
+            placeholder="correo@ejemplo.com"
+            onChange={e => {
+              const next = e.target.value
+              setValue('email', next, { shouldValidate: true })
+              // El correo de facturación arranca igual al de contacto: en la
+              // mayoría de los casos es el mismo y escribirlo dos veces sólo
+              // invita a la errata. Se sigue pudiendo separar a mano — una vez
+              // que difieren, dejamos de sobrescribirlo.
+              const factura = getValues('billing_email') ?? ''
+              if (factura === '' || factura === previousEmail.current) {
+                setValue('billing_email', next)
+              }
+              previousEmail.current = next
+            }}
+          />
         </Field>
 
         {/* ── Documento tributario ── */}
@@ -372,11 +393,13 @@ export function CustomerFormPanel({
             </Field>
 
             <Field label="Actividad económica *" error={errors.cod_actividad?.message}>
-              <select
-                {...register('cod_actividad')}
-                className="corsa-input"
-                onChange={e => {
-                  const codigo = e.target.value
+              {/* 769 opciones: un <select> obliga a scrollear a ciegas. */}
+              <SearchSelect
+                id="cod-actividad"
+                items={ACTIVIDADES_ECONOMICAS}
+                value={watch('cod_actividad') ?? ''}
+                placeholder="Escribí para buscar (ej. lavado, taller, comercio)…"
+                onChange={codigo => {
                   setValue('cod_actividad', codigo, { shouldValidate: true })
                   // descActividad viaja junto al código en el DTE.
                   setValue(
@@ -384,12 +407,7 @@ export function CustomerFormPanel({
                     ACTIVIDADES_ECONOMICAS.find(a => a.codigo === codigo)?.nombre ?? ''
                   )
                 }}
-              >
-                <option value="">— Elegí una —</option>
-                {ACTIVIDADES_ECONOMICAS.map(a => (
-                  <option key={a.codigo} value={a.codigo}>{a.codigo} · {a.nombre}</option>
-                ))}
-              </select>
+              />
             </Field>
 
             <Field label="Departamento *" error={errors.fiscal_departamento?.message}>
@@ -428,7 +446,8 @@ export function CustomerFormPanel({
                      placeholder="facturacion@empresa.com"/>
             </Field>
             <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: -6 }}>
-              Si lo dejás vacío se usa el correo de contacto.
+              Se copia del correo de contacto. Cambialo si la empresa recibe las
+              facturas en otra casilla.
             </div>
           </>
         )}
