@@ -15,6 +15,9 @@ const OrdersPage = lazy(() => import('./pages/OrdersPage').then(m => ({ default:
 const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage').then(m => ({ default: m.PlaceholderPage })))
 const FlotillasPage = lazy(() => import('./pages/FlotillasPage').then(m => ({ default: m.FlotillasPage })))
 const UsersPage = lazy(() => import('./pages/UsersPage').then(m => ({ default: m.UsersPage })))
+// Banco de pruebas del ticket térmico. Sólo en desarrollo: no es una pantalla
+// del sistema, así que no pasa por ScreenGuard ni aparece en el sidebar.
+const TicketPreviewPage = lazy(() => import('./pages/TicketPreviewPage').then(m => ({ default: m.TicketPreviewPage })))
 
 export default function App() {
   return (
@@ -54,6 +57,9 @@ export default function App() {
             <Routes>
               {/* Public */}
               <Route path="/login" element={<LoginPage/>}/>
+              {import.meta.env.DEV && (
+                <Route path="/dev/ticket" element={<TicketPreviewPage/>}/>
+              )}
 
               {/* Protected — with AppShell.
                   Cada ruta pasa por ScreenGuard: sin el permiso de su pantalla
