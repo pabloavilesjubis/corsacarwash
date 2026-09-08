@@ -11,6 +11,10 @@ import { createPortal } from 'react-dom'
 import toast from 'react-hot-toast'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
+import {
+  ccfReceptorStatus, fcfReceptorStatus, preferredDocType, type ReceptorStatus,
+} from '../lib/fiscal/receptor'
+import { FCF_IDENTIFICACION_OBLIGATORIA_DESDE } from '../lib/mh-catalogs'
 
 // ─── Catálogo ────────────────────────────────────────────────
 
@@ -62,13 +66,34 @@ type FcfMode = 'generic' | 'named'
 
 // ─── Types ────────────────────────────────────────────────────
 
+/**
+ * Columnas del cliente que el POS necesita para facturar.
+ * Una sola constante para las tres consultas (nombre, placa y buscador de CCF):
+ * si una se quedara corta, el modal mostraría datos fiscales vacíos y el cajero
+ * creería que la ficha está incompleta.
+ */
+const CUSTOMER_COLUMNS =
+  'id,customer_type,first_name,last_name,trade_name,legal_name,dui,nit,nrc,email,phone,' +
+  'fiscal_document_type,fiscal_doc_type,fiscal_doc_number,cod_actividad,desc_actividad,' +
+  'fiscal_departamento,fiscal_municipio,fiscal_complemento,billing_email'
+
 interface CustomerResult {
   id: string
   customer_type: 'individual' | 'company'
   first_name?: string; last_name?: string
   trade_name?: string; legal_name?: string
-  dui?: string; nit?: string
+  dui?: string; nit?: string; nrc?: string
   email?: string; phone?: string
+  // Fiscales — ver 0029_customer_fiscal_dte.sql
+  fiscal_document_type?: string | null
+  fiscal_doc_type?: string | null
+  fiscal_doc_number?: string | null
+  cod_actividad?: string | null
+  desc_actividad?: string | null
+  fiscal_departamento?: string | null
+  fiscal_municipio?: string | null
+  fiscal_complemento?: string | null
+  billing_email?: string | null
   vehicle?: { id: string; plate: string; brand?: string; model?: string; year?: string; color?: string }
   membership_status?: 'active' | 'expiring' | null
   membership_plan?: string
@@ -339,12 +364,12 @@ function CustomerSearchPanel({ selected, onSelect, onClear }: {
         let data: any[] = []
         if (isPlate) {
           const { data: vd } = await (supabase as any)
-            .from('vehicles').select('id,plate,brand,model,year,color,customer_id,customers(id,customer_type,first_name,last_name,trade_name,legal_name,dui,nit)')
+            .from('vehicles').select(`id,plate,brand,model,year,color,customer_id,customers(${CUSTOMER_COLUMNS})`)
             .ilike('plate', `%${debouncedQ.replace(/\s/g, '')}%`).limit(6)
           data = (vd ?? []).map((v: any) => ({ ...(v.customers ?? {}), vehicle: { id: v.id, plate: v.plate, brand: v.brand, model: v.model, year: v.year, color: v.color } }))
         } else {
           const { data: cd } = await (supabase as any)
-            .from('customers').select('id,customer_type,first_name,last_name,trade_name,legal_name,dui,nit,email,phone')
+            .from('customers').select(CUSTOMER_COLUMNS)
             .or(`first_name.ilike.%${debouncedQ}%,last_name.ilike.%${debouncedQ}%,trade_name.ilike.%${debouncedQ}%`).limit(8)
           data = cd ?? []
         }
@@ -427,21 +452,70 @@ function CustomerSearchPanel({ selected, onSelect, onClear }: {
   )
 }
 
+// ─── Panel de validación del receptor ─────────────────────────
+
+/**
+ * Muestra, campo por campo, los datos con los que se va a emitir el DTE.
+ * El cajero los valida antes de cobrar en vez de enterarse de que faltaba algo
+ * cuando el MH rechaza el documento, con el cliente esperando en caja.
+ */
+function ReceptorPanel({ status, title }: { status: ReceptorStatus; title: string }) {
+  if (status.fields.length === 0) return null
+  return (
+    <div style={{ border: `1.5px solid ${status.ok ? 'var(--border)' : 'var(--color-danger-text)'}`, borderRadius: 7, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'var(--subtle-bg)', borderBottom: '1px solid var(--border)' }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{title}</span>
+        <span style={{ fontSize: 11.5, fontWeight: 700, color: status.ok ? 'var(--color-success-text)' : 'var(--color-danger-text)' }}>
+          {status.ok ? 'Listo para facturar' : `Faltan ${status.missing.length}`}
+        </span>
+      </div>
+      <div style={{ padding: '4px 12px 8px' }}>
+        {status.fields.map(f => (
+          <div key={f.label} style={{ display: 'flex', gap: 8, alignItems: 'baseline', padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
+            <span style={{ flexShrink: 0, width: 14, fontWeight: 900, fontSize: 12, color: f.ok ? 'var(--color-success-text)' : 'var(--color-danger-text)' }}>
+              {f.ok ? '✓' : '!'}
+            </span>
+            <span style={{ flexShrink: 0, width: 108, fontSize: 11.5, color: 'var(--text-secondary)' }}>{f.label}</span>
+            <span style={{ flex: 1, fontSize: 12.5, fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-word' }}>
+              {f.value}
+              {!f.ok && f.hint && (
+                <div style={{ fontSize: 11, fontWeight: 400, color: 'var(--color-danger-text)', marginTop: 1 }}>{f.hint}</div>
+              )}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ─── Billing Modal ────────────────────────────────────────────
 
 interface BillingModalProps {
   total: number; paymentMethod: string
+  /** Cliente ya elegido en la caja; de ahí sale todo lo prellenado. */
+  customer: CustomerResult | null
   onConfirm: (billing: BillingInfo) => void
   onCancel: () => void
 }
 
-function BillingModal({ total, paymentMethod, onConfirm, onCancel }: BillingModalProps) {
-  const [docType, setDocType] = useState<DocType>(null)
-  const [fcfMode, setFcfMode] = useState<FcfMode>('generic')
-  const [fcfName, setFcfName] = useState('')
+function BillingModal({ total, paymentMethod, customer, onConfirm, onCancel }: BillingModalProps) {
+  // Si hay cliente en la caja, el modal abre resuelto: su documento preferido
+  // ya elegido y sus datos cargados. El cajero valida o corrige, no transcribe.
+  const [docType, setDocType] = useState<DocType>(
+    customer ? preferredDocType(customer) : null
+  )
+  const [fcfMode, setFcfMode] = useState<FcfMode>(
+    customer && preferredDocType(customer) === 'ticket' ? 'named' : 'generic'
+  )
+  const [fcfName, setFcfName] = useState(
+    customer ? displayName(customer) : ''
+  )
   const [ccfQuery, setCcfQuery] = useState('')
   const [ccfResults, setCcfResults] = useState<CustomerResult[]>([])
-  const [ccfSelected, setCcfSelected] = useState<CustomerResult | null>(null)
+  const [ccfSelected, setCcfSelected] = useState<CustomerResult | null>(
+    customer && preferredDocType(customer) === 'ccf' ? customer : null
+  )
   const [ccfLoading, setCcfLoading] = useState(false)
   const debouncedCcf = useDebounce(ccfQuery, 350)
 
@@ -450,7 +524,7 @@ function BillingModal({ total, paymentMethod, onConfirm, onCancel }: BillingModa
     setCcfLoading(true)
     ;(async () => {
       const { data } = await (supabase as any).from('customers')
-        .select('id,customer_type,first_name,last_name,trade_name,legal_name,dui,nit,email')
+        .select(CUSTOMER_COLUMNS)
         .or(`trade_name.ilike.%${debouncedCcf}%,legal_name.ilike.%${debouncedCcf}%,nit.ilike.%${debouncedCcf}%,dui.ilike.%${debouncedCcf}%`).limit(8)
       setCcfResults(data ?? [])
       setCcfLoading(false)
@@ -463,7 +537,18 @@ function BillingModal({ total, paymentMethod, onConfirm, onCancel }: BillingModa
     return () => document.removeEventListener('keydown', h)
   }, [onCancel])
 
-  const canConfirm = docType === 'ticket' || (docType === 'ccf' && ccfSelected != null)
+  // El receptor efectivo: para CCF el buscado en el modal, para ticket el de la caja.
+  const ccfStatus = ccfSelected ? ccfReceptorStatus(ccfSelected) : null
+  const fcfStatus = fcfReceptorStatus(customer, total)
+
+  // Antes alcanzaba con haber elegido un cliente para el CCF. Pero un cliente
+  // puede tener NIT y aun así no poder recibir un CCF (sin NRC, sin actividad,
+  // sin dirección): el DTE se rechazaba al transmitir. Ahora se exige el
+  // receptor completo, y el panel de arriba dice exactamente qué falta.
+  const canConfirm =
+    docType === 'ticket' ? fcfStatus.ok
+    : docType === 'ccf'  ? Boolean(ccfSelected && ccfStatus?.ok)
+    : false
 
   return createPortal(
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 20 }}
@@ -524,11 +609,14 @@ function BillingModal({ total, paymentMethod, onConfirm, onCancel }: BillingModa
                     <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }}>{opt.label}</div>
                     {opt.sub && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 1 }}>{opt.sub}</div>}
                     {opt.id === 'named' && fcfMode === 'named' && (
-                      <input id="fcf-name" value={fcfName} onChange={e => setFcfName(e.target.value)} placeholder="Nombre completo" autoFocus className="corsa-input" style={{ marginTop: 8, width: '100%' }}/>
+                      <input id="fcf-name" value={fcfName} onChange={e => setFcfName(e.target.value)} placeholder="Nombre completo" className="corsa-input" style={{ marginTop: 8, width: '100%' }}/>
                     )}
                   </div>
                 </label>
               ))}
+
+              {/* Sobre el umbral del MH el receptor deja de ser opcional. */}
+              <ReceptorPanel status={fcfStatus} title={`Identificación exigida sobre US$${FCF_IDENTIFICACION_OBLIGATORIA_DESDE.toFixed(2)}`}/>
             </div>
           )}
 
@@ -570,8 +658,13 @@ function BillingModal({ total, paymentMethod, onConfirm, onCancel }: BillingModa
                   )}
                 </div>
               )}
+              {ccfSelected && ccfStatus && (
+                <ReceptorPanel status={ccfStatus} title="Datos con los que se emitirá el CCF"/>
+              )}
               <div style={{ fontSize: 12, color: 'var(--text-secondary)', background: 'var(--subtle-bg)', padding: '8px 12px', borderRadius: 5 }}>
-                El CCF requiere NIT válido. Si el cliente no existe, créalo en Clientes primero.
+                {ccfStatus && !ccfStatus.ok
+                  ? `Faltan datos en la ficha: ${ccfStatus.missing.join(', ')}. Completalos en Clientes y volvé a intentar.`
+                  : 'El CCF requiere el receptor completo. Si el cliente no existe, créalo en Clientes primero.'}
               </div>
             </div>
           )}
@@ -943,6 +1036,7 @@ export function POSPage() {
       {/* Billing Modal */}
       {showBillingModal && (
         <BillingModal
+          customer={customer}
           total={total}
           paymentMethod={selectedPayment}
           onConfirm={handleBillingConfirm}
