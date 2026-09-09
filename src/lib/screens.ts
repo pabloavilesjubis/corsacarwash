@@ -54,6 +54,7 @@ export const SCREENS: readonly ScreenDef[] = [
   { key: 'memberships', path: '/memberships', label: 'Membresías',               permission: 'screens.memberships', section: 'administracion' },
   { key: 'settings',    path: '/settings',    label: 'Configuración',            permission: 'screens.settings',    section: 'administracion' },
   { key: 'users',       path: '/users',       label: 'Usuarios y roles',         permission: 'users.manage',        section: 'administracion' },
+  { key: 'software',    path: '/software',    label: 'Software',                 permission: 'screens.software',    section: 'administracion' },
 ] as const
 
 /** Permisos que la pantalla de roles ofrece como "acceso a pantallas". */

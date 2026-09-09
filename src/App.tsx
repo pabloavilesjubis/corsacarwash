@@ -18,6 +18,7 @@ const UsersPage = lazy(() => import('./pages/UsersPage').then(m => ({ default: m
 const SalesPage = lazy(() => import('./pages/SalesPage').then(m => ({ default: m.SalesPage })))
 const PosAdminPage = lazy(() => import('./pages/PosAdminPage').then(m => ({ default: m.PosAdminPage })))
 const CouponsPage = lazy(() => import('./pages/CouponsPage').then(m => ({ default: m.CouponsPage })))
+const SoftwarePage = lazy(() => import('./pages/SoftwarePage').then(m => ({ default: m.SoftwarePage })))
 // Banco de pruebas del ticket térmico. Sólo en desarrollo: no es una pantalla
 // del sistema, así que no pasa por ScreenGuard ni aparece en el sidebar.
 const TicketPreviewPage = lazy(() => import('./pages/TicketPreviewPage').then(m => ({ default: m.TicketPreviewPage })))
@@ -83,6 +84,7 @@ export default function App() {
                 <Route path="/memberships" element={<ScreenGuard permission="screens.memberships"><PlaceholderPage/></ScreenGuard>}/>
                 <Route path="/settings"    element={<ScreenGuard permission="screens.settings"><PlaceholderPage/></ScreenGuard>}/>
                 <Route path="/users"       element={<ScreenGuard permission="users.manage"><UsersPage/></ScreenGuard>}/>
+                <Route path="/software"    element={<ScreenGuard permission="screens.software"><SoftwarePage/></ScreenGuard>}/>
 
                 {/* Entrada y catch-all: a la primera pantalla accesible,
                     no a /dashboard fijo (un Operador no lo tiene). */}
