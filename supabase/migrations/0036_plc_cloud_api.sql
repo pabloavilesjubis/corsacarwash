@@ -302,6 +302,18 @@ begin
   end if;
 
   -- ── Estado actual ──
+
+  -- Una máquina en falla también está «no lista», así que M13↑ y M14↓ llegan
+  -- casi juntos. Si MACHINE_NOT_READY pisara a FAULT, el tablero diría «no
+  -- lista» de una máquina averiada: pierde justo el dato que hace falta para
+  -- ir a atenderla. La falla manda hasta que se limpie.
+  if p_type in ('MACHINE_NOT_READY') and exists (
+       select 1 from public.plc_machine_status
+        where organization_id = p_org and machine_id = p_machine
+          and status = 'FAULT') then
+    v_status := null;
+  end if;
+
   -- La condición del where es lo que hace esto seguro ante reenvíos: un
   -- evento más viejo que el último aplicado no puede retroceder el estado.
   if v_status is not null then
