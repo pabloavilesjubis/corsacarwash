@@ -41,3 +41,27 @@ min_password_length = 8
 enabled = true
 # Only enable realtime on operational tables — not all
 # Tables: work_orders, equipment, workstations, notifications
+
+# ─────────────────────────────────────────────
+# Edge Functions
+#
+# `verify_jwt` decide si la plataforma exige un JWT de Supabase ANTES de que
+# el pedido llegue al código de la función. Es una compuerta de Supabase, no
+# nuestra, y por eso hay que declararla acá y no dentro del index.ts.
+# ─────────────────────────────────────────────
+
+[functions.admin-create-user]
+# Sí: la función lee el JWT del llamante para saber quién crea al usuario y
+# verificar su permiso users.manage. Sin JWT no tiene nada que verificar.
+verify_jwt = true
+
+[functions.gateway-ingest]
+# No: el gateway no es un usuario de Supabase y no tiene sesión. Se autentica
+# con su propia clave (X-Gateway-Key), que la función valida contra el hash
+# guardado en plc_gateways.
+#
+# Sin esta línea la plataforma responde 401 antes de ejecutar una sola línea
+# de nuestro código, y como el gateway no reintenta los 4xx, se rinde y
+# registra un error que parece «clave equivocada» cuando en realidad la clave
+# nunca llegó a compararse.
+verify_jwt = false

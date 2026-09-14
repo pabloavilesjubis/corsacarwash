@@ -182,7 +182,11 @@ create policy "plc_gateways_manage"
 -- ─────────────────────────────────────────────
 -- 6. VISTA DE ESTADO
 -- ─────────────────────────────────────────────
-create or replace view public.v_plc_gateway_status as
+-- drop + create en lugar de `create or replace`: 0036 le agrega columnas a esta
+-- vista, y `create or replace` no puede quitarlas. Sin esto, volver a correr
+-- 0035 después de 0036 falla con «cannot drop columns from view».
+drop view if exists public.v_plc_gateway_status cascade;
+create view public.v_plc_gateway_status as
 select
   g.id,
   g.organization_id,
