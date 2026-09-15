@@ -21,7 +21,9 @@ import { printCorsaTicket } from '../lib/ticket/corsaTicket'
 import { buildTicketArgsFromPos, EMISOR, type PosSaleResult } from '../lib/ticket/fromSale'
 import { lookupVoucher, redeemVoucher, type VoucherLookup } from '../services/vouchers.service'
 import { fetchPolizaVigente, tiempoRestante, type RainPolicy } from '../services/rain.service'
-import { getCustomerVehicles } from '../services/customers.service'
+import {
+  getCustomerVehicles, fetchMapaTamanos, type TamanoVehiculo,
+} from '../services/customers.service'
 import {
   ModalNuevoCliente, ModalNuevoVehiculo, SelectorVehiculos, type VehiculoPos,
 } from '../components/pos/AltaRapida'
@@ -796,6 +798,9 @@ export function POSPage() {
   // carros cobrado siempre sobre el primero deja un historial inservible.
   const [vehiculos, setVehiculos] = useState<VehiculoPos[]>([])
   const [vehiculoElegido, setVehiculoElegido] = useState<VehiculoPos | null>(null)
+  // Tipo de vehículo → tamaño (S/M/L). Se carga una vez: son tres filas, y
+  // es lo que permite que elegir el carro deje elegida la tarifa.
+  const [mapaTamanos, setMapaTamanos] = useState<Record<string, TamanoVehiculo>>({})
   const [altaCliente, setAltaCliente] = useState(false)
   const [altaVehiculo, setAltaVehiculo] = useState(false)
   // Cuando el cajero decide cobrar el lavado CON el seguro, en lugar de cobrarlo.
@@ -1036,6 +1041,29 @@ export function POSPage() {
   // Con cupón el botón sólo se habilita si el cupón existe y está sin usar:
   // canjear uno ya utilizado o inexistente falla en el servidor, y es mejor
   // no dejar que el cajero lo intente delante del cliente.
+  useEffect(() => {
+    if (!orgId) return
+    let vivo = true
+    fetchMapaTamanos(orgId).then(m => { if (vivo) setMapaTamanos(m) })
+    return () => { vivo = false }
+  }, [orgId])
+
+  /**
+   * La tarifa sale del carro.
+   *
+   * Desde la 0040 el tipo de vehículo ES el tamaño que cobra el POS, así que
+   * elegir el vehículo ya dice qué se cobra. Se preselecciona en lugar de
+   * imponerse: el cajero puede corregirlo —un pickup cargado, una camioneta
+   * que entra como mediana— y su corrección no se pisa, porque esto sólo
+   * corre cuando cambia el vehículo elegido.
+   */
+  useEffect(() => {
+    const tipo = vehiculoElegido?.vehicle_type_id
+    if (!tipo) return
+    const tamano = mapaTamanos[tipo]
+    if (tamano) setSelectedSize(tamano)
+  }, [vehiculoElegido, mapaTamanos])
+
   /**
    * Los carros del cliente.
    *
@@ -1307,6 +1335,7 @@ export function POSPage() {
                     elegido={vehiculoElegido}
                     onElegir={setVehiculoElegido}
                     onAgregar={() => setAltaVehiculo(true)}
+                    tamanoDe={v => (v.vehicle_type_id ? mapaTamanos[v.vehicle_type_id] ?? null : null)}
                   />
                 </div>
               )}

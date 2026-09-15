@@ -155,6 +155,23 @@ export async function checkPlateConflict(plate: string, currentCustomerId: strin
   return data as any
 }
 
+/** Los tres tamaños que son, a la vez, las tres tarifas del POS (0040). */
+export type TamanoVehiculo = 'S' | 'M' | 'L'
+
+/**
+ * De la categoría del catálogo al tamaño que cobra el POS.
+ *
+ * `xl` cae en L: es el más grande que existe en la tarifa. Antes de la 0040 el
+ * catálogo tenía seis carrocerías, y algún vehículo viejo puede seguir
+ * apuntando a una de ellas — por eso la traducción vive acá y no se asume que
+ * el tipo ya sea S, M o L.
+ */
+export function tamanoDeCategoria(categoria?: string | null): TamanoVehiculo {
+  if (categoria === 'small') return 'S'
+  if (categoria === 'medium') return 'M'
+  return 'L'
+}
+
 /**
  * Tipos de vehículo del catálogo (0008). Hacen falta para dar de alta uno:
  * la columna es obligatoria, así que sin tipo el alta no entra.
@@ -215,4 +232,47 @@ export async function transferVehicleOwnership(vehicleId: string, newCustomerId:
   })
   if (error) throw error
   return data
+}
+
+/**
+ * Un tipo de vehículo por tamaño, para el selector de alta.
+ *
+ * Después de la 0040 el catálogo activo son exactamente tres, así que esto
+ * devuelve esos tres. Si la migración todavía no se corrió, agrupa las
+ * carrocerías por categoría y se queda con una de cada una: el selector
+ * muestra S, M y L igual, y el alta sigue guardando un tipo válido.
+ */
+export async function fetchTamanosVehiculo(organizationId: string): Promise<
+  { id: string; tamano: TamanoVehiculo; nombre: string }[]
+> {
+  const tipos = await fetchVehicleTypes(organizationId)
+  const orden: TamanoVehiculo[] = ['S', 'M', 'L']
+  const porTamano = new Map<TamanoVehiculo, { id: string; tamano: TamanoVehiculo; nombre: string }>()
+
+  for (const t of tipos) {
+    const tamano = tamanoDeCategoria(t.size_category)
+    // El primero de cada tamaño gana: fetchVehicleTypes viene por sort_order,
+    // así que es el más representativo del catálogo.
+    if (!porTamano.has(tamano)) porTamano.set(tamano, { id: t.id, tamano, nombre: t.name })
+  }
+
+  return orden.filter(t => porTamano.has(t)).map(t => porTamano.get(t)!)
+}
+
+/**
+ * Qué tamaño es cada tipo, incluidos los desactivados.
+ *
+ * Sin los inactivos, un vehículo registrado antes de la 0040 no tendría
+ * traducción y el POS no podría preseleccionarle la tarifa.
+ */
+export async function fetchMapaTamanos(organizationId: string): Promise<Record<string, TamanoVehiculo>> {
+  const { data, error } = await (supabase as any)
+    .from('vehicle_types')
+    .select('id, size_category')
+    .eq('organization_id', organizationId)
+  if (error) return {}
+
+  const mapa: Record<string, TamanoVehiculo> = {}
+  for (const t of (data ?? []) as any[]) mapa[t.id] = tamanoDeCategoria(t.size_category)
+  return mapa
 }

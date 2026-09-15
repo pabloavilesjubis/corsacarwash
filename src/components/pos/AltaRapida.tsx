@@ -20,7 +20,8 @@ import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useEsMovil } from '../../hooks/useEsMovil'
 import {
-  createCustomer, addVehicleToCustomer, fetchVehicleTypes, checkPlateConflict,
+  createCustomer, addVehicleToCustomer, fetchTamanosVehiculo, checkPlateConflict,
+  type TamanoVehiculo,
 } from '../../services/customers.service'
 
 export interface VehiculoPos {
@@ -105,6 +106,45 @@ function Dialogo({ titulo, children, onCerrar }: {
   )
 }
 
+/**
+ * El tamaño del vehículo, que ES la tarifa.
+ *
+ * Tres botones y no una lista de carrocerías: CORSA no cobra por si es sedán o
+ * SUV, cobra S, M o L. Pedir la carrocería obligaba al cajero a traducirla a
+ * tarifa de memoria, y ahí es donde una SUV termina cobrada como mediana.
+ * Elegido el tamaño acá, el POS ya sabe qué precio va.
+ */
+function SelectorTamano({ tamanos, elegido, onElegir }: {
+  tamanos: { id: string; tamano: TamanoVehiculo; nombre: string }[]
+  elegido: string
+  onElegir: (id: string) => void
+}) {
+  return (
+    <div style={{ display: 'flex', gap: 8 }}>
+      {tamanos.map(t => {
+        const sel = elegido === t.id
+        return (
+          <button key={t.id} onClick={() => onElegir(t.id)} type="button"
+            style={{
+              flex: 1, padding: '9px 6px', borderRadius: 6, cursor: 'pointer',
+              minHeight: 48, textAlign: 'center', fontFamily: 'var(--font-body)',
+              border: `2px solid ${sel ? 'var(--corsa-green)' : 'var(--border)'}`,
+              background: sel ? 'var(--corsa-green)' : 'var(--surface)',
+              color: sel ? '#fff' : 'var(--text-primary)',
+            }}>
+            <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 18, lineHeight: 1 }}>
+              {t.tamano}
+            </div>
+            <div style={{ fontSize: 10.5, marginTop: 2, opacity: 0.85 }}>
+              {t.nombre.replace(/^[SML]\s*·\s*/, '')}
+            </div>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function Campo({ label, children, ancho }: { label: string; children: React.ReactNode; ancho?: string }) {
   return (
     <label className="field" style={{ flex: ancho ?? '1 1 100%', minWidth: 0 }}>
@@ -133,13 +173,18 @@ export function ModalNuevoCliente({ orgId, onCreado, onCancelar }: {
   const [marca, setMarca] = useState('')
   const [modelo, setModelo] = useState('')
   const [tipoVehiculo, setTipoVehiculo] = useState('')
-  const [tipos, setTipos] = useState<{ id: string; name: string }[]>([])
+  const [tamanos, setTamanos] = useState<{ id: string; tamano: TamanoVehiculo; nombre: string }[]>([])
   const [guardando, setGuardando] = useState(false)
 
   useEffect(() => {
-    fetchVehicleTypes(orgId)
-      .then(t => { setTipos(t); setTipoVehiculo(t[0]?.id ?? '') })
-      .catch(() => setTipos([]))
+    fetchTamanosVehiculo(orgId)
+      .then(t => {
+        setTamanos(t)
+        // M por defecto: es el tamaño más común y el del medio, así que
+        // equivocarse cuesta un escalón, no dos.
+        setTipoVehiculo(t.find(x => x.tamano === 'M')?.id ?? t[0]?.id ?? '')
+      })
+      .catch(() => setTamanos([]))
   }, [orgId])
 
   const esEmpresa = tipo === 'company'
@@ -256,10 +301,8 @@ export function ModalNuevoCliente({ orgId, onCreado, onCancelar }: {
                    onChange={e => setPlaca(e.target.value.toUpperCase())}
                    placeholder="P123-456" style={{ textTransform: 'uppercase' }}/>
           </Campo>
-          <Campo label="Tipo" ancho="1 1 48%">
-            <select className="corsa-input" value={tipoVehiculo} onChange={e => setTipoVehiculo(e.target.value)}>
-              {tipos.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
+          <Campo label="Tamaño · tarifa">
+            <SelectorTamano tamanos={tamanos} elegido={tipoVehiculo} onElegir={setTipoVehiculo}/>
           </Campo>
           <Campo label="Marca" ancho="1 1 48%">
             <input className="corsa-input" value={marca} onChange={e => setMarca(e.target.value)}/>
@@ -296,13 +339,16 @@ export function ModalNuevoVehiculo({ orgId, clienteId, onCreado, onCancelar }: {
   const [modelo, setModelo] = useState('')
   const [color, setColor] = useState('')
   const [tipoVehiculo, setTipoVehiculo] = useState('')
-  const [tipos, setTipos] = useState<{ id: string; name: string }[]>([])
+  const [tamanos, setTamanos] = useState<{ id: string; tamano: TamanoVehiculo; nombre: string }[]>([])
   const [guardando, setGuardando] = useState(false)
 
   useEffect(() => {
-    fetchVehicleTypes(orgId)
-      .then(t => { setTipos(t); setTipoVehiculo(t[0]?.id ?? '') })
-      .catch(() => setTipos([]))
+    fetchTamanosVehiculo(orgId)
+      .then(t => {
+        setTamanos(t)
+        setTipoVehiculo(t.find(x => x.tamano === 'M')?.id ?? t[0]?.id ?? '')
+      })
+      .catch(() => setTamanos([]))
   }, [orgId])
 
   const guardar = async () => {
@@ -344,10 +390,8 @@ export function ModalNuevoVehiculo({ orgId, clienteId, onCreado, onCancelar }: {
                  onChange={e => setPlaca(e.target.value.toUpperCase())}
                  placeholder="P123-456" style={{ textTransform: 'uppercase' }}/>
         </Campo>
-        <Campo label="Tipo" ancho="1 1 48%">
-          <select className="corsa-input" value={tipoVehiculo} onChange={e => setTipoVehiculo(e.target.value)}>
-            {tipos.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
+        <Campo label="Tamaño · tarifa">
+          <SelectorTamano tamanos={tamanos} elegido={tipoVehiculo} onElegir={setTipoVehiculo}/>
         </Campo>
         <Campo label="Marca" ancho="1 1 48%">
           <input className="corsa-input" value={marca} onChange={e => setMarca(e.target.value)}/>
@@ -382,11 +426,14 @@ export function ModalNuevoVehiculo({ orgId, clienteId, onCreado, onCancelar }: {
  * inservible —y, con seguro de lluvia, una póliza emitida sobre la placa
  * equivocada—. Por eso se muestran todos y se elige, en vez de asumir.
  */
-export function SelectorVehiculos({ vehiculos, elegido, onElegir, onAgregar }: {
+export function SelectorVehiculos({ vehiculos, elegido, onElegir, onAgregar, tamanoDe }: {
   vehiculos: VehiculoPos[]
   elegido: VehiculoPos | null
   onElegir: (v: VehiculoPos) => void
   onAgregar: () => void
+  /** Qué tarifa implica cada carro. Se muestra en la ficha para que el cajero
+      vea, antes de tocar, qué precio va a quedar elegido. */
+  tamanoDe?: (v: VehiculoPos) => TamanoVehiculo | null
 }) {
   return (
     <div style={{ marginTop: 10 }}>
@@ -405,8 +452,20 @@ export function SelectorVehiculos({ vehiculos, elegido, onElegir, onAgregar }: {
                 background: sel ? 'rgba(2,53,48,0.06)' : 'var(--surface)',
                 fontFamily: 'var(--font-body)', textAlign: 'left',
               }}>
-              <span className="font-mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
-                {v.plate}
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="font-mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {v.plate}
+                </span>
+                {tamanoDe?.(v) && (
+                  <span style={{
+                    fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 11,
+                    padding: '1px 5px', borderRadius: 3,
+                    background: sel ? 'var(--corsa-green)' : 'var(--subtle-bg)',
+                    color: sel ? '#fff' : 'var(--text-secondary)',
+                  }}>
+                    {tamanoDe(v)}
+                  </span>
+                )}
               </span>
               {(v.brand || v.model) && (
                 <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
