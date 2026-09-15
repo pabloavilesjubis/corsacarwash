@@ -587,17 +587,29 @@ create policy "plc_machines_manage"
 --
 -- Devuelve timestamptz (no una fecha) para que las comparaciones sigan usando
 -- los índices sobre started_at.
+--
+-- El ::timestamp del medio no es decorativo. Sin él, Postgres castea la `date`
+-- a timestamptz (medianoche UTC) y recién ahí aplica `at time zone`, que
+-- entonces CONVIERTE en vez de INTERPRETAR: devuelve un timestamp sin zona
+-- doce horas antes del que corresponde. El error no rompe nada visiblemente,
+-- sólo hace que «hoy» empiece a mediodía de ayer.
 create or replace function public.corsa_inicio_del_dia()
 returns timestamptz
 language sql
 stable
 as $$
-  select ((now() at time zone 'America/El_Salvador')::date)
+  select (((now() at time zone 'America/El_Salvador')::date)::timestamp)
            at time zone 'America/El_Salvador'
 $$;
 
 comment on function public.corsa_inicio_del_dia() is
   'Medianoche de hoy en hora de El Salvador. El Salvador no tiene horario de verano, así que el desfase es fijo.';
+
+-- La app lee las vistas como el usuario que inició sesión, y esas vistas
+-- llaman a esta función. Sin el permiso explícito, el tablero fallaría con
+-- «permission denied» en lugar de mostrar los lavados. No expone nada: sólo
+-- devuelve una hora.
+grant execute on function public.corsa_inicio_del_dia() to anon, authenticated, service_role;
 
 
 -- Estado de cada máquina, con cuánto hace que no se sabe de ella.
