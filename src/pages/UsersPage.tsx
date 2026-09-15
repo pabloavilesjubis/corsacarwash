@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { ClipButton } from '../components/ui/ClipButton'
 import { useAuth } from '../hooks/useAuth'
+import { useEsMovil } from '../hooks/useEsMovil'
 import {
   listUsers, listRoles, setUserRoles, setUserActive,
   createUser, generateTempPassword,
@@ -486,6 +487,7 @@ type Tab = 'users' | 'roles'
 
 export function UsersPage() {
   const { user: authUser, hasPermission } = useAuth()
+  const esMovil = useEsMovil()
   const canManage = hasPermission('users.manage')
 
   const [tab, setTab] = useState<Tab>('users')
@@ -595,7 +597,7 @@ export function UsersPage() {
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start' }}>
-        <div style={{ flex: '2 1 560px', minWidth: 480, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
+        <div style={{ flex: '2 1 560px', minWidth: esMovil ? 0 : 480, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
           {loading ? (
             <div className="loading-center"><div className="spinner"/><span>Cargando…</span></div>
           ) : tab === 'users' ? (

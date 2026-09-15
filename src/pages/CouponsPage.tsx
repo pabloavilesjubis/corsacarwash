@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { useAuth } from '../hooks/useAuth'
+import { useEsMovil } from '../hooks/useEsMovil'
 import {
   fetchVouchers, fetchBatchVouchers,
   type VoucherRow, type VoucherFilters,
@@ -35,6 +36,7 @@ function fecha(iso: string | null): string {
 
 export function CouponsPage() {
   const { hasPermission } = useAuth()
+  const esMovil = useEsMovil()
   const puedeVer = hasPermission('vouchers.read')
   const [params, setParams] = useSearchParams()
   const token = params.get('v')
@@ -183,12 +185,12 @@ export function CouponsPage() {
                     onClick={() => setOrigen(id)}>{label}</button>
           ))}
         </div>
-        <input type="date" className="corsa-input" style={{ width: 150 }} value={from}
+        <input type="date" className="corsa-input" style={{ width: esMovil ? 0 : 150, flex: esMovil ? '1 1 0' : undefined }} value={from}
                onChange={e => setFrom(e.target.value)} aria-label="Desde"/>
         <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>a</span>
-        <input type="date" className="corsa-input" style={{ width: 150 }} value={to}
+        <input type="date" className="corsa-input" style={{ width: esMovil ? 0 : 150, flex: esMovil ? '1 1 0' : undefined }} value={to}
                onChange={e => setTo(e.target.value)} aria-label="Hasta"/>
-        <input className="corsa-input" style={{ flex: '1 1 200px', minWidth: 180 }}
+        <input className="corsa-input" style={{ flex: '1 1 200px', minWidth: esMovil ? 0 : 180 }}
                placeholder="Número de cupón o cliente…" value={search}
                onChange={e => setSearch(e.target.value)}/>
       </div>

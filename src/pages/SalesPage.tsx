@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useAuth } from '../hooks/useAuth'
+import { useEsMovil } from '../hooks/useEsMovil'
 import {
   fetchSales, summarize, dateRange, fetchDtePayload,
   type Sale, type SalesFilters,
@@ -65,6 +66,143 @@ const ICONS = {
  * Cuando está deshabilitado explica por qué en el title: un icono gris sin
  * explicación se lee como que la app está rota.
  */
+/**
+ * Una venta, en el teléfono: sólo lo que sirve para reconocerla.
+ *
+ * Cuatro datos —cuánto, quién, cuándo y qué orden— entran en dos renglones. El
+ * resto (documento fiscal, método de pago, placa, impuestos, líneas) vive en el
+ * detalle, a un toque. Con todo a la vista, cada venta ocupaba media pantalla
+ * y buscar la de las 3 de la tarde eran veinte scrolls.
+ */
+function LineaVenta({ s, onAbrir }: { s: Sale; onAbrir: () => void }) {
+  return (
+    <button
+      onClick={onAbrir}
+      style={{
+        display: 'block', width: '100%', textAlign: 'left',
+        padding: '11px 14px', border: 'none',
+        borderBottom: '1px solid var(--border)',
+        background: 'transparent', cursor: 'pointer',
+        fontFamily: 'var(--font-body)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+        <span className="font-mono" style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>
+          {s.order_number}
+        </span>
+        <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 15.5, fontVariantNumeric: 'tabular-nums' }}>
+          {money(s.total)}
+        </span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginTop: 3 }}>
+        <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }} className="truncate">
+          {s.customer_name}
+        </span>
+        <span style={{ fontSize: 11, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+          {fechaHora(s.created_at)}
+        </span>
+      </div>
+    </button>
+  )
+}
+
+/** Una fila de dato en el detalle. Se omite sola cuando no hay qué mostrar. */
+function Dato({ label, valor }: { label: string; valor: React.ReactNode }) {
+  if (valor == null || valor === '' || valor === '—') return null
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+      <span style={{ fontSize: 12.5, color: 'var(--text-secondary)', flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: 13, color: 'var(--text-primary)', textAlign: 'right' }}>{valor}</span>
+    </div>
+  )
+}
+
+/**
+ * El detalle de una venta, en hoja.
+ *
+ * Los tres documentos van acá abajo y a ancho completo: en la lista eran tres
+ * iconos de 28 px pegados entre sí, y equivocarse de documento delante del
+ * cliente es el tipo de error que no se nota hasta que se imprimió.
+ */
+function DetalleVenta({ s, onCerrar, acciones }: {
+  s: Sale; onCerrar: () => void; acciones: React.ReactNode
+}) {
+  const esCanje = s.order_kind === 'voucher_redemption'
+  const esCupones = s.order_kind === 'voucher_sale'
+
+  return (
+    <>
+      <div onClick={onCerrar}
+           style={{ position: 'fixed', inset: 0, background: 'rgba(2,20,18,0.5)', zIndex: 60 }}/>
+      <div style={{
+        position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 61,
+        background: 'var(--surface)', borderRadius: '14px 14px 0 0',
+        maxHeight: '90dvh', overflowY: 'auto',
+        padding: '10px 16px calc(16px + env(safe-area-inset-bottom, 0px))',
+        boxShadow: '0 -12px 40px rgba(0,0,0,0.22)',
+      }}>
+        <div style={{ width: 38, height: 4, borderRadius: 2, background: 'var(--border)', margin: '2px auto 12px' }}/>
+
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+          <span className="font-mono" style={{ fontSize: 13, fontWeight: 700 }}>{s.order_number}</span>
+          <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, fontVariantNumeric: 'tabular-nums' }}>
+            {money(s.total)}
+          </span>
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+          {fechaHora(s.created_at)}
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+          <Dato label="Cliente" valor={s.customer_name}/>
+          <Dato label="NIT" valor={s.customer_nit}/>
+          <Dato label="DUI" valor={s.customer_dui}/>
+          <Dato label="Servicio" valor={
+            esCupones ? `Venta de ${s.voucher_quantity ?? ''} cupones`
+              : esCanje ? 'Canje de cupón'
+              : `${s.service_name ?? '—'}${s.with_aspirado ? ' + aspirado' : ''}`
+          }/>
+          <Dato label="Placa" valor={s.plate}/>
+          <Dato label="Pago" valor={s.payment_method}/>
+          <Dato label="Documento" valor={
+            <>
+              {DOC_LABELS[s.invoice_type ?? ''] ?? '—'}
+              {s.invoice_number && <span className="font-mono" style={{ marginLeft: 6, fontSize: 12 }}>{s.invoice_number}</span>}
+            </>
+          }/>
+          <Dato label="Subtotal" valor={money(s.subtotal)}/>
+          <Dato label="IVA" valor={money(s.tax_total)}/>
+          <Dato label="Sucursal" valor={s.branch_name}/>
+        </div>
+
+        {/* Las líneas tal como se facturaron, cuando la venta las tiene. */}
+        {!!s.items?.length && (
+          <div style={{ marginTop: 14 }}>
+            <div className="panel-section-label">Detalle facturado</div>
+            {s.items.map((i, n) => (
+              <div key={n} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '6px 0', fontSize: 12.5 }}>
+                <span style={{ color: 'var(--text-secondary)' }}>
+                  {i.cantidad > 1 && <strong style={{ color: 'var(--text-primary)' }}>{i.cantidad}× </strong>}
+                  {i.descripcion}
+                </span>
+                <span style={{ fontVariantNumeric: 'tabular-nums' }}>{money(i.total)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {acciones}
+        </div>
+
+        <button onClick={onCerrar} className="btn btn-ghost" style={{ width: '100%', marginTop: 10 }}>
+          Cerrar
+        </button>
+      </div>
+    </>
+  )
+}
+
 function IconAction({ icon, label, onClick, disabled, reason }: {
   icon: React.ReactNode
   label: string
@@ -104,6 +242,9 @@ function fechaHora(iso: string): string {
 export function SalesPage() {
   const { hasPermission, currentBranch } = useAuth()
   const canRead = hasPermission('screens.sales') || hasPermission('reports.sales')
+  const esMovil = useEsMovil()
+  // Qué venta está abierta en la hoja de detalle (sólo teléfono).
+  const [detalle, setDetalle] = useState<Sale | null>(null)
 
   const [preset, setPreset] = useState<PresetId>('mes')
   const [from, setFrom] = useState('')
@@ -202,6 +343,49 @@ export function SalesPage() {
     URL.revokeObjectURL(url)
   }
 
+  /**
+   * Los tres documentos de una venta. Una sola definición para la tabla y para
+   * la tarjeta: si mañana cambia una regla —qué se puede reimprimir y qué no—
+   * no puede quedar cambiada en un formato y vieja en el otro.
+   */
+  /** Las mismas tres acciones, con rótulo y a ancho completo, para la hoja. */
+  const accionesGrandes = (s: Sale) => (
+    <>
+      <button className="btn btn-primary" onClick={() => reimprimir(s)}>
+        Reimprimir ticket térmico
+      </button>
+      <button className="btn btn-ghost"
+              onClick={() => verFactura(s)}
+              disabled={s.order_kind === 'voucher_redemption'}
+              title={s.order_kind === 'voucher_redemption' ? 'Un canje no genera documento fiscal' : undefined}>
+        Ver factura (PDF carta)
+      </button>
+      <button className="btn btn-ghost"
+              onClick={() => descargarJson(s)}
+              disabled={!s.has_dte_payload}
+              title={!s.has_dte_payload ? 'Se genera al transmitir el DTE al Ministerio de Hacienda' : undefined}>
+        Descargar JSON del DTE
+      </button>
+    </>
+  )
+
+  const accionesDe = (s: Sale) => (
+    <>
+      <IconAction icon={ICONS.ticket} label="Ticket térmico (PDF)"
+                  onClick={() => reimprimir(s)}/>
+      {/* Un canje no genera documento fiscal: el cupón se facturó el día que
+          se vendió. */}
+      <IconAction icon={ICONS.factura} label="Factura carta (PDF)"
+                  onClick={() => verFactura(s)}
+                  disabled={s.order_kind === 'voucher_redemption'}
+                  reason="un canje no genera documento fiscal"/>
+      <IconAction icon={ICONS.json} label="JSON del DTE"
+                  onClick={() => descargarJson(s)}
+                  disabled={!s.has_dte_payload}
+                  reason="se genera al transmitir el DTE al Ministerio de Hacienda"/>
+    </>
+  )
+
   if (!canRead) {
     return (
       <div className="page-inner">
@@ -255,18 +439,20 @@ export function SalesPage() {
             </button>
           ))}
         </div>
-        <input type="date" className="corsa-input" style={{ width: 150 }} value={from}
+        {/* Los anchos fijos de escritorio no entran en 390 px: las dos fechas
+            se reparten la fila y el resto ocupa el ancho completo. */}
+        <input type="date" className="corsa-input" style={{ width: esMovil ? 0 : 150, flex: esMovil ? '1 1 0' : undefined }} value={from}
                onChange={e => setFrom(e.target.value)} aria-label="Desde"/>
         <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>a</span>
-        <input type="date" className="corsa-input" style={{ width: 150 }} value={to}
+        <input type="date" className="corsa-input" style={{ width: esMovil ? 0 : 150, flex: esMovil ? '1 1 0' : undefined }} value={to}
                onChange={e => setTo(e.target.value)} aria-label="Hasta"/>
-        <select className="corsa-input" style={{ width: 170 }} value={docType}
+        <select className="corsa-input" style={{ width: esMovil ? '100%' : 170 }} value={docType}
                 onChange={e => setDocType(e.target.value)} aria-label="Documento">
           <option value="">Todos los documentos</option>
           <option value="consumidor_final">Ticket</option>
           <option value="credito_fiscal">CCF</option>
         </select>
-        <input className="corsa-input" style={{ flex: '1 1 200px', minWidth: 180 }}
+        <input className="corsa-input" style={{ flex: '1 1 200px', minWidth: esMovil ? 0 : 180 }}
                placeholder="Orden, cliente o placa…" value={search}
                onChange={e => setSearch(e.target.value)}/>
       </div>
@@ -280,6 +466,12 @@ export function SalesPage() {
             <div className="empty-state-title">Sin ventas en este rango</div>
             <div className="empty-state-sub">Probá con otro período o quitá los filtros.</div>
           </div>
+        ) : esMovil ? (
+          /* Mismos datos y mismos filtros: sólo cambia la forma. La tabla sigue
+             viva para la computadora, intacta. */
+          sales.map(s => (
+            <LineaVenta key={s.order_id} s={s} onAbrir={() => setDetalle(s)}/>
+          ))
         ) : (
           <div className="table-wrap">
             <table className="corsa-table">
@@ -316,20 +508,7 @@ export function SalesPage() {
                       </span>
                     </td>
                     <td style={{ textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{money(s.total)}</td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      <IconAction icon={ICONS.ticket} label="Ticket térmico (PDF)"
-                                  onClick={() => reimprimir(s)}/>
-                      {/* Un canje no genera documento fiscal: el cupón se
-                          facturó el día que se vendió. */}
-                      <IconAction icon={ICONS.factura} label="Factura carta (PDF)"
-                                  onClick={() => verFactura(s)}
-                                  disabled={s.order_kind === 'voucher_redemption'}
-                                  reason="un canje no genera documento fiscal"/>
-                      <IconAction icon={ICONS.json} label="JSON del DTE"
-                                  onClick={() => descargarJson(s)}
-                                  disabled={!s.has_dte_payload}
-                                  reason="se genera al transmitir el DTE al Ministerio de Hacienda"/>
-                    </td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{accionesDe(s)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -337,6 +516,15 @@ export function SalesPage() {
           </div>
         )}
       </div>
+
+      {/* Detalle de una venta — sólo teléfono */}
+      {esMovil && detalle && (
+        <DetalleVenta
+          s={detalle}
+          onCerrar={() => setDetalle(null)}
+          acciones={accionesGrandes(detalle)}
+        />
+      )}
     </div>
   )
 }

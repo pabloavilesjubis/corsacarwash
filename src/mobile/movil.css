@@ -1,0 +1,212 @@
+/*
+ * CORSA Carwash — estilos del modelo móvil
+ *
+ * REGLA DE ORO: todo acá adentro cuelga de .corsa-movil. Ni una sola regla
+ * global, ni una sola media query que toque una clase del escritorio. Si este
+ * archivo se carga en una pantalla de computadora —y se carga, porque el
+ * bundle es el mismo— no puede cambiar ni un píxel de lo que ya funciona.
+ *
+ * Por eso tampoco se reescriben .app-shell, .sidebar ni .main-content: el
+ * teléfono usa su propio armazón, no una versión angosta del de escritorio.
+ */
+
+.corsa-movil {
+  display: flex;
+  flex-direction: column;
+  /* dvh y no vh: en el teléfono la barra del navegador aparece y desaparece, y
+     con vh el contenido queda cortado justo cuando el usuario hace scroll. */
+  height: 100dvh;
+  background: var(--page-bg);
+  overscroll-behavior-y: none;
+}
+
+/* ── Cabecera ───────────────────────────────────────────── */
+.corsa-movil__header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  padding-top: calc(10px + env(safe-area-inset-top, 0px));
+  background: var(--corsa-green);
+  color: #fff;
+}
+
+.corsa-movil__titulo {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 15px;
+  line-height: 1.1;
+  letter-spacing: 0.2px;
+}
+
+.corsa-movil__subtitulo {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.72);
+  margin-top: 2px;
+}
+
+.corsa-movil__avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+/* ── Contenido ──────────────────────────────────────────── */
+/* Sin padding propio: las pantallas del sistema ya traen el suyo en
+   .page-inner, y sumarle el de la cáscara dejaba 28 px de margen a cada lado
+   —casi 60 px de los 390 de un teléfono— tirados en blanco. Las pantallas
+   hechas para móvil ponen el suyo con .corsa-movil__pantalla. */
+.corsa-movil__contenido {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.corsa-movil__pantalla { padding: 14px 14px 20px; }
+
+/* ── Barra inferior ─────────────────────────────────────── */
+.corsa-movil__tabs {
+  flex-shrink: 0;
+  display: flex;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.corsa-movil__tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  /* 52 px de alto: abajo de 44 el dedo falla, y ese error en caja cuesta. */
+  min-height: 52px;
+  padding: 7px 2px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  text-decoration: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.corsa-movil__tab.activo { color: var(--corsa-green); }
+.corsa-movil__tab.activo svg { stroke-width: 2.2; }
+
+/* ── Tarjetas ───────────────────────────────────────────── */
+.corsa-movil__tarjeta {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.corsa-movil__grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.corsa-movil__etiqueta {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  line-height: 1.2;
+}
+
+.corsa-movil__numero {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 24px;
+  line-height: 1.1;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  margin-top: 6px;
+}
+
+.corsa-movil__seccion {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--text-primary);
+  margin: 18px 2px 8px;
+}
+
+/* ── Hoja «Más» ─────────────────────────────────────────── */
+.corsa-movil__velo {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 20, 18, 0.45);
+  z-index: 40;
+}
+
+.corsa-movil__hoja {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 41;
+  background: var(--surface);
+  border-radius: 14px 14px 0 0;
+  padding: 8px 0 calc(12px + env(safe-area-inset-bottom, 0px));
+  max-height: 78dvh;
+  overflow-y: auto;
+}
+
+.corsa-movil__hoja-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 13px 20px;
+  border: none;
+  background: none;
+  font-family: var(--font-body);
+  font-size: 14.5px;
+  color: var(--text-primary);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.corsa-movil__hoja-item:active { background: var(--subtle-bg); }
+
+/* ── Pantalla todavía sin adaptar ───────────────────────── */
+.corsa-movil__pendiente {
+  padding: 9px 14px;
+  background: var(--color-warning-tint);
+  color: var(--color-warning-text);
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+/*
+ * La pantalla de escritorio se muestra tal cual, dentro de un contenedor que
+ * scrollea de lado. Es fea en el teléfono y tiene que serlo: así se ve cuáles
+ * faltan, en vez de esconderlas detrás de un «no disponible» que las deja
+ * inaccesibles para quien las necesita hoy.
+ */
+.corsa-movil__escritorio {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.corsa-movil__escritorio > * {
+  min-width: 900px;
+}

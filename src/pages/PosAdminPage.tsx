@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useAuth } from '../hooks/useAuth'
+import { useEsMovil } from '../hooks/useEsMovil'
 import { supabase } from '../lib/supabase'
 import { sellVouchers, fetchBatchVouchers, type SellVouchersResult } from '../services/vouchers.service'
 import { printVouchers } from '../lib/vouchers/voucherDocument'
@@ -55,6 +56,7 @@ function money(n: number) { return 'US$' + (Number(n) || 0).toFixed(2) }
 
 export function PosAdminPage() {
   const { currentBranch, hasPermission } = useAuth()
+  const esMovil = useEsMovil()
   const branchId = (currentBranch as any)?.id ?? null
   const puedeVender = hasPermission('vouchers.sell')
 
@@ -269,7 +271,7 @@ export function PosAdminPage() {
 
       <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         {/* ── Configuración ── */}
-        <div style={{ flex: '1 1 480px', minWidth: 400, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 18 }}>
+        <div style={{ flex: '1 1 480px', minWidth: esMovil ? 0 : 400, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 18 }}>
 
           {/* Naturaleza de la emisión: define si hay cobro y documento fiscal. */}
           <div className="panel-section-label">Tipo de emisión</div>
@@ -391,7 +393,7 @@ export function PosAdminPage() {
         </div>
 
         {/* ── Resumen ── */}
-        <div style={{ flex: '0 1 280px', minWidth: 250, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 18 }}>
+        <div style={{ flex: '0 1 280px', minWidth: esMovil ? 0 : 250, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 18 }}>
           <div className="panel-section-label">Resumen</div>
           <div className="panel-row"><span style={{ color: 'var(--text-secondary)', fontSize: 12.5 }}>Servicio</span>
             <span style={{ fontWeight: 600, fontSize: 12.5 }}>{SERVICIOS.find(s => s.code === servicio)?.name} {tamano}</span></div>

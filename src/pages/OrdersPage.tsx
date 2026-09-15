@@ -7,6 +7,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useEsMovil } from '../hooks/useEsMovil'
 import { inicioDelDiaISO } from '../utils/fecha'
 import type { WorkOrder, WorkOrderStatus } from '../types'
 
@@ -66,6 +67,7 @@ function isOverdue(order: any): boolean {
 
 export function OrdersPage() {
   const { currentBranch, hasPermission } = useAuth()
+  const esMovil = useEsMovil()
   const [orders, setOrders] = useState<WorkOrder[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -186,8 +188,9 @@ export function OrdersPage() {
         borderRadius: 'var(--radius)',
         overflow: 'hidden',
       }}>
-        {/* Table header */}
-        <div style={{ display: 'flex', padding: '10px 20px', borderBottom: '1px solid var(--border)', fontSize: 11.5, fontWeight: 600, color: 'var(--text-secondary)' }}>
+        {/* Table header — en el teléfono las filas se envuelven y los rótulos
+            de columna dejarían de corresponderse con lo que hay debajo. */}
+        <div style={{ display: esMovil ? 'none' : 'flex', padding: '10px 20px', borderBottom: '1px solid var(--border)', fontSize: 11.5, fontWeight: 600, color: 'var(--text-secondary)' }}>
           <div style={{ width: 120, flexShrink: 0 }}>Orden</div>
           <div style={{ width: 130, flexShrink: 0 }}>Estado</div>
           <div style={{ flex: 1 }}>Tiempo en turno</div>
@@ -213,7 +216,9 @@ export function OrdersPage() {
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  padding: '13px 20px',
+                  flexWrap: esMovil ? 'wrap' : 'nowrap',
+                  gap: esMovil ? 8 : undefined,
+                  padding: esMovil ? '12px 14px' : '13px 20px',
                   borderBottom: '1px solid var(--border)',
                   background: overdue ? 'rgba(226,75,75,0.04)' : 'transparent',
                   transition: 'background 0.1s',
@@ -223,7 +228,7 @@ export function OrdersPage() {
                 onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = overdue ? 'rgba(226,75,75,0.04)' : 'transparent' }}
               >
                 {/* Order number */}
-                <div style={{ width: 120, flexShrink: 0 }}>
+                <div style={{ width: esMovil ? '100%' : 120, flexShrink: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-heading)', fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)' }}>
                     {o.order_number}
                   </div>
@@ -235,7 +240,7 @@ export function OrdersPage() {
                 </div>
 
                 {/* Status */}
-                <div style={{ width: 130, flexShrink: 0 }}>
+                <div style={{ width: esMovil ? 'auto' : 130, flexShrink: 0 }}>
                   <span style={{ fontSize: 12, fontWeight: 600, color: ss.color, background: ss.tint, padding: '3px 8px', borderRadius: 4, display: 'inline-block' }}>
                     {STATUS_LABELS[o.status]}
                   </span>
@@ -252,7 +257,7 @@ export function OrdersPage() {
                 </div>
 
                 {/* Payment */}
-                <div style={{ width: 100, flexShrink: 0 }}>
+                <div style={{ width: esMovil ? 'auto' : 100, flexShrink: 0 }}>
                   <span style={{
                     fontSize: 12, fontWeight: 600,
                     color: o.payment_status === 'paid' ? 'var(--color-success-text)' : 'var(--text-secondary)',
@@ -264,7 +269,7 @@ export function OrdersPage() {
                 </div>
 
                 {/* Total */}
-                <div style={{ width: 100, flexShrink: 0, textAlign: 'right', fontSize: 14, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)' }}>
+                <div style={{ width: esMovil ? 'auto' : 100, marginLeft: esMovil ? 'auto' : undefined, flexShrink: 0, textAlign: 'right', fontSize: 14, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)' }}>
                   US${o.total.toFixed(2)}
                 </div>
               </div>

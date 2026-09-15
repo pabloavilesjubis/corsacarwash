@@ -1,0 +1,202 @@
+/*
+ * CORSA Carwash — la base responsiva de las pantallas existentes
+ *
+ * Las pantallas del sistema están armadas con las clases globales de
+ * index.css. Acá se las adapta al teléfono UNA sola vez, en lugar de tocar
+ * quince archivos: padding, cabeceras, botones, campos, tablas y paneles.
+ *
+ * POR QUÉ ESTO NO PUEDE ROMPER EL ESCRITORIO: todo cuelga de
+ * `@media (max-width: 819px)`. Una regla acá adentro no existe para un monitor
+ * de 1280 px — no es que se compense, es que el navegador ni la aplica. Es la
+ * única forma de adaptar las clases compartidas sin tocar index.css.
+ *
+ * Lo que este archivo NO puede alcanzar son los estilos en línea de las
+ * pantallas (style={{...}}), que ganan por especificidad. Eso se resuelve en
+ * cada pantalla con useEsMovil(), y siempre dejando la rama de escritorio
+ * exactamente como estaba.
+ */
+
+@media (max-width: 819px) {
+
+  /* ── Lienzo ───────────────────────────────────────────── */
+  /* 40 px de margen lateral en un teléfono de 390 son 80 px de pantalla
+     tirados: queda menos de la mitad del ancho para el contenido. */
+  .page-inner,
+  .pos-inner {
+    padding: 14px 14px 24px;
+    gap: 14px;
+  }
+
+  /* ── Cabecera de pantalla ─────────────────────────────── */
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  /* El nombre de la pantalla ya está en la cabecera de la cáscara, arriba y
+     siempre visible. Repetirlo en la página cuesta unos 40 px de alto en cada
+     pantalla —y el título es lo primero que se va de la vista al hacer scroll,
+     así que se repite justo cuando ya no se ve. */
+  .page-header-left h1 { display: none; }
+  .page-header-sub { margin-top: 0; font-size: 12.5px; }
+
+  /* Las acciones ocupan el ancho y se reparten: un botón de 100 px perdido a
+     la derecha obliga a apuntar con el dedo. */
+  .page-header-actions {
+    width: 100%;
+    gap: 8px;
+  }
+
+  .page-header-actions > .btn,
+  .page-header-actions > .clip-btn-wrap {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  /* ── Controles ────────────────────────────────────────── */
+  /* 44 px es el mínimo con el que un dedo acierta. Abajo de eso, en caja, el
+     error no es cosmético: es una venta mal cargada. */
+  .btn {
+    min-height: 44px;
+    padding: 11px 16px;
+    font-size: 14px;
+  }
+
+  .search-bar {
+    min-width: 0;
+    width: 100%;
+    padding: 11px 12px;
+  }
+
+  /* 16 px exactos en todo lo que se escribe: con menos, iOS hace zoom al
+     enfocar el campo y deja la pantalla corrida. No es una preferencia
+     tipográfica, es la única forma de evitar ese salto. */
+  .search-bar input,
+  .corsa-input,
+  input[type="text"],
+  input[type="number"],
+  input[type="search"],
+  input[type="email"],
+  input[type="tel"],
+  input[type="date"],
+  input[type="password"],
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  .corsa-input,
+  select {
+    min-height: 44px;
+    padding: 10px 12px;
+  }
+
+  /* ── Filtros ──────────────────────────────────────────── */
+  /* En vez de envolverse en tres renglones y empujar la lista fuera de la
+     pantalla, la fila de filtros se desliza de lado. */
+  .filter-pills {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin: 0 -14px;
+    padding: 2px 14px;
+  }
+
+  .filter-pills::-webkit-scrollbar { display: none; }
+
+  .filter-pill {
+    flex-shrink: 0;
+    min-height: 38px;
+    padding: 8px 14px;
+  }
+
+  /* ── Tarjetas ─────────────────────────────────────────── */
+  .card { padding: 14px; }
+  .card-title { font-size: 15.5px; }
+  .card-header { margin-bottom: 10px; }
+
+  /* ── Tarjetas de indicador ────────────────────────────── */
+  /* minmax(230px, 1fr) en una pantalla de 390 da una sola columna: seis
+     indicadores ocupaban seis pantallas de alto para leer seis números. Van de
+     a dos, con el número al tamaño que se necesita para leerlo, no al que
+     luce bien en un monitor. */
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .kpi-card { padding: 11px 12px; }
+  .kpi-label { font-size: 11.5px; line-height: 1.25; }
+
+  .kpi-value {
+    margin-top: 4px;
+    font-size: 19px;
+    /* Los valores largos —«3 vendidos · 3 canjes»— se achican en lugar de
+       partirse en tres renglones y descuadrar la fila. */
+    overflow-wrap: anywhere;
+  }
+
+  .kpi-card.primary .kpi-value { font-size: 21px; }
+  .kpi-sub { margin-top: 4px; font-size: 11.5px; }
+
+  /* ── Tablas ───────────────────────────────────────────── */
+  /* Las tablas que siguen siendo tablas se comen el ancho completo y scrollean
+     de lado. Las pantallas donde la tabla ES la pantalla —Ventas, Clientes—
+     además la reemplazan por tarjetas; esto es el piso para el resto. */
+  .table-wrap {
+    margin: 0 -14px;
+    padding: 0 14px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .corsa-table th { padding: 8px 10px; font-size: 11px; }
+  .corsa-table td { padding: 10px 10px; font-size: 13px; }
+
+  /* ── Panel lateral ────────────────────────────────────── */
+  /* Deja de ser lateral: en un teléfono no hay lado. Pasa a ser el bloque de
+     abajo, a ancho completo. */
+  .side-panel {
+    flex: 1 1 auto;
+    min-width: 0;
+    /* El !important es deliberado y es el único del archivo: el panel de
+       clientes trae max-width en estilo en línea, que gana por especificidad.
+       La alternativa era editar ese componente de escritorio, y el trato es no
+       tocarlo. Sigue encerrado en la media query, así que no existe arriba de
+       820 px. */
+    max-width: none !important;
+    width: 100%;
+    padding: 14px;
+  }
+
+  /* ── Teclado del POS ──────────────────────────────────── */
+  /* Es el control más usado del sistema y el que menos perdona un error: se
+     marca un monto con el pulgar, de pie y a veces con la mano mojada. */
+  .keypad { gap: 8px; }
+
+  .keypad-key {
+    min-height: 54px;
+    padding: 14px 0;
+    font-size: 19px;
+  }
+
+  /* ── Botón de cobrar ──────────────────────────────────── */
+  .clip-btn-wrap { width: 100%; }
+
+  .clip-btn {
+    width: 100%;
+    min-height: 50px;
+    font-size: 15px;
+  }
+
+  /* ── Estados vacíos y cargas ──────────────────────────── */
+  .empty-state { padding: 28px 16px; }
+  .empty-state-title { font-size: 15px; }
+  .empty-state-sub { font-size: 12.5px; }
+
+  /* ── Nada de scroll horizontal de página ──────────────── */
+  /* Si algo se pasa de ancho, que se corte adentro de su caja y no corra la
+     pantalla entera: una pantalla que se mueve de lado al hacer scroll
+     vertical se siente rota aunque todo lo demás esté bien. */
+  .corsa-movil__contenido { overflow-x: hidden; }
+}

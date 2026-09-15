@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import toast from 'react-hot-toast'
 import { useAuth } from '../hooks/useAuth'
 import { ClipButton } from '../components/ui/ClipButton'
+import { useEsMovil } from '../hooks/useEsMovil'
 import { CustomerFormPanel } from '../components/CustomerFormPanel'
 import {
   searchCustomers,
@@ -344,6 +345,7 @@ export function CustomersPage() {
     : null
 
   const totalVehicles = customers.reduce((s, c) => s + (c.vehicle_count ?? 0), 0)
+  const esMovil = useEsMovil()
 
   return (
     <div className="page-inner">
@@ -394,9 +396,13 @@ export function CustomersPage() {
       {/* Content */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start' }}>
         {/* Table */}
-        <div style={{ flex: '2 1 560px', minWidth: 480, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-          {/* Table header */}
-          <div style={{ display: 'flex', padding: '10px 16px', borderBottom: '1px solid var(--border)', fontSize: 11.5, fontWeight: 600, color: 'var(--text-secondary)' }}>
+        {/* En el teléfono la lista y el detalle no conviven: abrir un cliente
+            y tener que pasar cien fichas para llegar a la suya es peor que no
+            abrirlo. El panel reemplaza a la lista y se vuelve con su ✕. */}
+        {(!esMovil || !panel) && (
+        <div style={{ flex: '2 1 560px', minWidth: esMovil ? 0 : 480, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
+          {/* Table header — en el teléfono no hay columnas que encabezar */}
+          <div style={{ display: esMovil ? 'none' : 'flex', padding: '10px 16px', borderBottom: '1px solid var(--border)', fontSize: 11.5, fontWeight: 600, color: 'var(--text-secondary)' }}>
             <div style={{ flex: 2.2 }}>Cliente</div>
             <div style={{ flex: 1.6 }}>Contacto</div>
             <div style={{ flex: 1 }}>Documento</div>
@@ -413,6 +419,58 @@ export function CustomersPage() {
               <div className="empty-state-sub">{search ? 'Probá con el nombre completo, el DUI o la placa del vehículo.' : ''}</div>
             </div>
           ) : (
+            esMovil ? (
+              /* En el teléfono cada cliente es una tarjeta que se toca entera.
+                 Las seis columnas de la tabla no entran en 390 px, y las que
+                 importan al buscar un cliente son tres: quién es, cuántos
+                 vehículos tiene y cuándo vino por última vez. */
+              filtered.map(c => {
+                const ms = getMembershipStyle(c.membership_status)
+                const segment = classifySegment(c)
+                const segLabels: Partial<Record<FilterType, string>> = { frecuente: 'Cliente frecuente', riesgo: 'En riesgo de fuga', nuevo: 'Cliente nuevo', corporativo: 'Cuenta corporativa' }
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => setPanel({ type: 'view', customerId: c.id })}
+                    style={{
+                      display: 'block', width: '100%', textAlign: 'left',
+                      padding: '12px 14px', border: 'none',
+                      borderBottom: '1px solid var(--border)',
+                      background: panel?.customerId === c.id ? 'var(--subtle-bg)' : 'transparent',
+                      cursor: 'pointer', fontFamily: 'var(--font-body)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }} className="truncate">
+                        {getDisplayName(c)}
+                      </span>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                        {c.vehicle_count ?? 0} {c.vehicle_count === 1 ? 'vehículo' : 'vehículos'}
+                      </span>
+                    </div>
+
+                    <div style={{ marginTop: 3, fontSize: 12, color: 'var(--text-secondary)' }} className="truncate">
+                      {c.phone ?? c.email ?? '—'}
+                    </div>
+
+                    <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: ms.color, background: ms.tint, padding: '3px 8px', borderRadius: 4 }}>
+                        {c.membership_plan ? `${c.membership_plan} · ${ms.label}` : ms.label}
+                      </span>
+                      {c.fiscal_document_type === 'ccf' && <span className="badge badge-green">CCF</span>}
+                      <span style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                        {segLabels[segment] ?? segment}
+                      </span>
+                      <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                        {c.last_visit_days != null
+                          ? c.last_visit_days === 0 ? 'Hoy' : c.last_visit_days === 1 ? 'Ayer' : `Hace ${c.last_visit_days} d`
+                          : '—'}
+                      </span>
+                    </div>
+                  </button>
+                )
+              })
+            ) : (
             <table className="corsa-table" style={{ border: 'none' }}>
               <tbody>
                 {filtered.map(c => {
@@ -462,8 +520,10 @@ export function CustomersPage() {
                 })}
               </tbody>
             </table>
+            )
           )}
         </div>
+        )}
 
         {/* Side panel */}
         {panel && (

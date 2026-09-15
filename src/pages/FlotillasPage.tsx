@@ -8,6 +8,7 @@ import { createPortal } from 'react-dom'
 import toast from 'react-hot-toast'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
+import { useEsMovil } from '../hooks/useEsMovil'
 import { hoyLocal } from '../utils/fecha'
 
 // ─── Types ────────────────────────────────────────────────────
@@ -626,6 +627,7 @@ function AddVehicleModal({ fleetId, customerId, orgId, onAdded, onCancel }: AddV
 
 export function FlotillasPage() {
   const { profile } = useAuth()
+  const esMovil = useEsMovil()
   const orgId = (profile as any)?.organization_id ?? null
 
   const [companies, setCompanies] = useState<FleetCompany[]>([])
@@ -866,7 +868,7 @@ export function FlotillasPage() {
 
         {/* ── Detalle de empresa ── */}
         {selected ? (
-          <div style={{ flex: 1, minWidth: 320, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ flex: 1, minWidth: esMovil ? 0 : 320, display: 'flex', flexDirection: 'column', gap: 14 }}>
 
             {/* Company header */}
             <div className="card" style={{ padding: 18 }}>
@@ -1001,7 +1003,7 @@ export function FlotillasPage() {
             </div>
           </div>
         ) : (
-          <div style={{ flex: 1, minWidth: 320 }}>
+          <div style={{ flex: 1, minWidth: esMovil ? 0 : 320 }}>
             <div className="empty-state" style={{ paddingTop: 60 }}>
               <div style={{ fontSize: 40, marginBottom: 12 }}>🏢</div>
               <div className="empty-state-title">Selecciona una empresa</div>

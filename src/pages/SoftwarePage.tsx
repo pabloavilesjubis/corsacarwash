@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useAuth } from '../hooks/useAuth'
+import { useEsMovil } from '../hooks/useEsMovil'
 import {
   fetchReleases, downloadRelease, checkFileExists, formatBytes,
   type SoftwareRelease,
@@ -23,6 +24,7 @@ function fecha(iso: string): string {
 
 export function SoftwarePage() {
   const { hasPermission } = useAuth()
+  const esMovil = useEsMovil()
   const puedeDescargar = hasPermission('software.download')
 
   const [releases, setReleases] = useState<SoftwareRelease[]>([])
@@ -104,7 +106,7 @@ export function SoftwarePage() {
             return (
               <div key={r.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 18 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
-                  <div style={{ flex: '1 1 320px', minWidth: 260 }}>
+                  <div style={{ flex: '1 1 320px', minWidth: esMovil ? 0 : 260 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17 }}>{r.name}</span>
                       <span className="badge badge-green">v{r.version}</span>
