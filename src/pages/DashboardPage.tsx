@@ -47,9 +47,18 @@ interface KPIs {
 // ─── Constants ────────────────────────────────────────────────
 
 const DIAS_ES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
-const HOURS_LABEL = ['7a', '8a', '9a', '10a', '11a', '12p', '1p', '2p', '3p', '4p', '5p', '6p', '7p']
-// La grilla cubre de 7am a 7pm; HOURS_LABEL[i] corresponde a la hora 7+i.
-const FIRST_HOUR = 7
+// Franja mínima que siempre se dibuja, aunque no haya trabajo: si el mapa se
+// encogiera a las horas con lavados, dos días flojos lo dejarían de tres
+// columnas y no se podría comparar contra la semana pasada.
+const HORA_DESDE = 7
+const HORA_HASTA = 19
+
+/** 13 → «1p». Los rótulos sólo se ven en el tooltip de cada celda. */
+function etiquetaHora(h: number): string {
+  if (h === 0) return '12a'
+  if (h === 12) return '12p'
+  return h < 12 ? `${h}a` : `${h - 12}p`
+}
 
 // Service category colors
 const CAT_COLORS: Record<number, { color: string; tint: string; bar: string }> = {
@@ -78,25 +87,40 @@ function heatColor(intensity: number): string {
 }
 
 /**
- * Mapa de calor de ocupación por día y hora.
- * Antes se generaba con pesos inventados (DAY_WEIGHTS / HOUR_WEIGHTS): dibujaba
- * un patrón plausible que no tenía ninguna relación con las ventas reales.
- * Ahora sale de v_sales_heatmap; sin ventas, la grilla queda vacía.
+ * Mapa de calor de uso de las máquinas, por día y hora.
+ *
+ * Cuenta LAVADOS, no ventas. No es lo mismo: un lavado de flotilla se factura
+ * a fin de mes, un canje de cupón no genera cobro, y una venta se registra
+ * cuando el cajero llega a marcarla, a veces media hora después de que el
+ * carro entró. Para decidir turnos y mantenimiento lo que importa es cuándo
+ * corrió la máquina, y eso lo sabe el PLC al segundo (v_plc_heatmap, 0041).
+ *
+ * Sin lavados registrados la grilla queda vacía: no se dibuja un patrón
+ * plausible, que es lo que hacía la primera versión con pesos inventados.
  */
 function buildHeatmapFrom(rows: any[]): { label: string; cells: HourCell[] }[] {
-  const max = Math.max(1, ...rows.map(r => Number(r.order_count) || 0))
-  // v_sales_heatmap devuelve el dow de Postgres (0 = domingo); la grilla
-  // arranca en lunes porque así lee la semana el equipo de piso.
+  const max = Math.max(1, ...rows.map(r => Number(r.washes) || 0))
+  // La vista devuelve el dow de Postgres (0 = domingo); la grilla arranca en
+  // lunes porque así lee la semana el equipo de piso.
   const dows = [1, 2, 3, 4, 5, 6, 0]
   const nombres = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 
+  // La franja sigue a los datos en lugar de estar fija de 7 a 19. Con horario
+  // fijo, un lavado de las 6 de la mañana o de las 8 de la noche simplemente
+  // no aparecía — y el mapa mostraba menos trabajo del que hubo, que es
+  // justamente lo que se viene a mirar acá.
+  const horas = rows.map(r => Number(r.hour_of_day)).filter(h => Number.isFinite(h))
+  const desde = horas.length ? Math.min(HORA_DESDE, ...horas) : HORA_DESDE
+  const hasta = horas.length ? Math.max(HORA_HASTA, ...horas) : HORA_HASTA
+
   return dows.map((dow, i) => ({
     label: nombres[i],
-    cells: HOURS_LABEL.map((label, hi) => {
+    cells: Array.from({ length: hasta - desde + 1 }, (_, hi) => {
+      const hora = desde + hi
       const hit = rows.find(r =>
-        Number(r.day_of_week) === dow && Number(r.hour_of_day) === FIRST_HOUR + hi)
-      const count = Number(hit?.order_count) || 0
-      return { hour: label, count, intensity: count / max }
+        Number(r.day_of_week) === dow && Number(r.hour_of_day) === hora)
+      const count = Number(hit?.washes) || 0
+      return { hour: etiquetaHora(hora), count, intensity: count / max }
     }),
   }))
 }
@@ -489,7 +513,7 @@ function Heatmap({ rows }: { rows: { label: string; cells: HourCell[] }[] }) {
               {row.cells.map((cell, ci) => (
                 <div
                   key={ci}
-                  title={`${row.label} ${cell.hour}: ${cell.count} servicios`}
+                  title={`${row.label} ${cell.hour}: ${cell.count} lavados`}
                   onMouseEnter={() => setTooltip({ label: row.label, hour: cell.hour, count: cell.count })}
                   onMouseLeave={() => setTooltip(null)}
                   style={{
@@ -507,12 +531,12 @@ function Heatmap({ rows }: { rows: { label: string; cells: HourCell[] }[] }) {
             </div>
           </div>
         ))}
-        {/* Hour labels */}
+        {/* Hour labels — salen de las celdas, que ahora definen la franja. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
           <div style={{ width: 26, flexShrink: 0 }}/>
           <div style={{ display: 'flex', gap: 2, flex: 1 }}>
-            {HOURS_LABEL.map(h => (
-              <div key={h} style={{ flex: 1, textAlign: 'center', fontSize: 9, color: 'var(--text-secondary)' }}>{h}</div>
+            {(rows[0]?.cells ?? []).map((c, i) => (
+              <div key={i} style={{ flex: 1, textAlign: 'center', fontSize: 9, color: 'var(--text-secondary)' }}>{c.hour}</div>
             ))}
           </div>
         </div>
@@ -742,11 +766,16 @@ export function DashboardPage() {
           .sort((a, b) => b.revenue - a.revenue))
       }
 
-      // Mapa de calor — ocupación real por día y hora
+      // Mapa de calor — uso real de las máquinas, no facturación.
+      //
+      // El `or` con branch_id nulo no es un descuido: la sucursal del lavado
+      // sale del gateway que lo reportó, y un gateway al que nadie le asignó
+      // sucursal igual está adentro de este local. Dejar sus lavados afuera
+      // mostraría un mapa vacío con las máquinas trabajando.
       const { data: heatData } = await (supabase as any)
-        .from('v_sales_heatmap')
-        .select('day_of_week, hour_of_day, order_count')
-        .eq('branch_id', branchId)
+        .from('v_plc_heatmap')
+        .select('day_of_week, hour_of_day, washes')
+        .or(`branch_id.eq.${branchId},branch_id.is.null`)
       setHeatmapRows(buildHeatmapFrom(heatData ?? []))
 
       // 7-day summary
@@ -832,7 +861,7 @@ export function DashboardPage() {
   const maxCount = Math.max(...serviceKpis.map(s => s.count), 1)
 
   // El pico salía escrito a mano ("Pico: 11am–12pm · Sábado"). Ahora se deriva
-  // de las celdas reales; sin ventas no se afirma nada.
+  // de las celdas reales; sin lavados no se afirma nada.
   const picoLabel = (() => {
     let mejor: { dia: string; hora: string; count: number } | null = null
     for (const row of heatmapRows) {
@@ -842,7 +871,7 @@ export function DashboardPage() {
         }
       }
     }
-    return mejor ? `Pico: ${mejor.hora} · ${mejor.dia} (${mejor.count} servicios)` : null
+    return mejor ? `Pico: ${mejor.hora} · ${mejor.dia} (${mejor.count} lavados)` : null
   })()
 
   return (
@@ -1016,10 +1045,10 @@ export function DashboardPage() {
       }}>
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 15, color: 'var(--text-primary)' }}>
-            Mapa de calor · servicios por hora
+            Mapa de calor · lavados por hora
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-            {picoLabel ?? 'Sin ventas registradas todavía'}
+            {picoLabel ?? 'Sin lavados registrados todavía'}
           </div>
         </div>
         <Heatmap rows={heatmapRows} />
