@@ -101,13 +101,21 @@ function buildHeatmapFrom(rows: any[]): { label: string; cells: HourCell[] }[] {
 }
 
 /** Cómo se muestra cada estado que reporta el PLC. */
-const MACHINE_STATES: Record<string, { label: string; color: string; tint: string }> = {
-  WASHING:   { label: 'Lavando',   color: '#0B6E4F', tint: 'rgba(11,110,79,0.10)' },
-  READY:     { label: 'Lista',     color: '#0B6E4F', tint: 'rgba(11,110,79,0.10)' },
-  ONLINE:    { label: 'En línea',  color: '#0B6E4F', tint: 'rgba(11,110,79,0.10)' },
-  NOT_READY: { label: 'No lista',  color: '#9A6510', tint: 'rgba(154,101,16,0.12)' },
-  FAULT:     { label: 'En falla',  color: '#B3261E', tint: 'rgba(179,38,30,0.10)' },
-  OFFLINE:   { label: 'Fuera de línea', color: '#5F6368', tint: 'rgba(95,99,104,0.12)' },
+/**
+ * Cómo se muestra cada estado que reporta el PLC.
+ *
+ * Fondo sólido y no un tinte suave: esto se mira de lejos, cruzando el local,
+ * y con frecuencia de reojo. Las etiquetas son cortas por lo mismo — a este
+ * tamaño, «Fuera de línea» parte en dos renglones y deja de leerse de un
+ * golpe.
+ */
+const MACHINE_STATES: Record<string, { label: string; bg: string }> = {
+  WASHING:   { label: 'LAVANDO',  bg: '#FF6A28' },
+  READY:     { label: 'STANDBY',  bg: '#0B6E4F' },
+  ONLINE:    { label: 'STANDBY',  bg: '#0B6E4F' },
+  NOT_READY: { label: 'NO LISTA', bg: '#9A6510' },
+  FAULT:     { label: 'FALLA',    bg: '#B3261E' },
+  OFFLINE:   { label: 'OFFLINE',  bg: '#5F6368' },
 }
 
 /**
@@ -179,50 +187,62 @@ function KpiCard({ label, value, sub, trend, primary }: {
  * muy distintas para quien está a cargo del turno.
  */
 function MachineCard({ m }: { m: MachineCard }) {
-  const estado = MACHINE_STATES[m.status ?? ''] ?? { label: m.status ?? 'Sin datos', color: 'var(--text-secondary)', tint: 'var(--subtle-bg)' }
+  const estado = MACHINE_STATES[m.status ?? ''] ?? { label: (m.status ?? 'SIN DATOS').toUpperCase(), bg: '#5F6368' }
 
   return (
     <div style={{
       background: 'var(--surface)',
       border: '1px solid var(--border)',
-      borderLeft: `4px solid ${m.reporting ? estado.color : 'var(--border)'}`,
+      borderLeft: `4px solid ${m.reporting ? estado.bg : 'var(--border)'}`,
       borderRadius: 6,
       padding: 20,
       opacity: m.reporting ? 1 : 0.75,
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-        <div style={{ minWidth: 0 }}>
+      <div style={{
+        fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 15,
+        color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }}>
+        {nombreDeMaquina(m)}
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{m.machine_id}</div>
+
+      {/* El estado y el conteo compiten por la mirada, así que van en la misma
+          línea y al mismo peso: uno dice qué está pasando ahora y el otro
+          cuánto se lleva hecho. */}
+      <div style={{
+        marginTop: 18, display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', gap: 16, flexWrap: 'wrap',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
           <div style={{
-            fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 15,
-            color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 44, lineHeight: 1,
+            color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums',
           }}>
-            {nombreDeMaquina(m)}
+            {m.washes_today}
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{m.machine_id}</div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+            {m.washes_today === 1 ? 'lavado hoy' : 'lavados hoy'}
+          </div>
         </div>
 
         <span style={{
-          flexShrink: 0, fontSize: 11.5, fontWeight: 700, padding: '4px 9px', borderRadius: 4,
-          color: estado.color, background: estado.tint, whiteSpace: 'nowrap',
+          background: estado.bg,
+          color: '#fff',
+          fontFamily: "'Archivo',sans-serif",
+          fontWeight: 800,
+          fontSize: 26,
+          letterSpacing: 0.5,
+          lineHeight: 1,
+          padding: '12px 22px',
+          borderRadius: 6,
+          whiteSpace: 'nowrap',
         }}>
           {estado.label}
         </span>
       </div>
 
-      <div style={{ marginTop: 16, display: 'flex', alignItems: 'baseline', gap: 8 }}>
-        <div style={{
-          fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 40, lineHeight: 1,
-          color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums',
-        }}>
-          {m.washes_today}
-        </div>
-        <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-          {m.washes_today === 1 ? 'lavado hoy' : 'lavados hoy'}
-        </div>
-      </div>
-
       {m.current_service && (
-        <div style={{ marginTop: 10, fontSize: 12.5, color: 'var(--text-secondary)' }}>
+        <div style={{ marginTop: 14, fontSize: 12.5, color: 'var(--text-secondary)' }}>
           Servicio en curso: <strong style={{ color: 'var(--text-primary)' }}>{m.current_service}</strong>
         </div>
       )}
@@ -231,7 +251,7 @@ function MachineCard({ m }: { m: MachineCard }) {
           que no llega un latido, eso hay que decirlo: puede que sí trabajara y
           no nos estemos enterando. */}
       {!m.reporting && (
-        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--color-warning-text, #9A6510)' }}>
+        <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--color-warning-text, #9A6510)' }}>
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor', flexShrink: 0 }}/>
           Sin señal del gateway; el dato puede estar desactualizado
         </div>
