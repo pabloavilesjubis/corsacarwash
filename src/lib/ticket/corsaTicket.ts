@@ -104,6 +104,22 @@ export interface TicketRedencion {
   fecha: string
 }
 
+/**
+ * Seguro de lluvia comprado con esta venta.
+ *
+ * Lo que va impreso es lo que el cliente va a mostrar cuando vuelva, así que
+ * tiene que bastarse solo: hasta cuándo vale, con hora, y sobre qué placa. Un
+ * «válido 48 horas» sin fecha obliga a reconstruir mentalmente desde cuándo
+ * corre, y ahí es donde empiezan las discusiones en el mostrador.
+ */
+export interface TicketSeguroLluvia {
+  placa: string
+  /** ISO del momento de la compra. */
+  desde: string
+  /** ISO del vencimiento — 48 horas después. */
+  hasta: string
+}
+
 export interface TicketArgs {
   emisor: TicketEmisor
   venta: TicketVenta
@@ -112,6 +128,7 @@ export interface TicketArgs {
   cliente?: TicketCliente
   atendio?: string
   redencion?: TicketRedencion
+  seguroLluvia?: TicketSeguroLluvia
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -165,7 +182,7 @@ function marcaAspirado(aspirado: boolean): string {
 // ─── Generador ───────────────────────────────────────────────
 
 export function buildCorsaTicketHTML(args: TicketArgs): string {
-  const { emisor: e, venta: v, operacion: op, dte: d = {}, cliente: cli, atendio, redencion } = args
+  const { emisor: e, venta: v, operacion: op, dte: d = {}, cliente: cli, atendio, redencion, seguroLluvia } = args
 
   const programa = resolveServiceProgram(op.servicio)
   const tipoLabel = (d.tipoDte && DTE_LABELS[d.tipoDte])
@@ -231,6 +248,35 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
          ${cli.correo ? `<div class="kv-row"><span class="k">Correo</span><span class="v wrap">${esc(cli.correo)}</span></div>` : ''}
        </div>`
     : `<div class="kv-block"><div class="kv-row"><span class="k">Cliente</span><span class="v">Consumidor Final</span></div></div>`
+
+  /**
+   * El seguro, impreso con marco grueso.
+   *
+   * No es un dato más de la venta: es el comprobante de un derecho que vence.
+   * Va con borde doble y las horas completas —no «48 h»— porque el papel se
+   * guarda en la guantera y se lee dos días después, cuando ya nadie se
+   * acuerda a qué hora se compró.
+   */
+  const seguroBlock = seguroLluvia ? `
+    <div class="seguro-block">
+      <div class="seguro-title">SEGURO DE LLUVIA</div>
+      <div class="seguro-sub">Un lavado PRO sin costo si llueve</div>
+      <div class="seguro-plate">${esc(seguroLluvia.placa)}</div>
+      <div class="seguro-rows">
+        <div class="seguro-row"><span>Desde</span><span>${esc(formatearFechaHora(seguroLluvia.desde, {
+          day: '2-digit', month: '2-digit', year: 'numeric',
+          hour: '2-digit', minute: '2-digit',
+        }))}</span></div>
+        <div class="seguro-row"><span>Válido hasta</span><span class="strong">${esc(formatearFechaHora(seguroLluvia.hasta, {
+          day: '2-digit', month: '2-digit', year: 'numeric',
+          hour: '2-digit', minute: '2-digit',
+        }))}</span></div>
+      </div>
+      <div class="seguro-legal">
+        Válido únicamente para esta placa y presentando este ticket.
+        Vence a la hora indicada.
+      </div>
+    </div>` : ''
 
   const dteBlock = d.numeroControl
     ? `<div class="dte-block">
@@ -330,6 +376,24 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
     border: 2px solid #000; padding: 1px 6px;
     font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; font-weight: 900;
   }
+
+  /* ── Seguro de lluvia ── */
+  .seguro-block {
+    border: 3px solid #000; padding: 6px 8px; margin: 6px 0;
+    text-align: center;
+  }
+  .seguro-title { font-size: 14px; font-weight: 900; letter-spacing: 0.1em; }
+  .seguro-sub { font-size: 10px; font-weight: 700; margin-top: 2px; }
+  .seguro-plate {
+    border: 2px solid #000; display: inline-block;
+    padding: 2px 10px; margin: 5px 0 4px;
+    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+    font-size: 17px; font-weight: 900; letter-spacing: 0.08em;
+  }
+  .seguro-rows { font-size: 11px; font-weight: 700; }
+  .seguro-row { display: flex; justify-content: space-between; padding: 1px 2px; }
+  .seguro-row .strong { font-weight: 900; text-decoration: underline; }
+  .seguro-legal { font-size: 9.5px; font-weight: 600; margin-top: 4px; line-height: 1.25; }
 
   /* ── Branding ── */
   .brand-block { text-align: center; margin-bottom: 4px; }
@@ -447,6 +511,8 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
     <hr class="sep"/>
     ${clienteBlock}
     ${atendio ? `<div class="kv-block"><div class="kv-row"><span class="k">Atendió</span><span class="v">${esc(atendio)}</span></div></div>` : ''}
+
+    ${seguroBlock}
 
     <hr class="sep"/>
     <div class="items">

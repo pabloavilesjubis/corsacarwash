@@ -93,6 +93,21 @@ export interface PosSaleResult {
   doc_type: 'ticket' | 'ccf'
   fcf_name: string | null
   issued_at: string
+  /** Póliza emitida con esta venta, si se vendió seguro de lluvia (0039). */
+  rain_policy: {
+    id: string
+    plate: string
+    price: number
+    issued_at: string
+    valid_until: string
+  } | null
+  /** Póliza consumida por esta venta, si el lavado se cobró con un seguro. */
+  rain_redeemed: {
+    id: string
+    plate: string
+    issued_at: string
+    valid_until: string
+  } | null
 }
 
 /** Cobro recién hecho en el POS. */
@@ -111,7 +126,11 @@ export function buildTicketArgsFromPos(
 ): TicketArgs {
   const total = Number(result.total || 0)
   const aspirado = extras.aspiradoPrecio ?? 0
-  const base = result.with_aspirado ? total - aspirado : total
+  const seguro = Number(result.rain_policy?.price ?? 0)
+  // El precio del lavado es lo que queda después de los complementos: sin
+  // restarlos, la línea del servicio mostraría el total y el ticket sumaría
+  // más que lo cobrado.
+  const base = total - (result.with_aspirado ? aspirado : 0) - seguro
 
   return {
     emisor: {
@@ -136,6 +155,14 @@ export function buildTicketArgsFromPos(
         ...(result.with_aspirado
           ? [{ nombre: 'Aspirado de interiores', cantidad: 1, precioUnitario: aspirado, subtotal: aspirado }]
           : []),
+        ...(result.rain_policy
+          ? [{
+              nombre: 'Seguro de lluvia',
+              cantidad: 1,
+              precioUnitario: Number(result.rain_policy.price || 0),
+              subtotal: Number(result.rain_policy.price || 0),
+            }]
+          : []),
       ],
       total,
       iva: Number(result.tax || 0),
@@ -149,5 +176,15 @@ export function buildTicketArgsFromPos(
     },
     dte: { tipoDte: result.doc_type === 'ccf' ? '03' : '01' },
     atendio: extras.atendio,
+    // La vigencia se imprime con lo que devolvió el servidor, no con una
+    // cuenta hecha acá: el reloj que vale es el de la base, que es el mismo
+    // que va a decidir si el seguro está vivo cuando el cliente vuelva.
+    seguroLluvia: result.rain_policy
+      ? {
+          placa: result.rain_policy.plate,
+          desde: result.rain_policy.issued_at,
+          hasta: result.rain_policy.valid_until,
+        }
+      : undefined,
   }
 }

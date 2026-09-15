@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import toast from 'react-hot-toast'
 import { useAuth } from '../hooks/useAuth'
+import { useEsMovil } from '../hooks/useEsMovil'
 import { supabase } from '../lib/supabase'
 import {
   ccfReceptorStatus, fcfReceptorStatus, preferredDocType, type ReceptorStatus,
@@ -19,6 +20,7 @@ import { FCF_IDENTIFICACION_OBLIGATORIA_DESDE } from '../lib/mh-catalogs'
 import { printCorsaTicket } from '../lib/ticket/corsaTicket'
 import { buildTicketArgsFromPos, EMISOR, type PosSaleResult } from '../lib/ticket/fromSale'
 import { lookupVoucher, redeemVoucher, type VoucherLookup } from '../services/vouchers.service'
+import { fetchPolizaVigente, tiempoRestante, type RainPolicy } from '../services/rain.service'
 import { formatearFechaHora } from '../utils/fecha'
 
 // ─── Catálogo ────────────────────────────────────────────────
@@ -50,6 +52,16 @@ const SERVICES = [
 ]
 
 const ADDON_ASPIRADO = { id: 'aspirado', label: 'Aspirado de interiores', price: 3 }
+
+/**
+ * Seguro de lluvia: $2.00 por 48 horas de cobertura.
+ *
+ * Las 48 horas NO se calculan acá. El servidor emite la póliza con su propio
+ * reloj (0039) y devuelve la vigencia; esta pantalla sólo la muestra y la
+ * imprime. Si el vencimiento saliera del navegador, dos cajas con la hora
+ * corrida emitirían coberturas distintas por el mismo precio.
+ */
+const ADDON_SEGURO = { id: 'seguro_lluvia', label: 'Seguro de lluvia', price: 2, horas: 48 }
 const PAYMENT_METHODS = [
   { id: 'efectivo',      label: 'Efectivo'      },
   { id: 'tarjeta',       label: 'Tarjeta'        },
@@ -165,6 +177,7 @@ interface FleetModalProps {
 }
 
 function FleetModal({ onVehicleSelected, onCancel }: FleetModalProps) {
+  const esMovilModal = useEsMovil()
   const { profile } = useAuth()
   const orgId = (profile as any)?.organization_id ?? null
 
@@ -252,9 +265,9 @@ function FleetModal({ onVehicleSelected, onCancel }: FleetModalProps) {
     : vehicles
 
   return createPortal(
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 20 }}
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: esMovilModal ? 10 : 20 }}
       onClick={e => { if (e.target === e.currentTarget) onCancel() }}>
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, width: '100%', maxWidth: 680, maxHeight: '85vh', overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, width: '100%', maxWidth: 680, maxHeight: esMovilModal ? '92dvh' : '85vh', overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column' }}>
 
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 22px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
@@ -267,10 +280,18 @@ function FleetModal({ onVehicleSelected, onCancel }: FleetModalProps) {
           <button onClick={onCancel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 22 }}>×</button>
         </div>
 
-        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        {/* En el teléfono las dos columnas del selector se apilan: 260 px de
+            empresas dejarían 130 para los vehículos, que es menos que una placa. */}
+        <div style={{ display: 'flex', flexDirection: esMovilModal ? 'column' : 'row', flex: 1, overflow: 'hidden' }}>
 
           {/* Left: Companies */}
-          <div style={{ width: 260, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{
+            width: esMovilModal ? '100%' : 260,
+            maxHeight: esMovilModal ? '38%' : undefined,
+            borderRight: esMovilModal ? 'none' : '1px solid var(--border)',
+            borderBottom: esMovilModal ? '1px solid var(--border)' : 'none',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden',
+          }}>
             <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
               <input
                 value={searchC}
@@ -727,6 +748,7 @@ function BillingModal({ total, paymentMethod, customer, onConfirm, onCancel }: B
 
 export function POSPage() {
   const { currentBranch, hasPermission } = useAuth()
+  const esMovil = useEsMovil()
   const puedeCanjearCupon = hasPermission('vouchers.redeem')
   const metodosPago = PAYMENT_METHODS.filter(
     pm => pm.id !== 'cupon' || puedeCanjearCupon
@@ -741,6 +763,11 @@ export function POSPage() {
   const [selectedService, setSelectedService] = useState('elite')
   const [selectedSize, setSelectedSize] = useState<SizeId>('M')
   const [withAspirado, setWithAspirado] = useState(false)
+  const [conSeguro, setConSeguro] = useState(false)
+  // Póliza viva del vehículo elegido, si tiene una. La trae el servidor.
+  const [polizaVigente, setPolizaVigente] = useState<RainPolicy | null>(null)
+  // Cuando el cajero decide cobrar el lavado CON el seguro, en lugar de cobrarlo.
+  const [canjeandoSeguro, setCanjeandoSeguro] = useState(false)
 
   // Fleet mode
   const [showFleetModal, setShowFleetModal] = useState(false)
@@ -751,6 +778,8 @@ export function POSPage() {
   const [selectedPayment, setSelectedPayment] = useState('efectivo')
   const [keypadValue, setKeypadValue] = useState('')
   const [showBillingModal, setShowBillingModal] = useState(false)
+  // Sólo en teléfono: el cobro vive en una hoja que se abre al final.
+  const [cobroAbierto, setCobroAbierto] = useState(false)
   const [voucherCode, setVoucherCode] = useState('')
   const [voucherFound, setVoucherFound] = useState<VoucherLookup | null>(null)
   const [voucherChecking, setVoucherChecking] = useState(false)
@@ -773,7 +802,39 @@ export function POSPage() {
     ? Number(fleetCompany!.aspirado_price)
     : ADDON_ASPIRADO.price
   const aspiradoPrice = withAspirado ? aspiradoUnit : 0
-  const total = servicePrice + aspiradoPrice
+
+  /**
+   * A quién se le puede vender el seguro.
+   *
+   * Cliente identificado y vehículo con placa. La misma regla la hace cumplir
+   * el servidor; acá se repite para poder explicar POR QUÉ está deshabilitado
+   * en lugar de mostrar un error después de que el cajero ya lo intentó. Nunca
+   * al revés: esta comprobación es cortesía, la del servidor es la que manda.
+   */
+  const vehiculoDelCliente = mode === 'flotilla' ? fleetVehicle : customer?.vehicle
+  // Las dos formas de vehículo del POS no comparten el nombre del id: el de
+  // flotilla lo llama vehicle_id. Se normaliza acá y no en cada uso.
+  const vehiculoId = mode === 'flotilla'
+    ? fleetVehicle?.vehicle_id ?? null
+    : customer?.vehicle?.id ?? null
+  const puedeVenderSeguro = Boolean(
+    (mode === 'flotilla' ? fleetCompany?.customer_id : customer?.id)
+    && vehiculoDelCliente?.plate
+  )
+  /**
+   * Que la casilla esté marcada no alcanza para cobrar el seguro.
+   *
+   * Se deriva en lugar de corregir el estado con un efecto: si el cliente se
+   * quita del POS, o se pasa a canjear, el seguro deja de estar activo en el
+   * mismo render. Con un efecto que lo desmarcara después existiría un render
+   * —uno solo, pero existe— mostrando un total con un seguro que ya no se
+   * puede vender.
+   */
+  const seguroActivo = conSeguro && puedeVenderSeguro && !canjeandoSeguro
+  const seguroPrice = seguroActivo ? ADDON_SEGURO.price : 0
+
+  // Un lavado cobrado con el seguro no se cobra: es el derecho que ya se pagó.
+  const total = canjeandoSeguro ? 0 : servicePrice + aspiradoPrice + seguroPrice
   const received = parseFloat(keypadValue) || 0
   const change = Math.max(0, received - total)
 
@@ -868,6 +929,7 @@ export function POSPage() {
       setVoucherCode(''); setVoucherFound(null); setVoucherMiss(false)
       setCustomer(null); setSelectedPayment('efectivo')
       setWithAspirado(false); setKeypadValue('')
+      setConSeguro(false); setCanjeandoSeguro(false); setPolizaVigente(null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'No se pudo canjear el cupón')
     }
@@ -876,6 +938,7 @@ export function POSPage() {
 
   const handleBillingConfirm = useCallback(async (billing: BillingInfo) => {
     setShowBillingModal(false)
+    setCobroAbierto(false)
     setSubmitting(true)
     try {
       // pos_register_sale (0030) reemplaza a create_work_order: aquella se
@@ -895,6 +958,9 @@ export function POSPage() {
         p_fcf_name:        billing.fcfName ?? null,
         p_ccf_customer_id: billing.ccfCustomer?.id ?? null,
         p_order_type:      mode,
+        p_rain_insurance:  seguroActivo,
+        p_rain_price:      seguroPrice,
+        p_rain_policy_id:  canjeandoSeguro ? (polizaVigente?.id ?? null) : null,
       })
       if (error) throw error
 
@@ -930,14 +996,130 @@ export function POSPage() {
       toast.error(err?.message ?? 'Error al crear la orden')
     }
     setSubmitting(false)
-  }, [branchId, mode, fleetCompany, fleetVehicle, customer, svc, selectedSize, total, selectedPayment, withAspirado, aspiradoPrice, currentBranch])
+  }, [branchId, mode, fleetCompany, fleetVehicle, customer, svc, selectedSize, total, selectedPayment,
+      withAspirado, aspiradoPrice, currentBranch, seguroActivo, seguroPrice,
+      canjeandoSeguro, polizaVigente])
 
   // Con cupón el botón sólo se habilita si el cupón existe y está sin usar:
   // canjear uno ya utilizado o inexistente falla en el servidor, y es mejor
   // no dejar que el cajero lo intente delante del cliente.
+  /**
+   * ¿Este carro ya tiene seguro vigente?
+   *
+   * Se pregunta al servidor cada vez que cambia el vehículo. Que el cajero se
+   * entere ANTES de cobrar es la mitad del valor del producto: un cliente que
+   * pagó su seguro y vuelve bajo la lluvia no debería tener que acordarse de
+   * mencionarlo.
+   */
+  useEffect(() => {
+    if (!vehiculoId) { setPolizaVigente(null); setCanjeandoSeguro(false); return }
+    let vivo = true
+    fetchPolizaVigente(vehiculoId).then(p => { if (vivo) setPolizaVigente(p) })
+    return () => { vivo = false }
+  }, [vehiculoId])
+
   const canCharge = pagaConCupon
     ? voucherFound?.status === 'active'
     : mode === 'flotilla' ? !!fleetVehicle : true
+
+  /**
+   * El bloque de cobro: método de pago, monto y teclado.
+   *
+   * Vive en una constante porque se monta en dos lugares distintos y tiene que
+   * ser EL MISMO: en la computadora, dentro del panel de resumen; en el
+   * teléfono, dentro de la hoja que se abre al tocar «Cobrar». Duplicar este
+   * JSX sería duplicar la lógica de cobro, y el día que cambie una regla —un
+   * método de pago nuevo, otra validación de cupón— quedaría cambiada en un
+   * lado y vieja en el otro. Es lo mismo que se hizo en Ventas con las
+   * acciones de cada fila.
+   */
+  const bloqueDeCobro = (
+    <>
+          {/* Pago */}
+          <div>
+            <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 7 }}>Método de pago</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+              {metodosPago.map(pm => (
+                <button key={pm.id} id={`pay-${pm.id}`} onClick={() => setSelectedPayment(pm.id)}
+                  style={{ padding: '6px 10px', borderRadius: 5, fontSize: 12, fontWeight: 500, border: `1px solid ${selectedPayment === pm.id ? 'var(--corsa-green)' : 'var(--border)'}`, background: selectedPayment === pm.id ? 'var(--corsa-green)' : 'var(--surface)', color: selectedPayment === pm.id ? '#fff' : 'var(--text-primary)', cursor: 'pointer', transition: 'all 0.12s' }}>
+                  {pm.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Keypad — monto recibido, o número de cupón si se paga con cupón */}
+          <div>
+            <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+              {pagaConCupon ? 'Número de cupón (6 dígitos)' : 'Monto recibido'}
+            </div>
+            <div style={{ border: `1.5px solid ${pagaConCupon && voucherFound ? (voucherFound.status === 'active' ? 'var(--corsa-green)' : 'var(--color-danger-text)') : 'var(--border)'}`, borderRadius: 6, padding: '8px 12px', marginBottom: 8, fontFamily: pagaConCupon ? "'SF Mono', monospace" : "'Archivo',sans-serif", fontSize: 20, fontWeight: 800, letterSpacing: pagaConCupon ? 3 : 0, fontVariantNumeric: 'tabular-nums', minHeight: 42, color: 'var(--text-primary)', textAlign: pagaConCupon ? 'center' : 'left' }}>
+              {pagaConCupon
+                ? (voucherCode || <span style={{ color: 'var(--border)' }}>------</span>)
+                : (keypadValue ? `$${keypadValue}` : <span style={{ color: 'var(--border)' }}>$0.00</span>)}
+            </div>
+
+            {pagaConCupon && (
+              <div style={{ marginBottom: 8 }}>
+                {voucherChecking && (
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Validando…</div>
+                )}
+                {voucherMiss && (
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-danger-text)' }}>
+                    No existe ningún cupón con ese número.
+                  </div>
+                )}
+                {voucherFound && (
+                  <div style={{
+                    border: `1.5px solid ${voucherFound.status === 'active' ? 'var(--corsa-green)' : 'var(--color-danger-text)'}`,
+                    borderRadius: 6, padding: '8px 10px',
+                    background: voucherFound.status === 'active' ? 'rgba(2,53,48,0.05)' : 'var(--color-danger-bg, #FBE7E7)',
+                  }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 3 }}>
+                      {voucherFound.status === 'active' ? 'Cupón válido'
+                        : voucherFound.status === 'redeemed' ? 'Ya fue canjeado' : 'Cupón anulado'}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-primary)' }}>
+                      {voucherFound.service_name} {voucherFound.size} ·{' '}
+                      {voucherFound.includes_aspirado ? 'con aspirado' : 'sin aspirado'}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>{voucherFound.customer_name}</div>
+                    {voucherFound.status === 'redeemed' && voucherFound.redeemed_at && (
+                      <div style={{ fontSize: 11.5, color: 'var(--color-danger-text)', marginTop: 3 }}>
+                        Usado el {formatearFechaHora(voucherFound.redeemed_at)}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="keypad">
+              {KEYPAD_KEYS.map(k => (
+                <button key={k} id={`kp-${k}`} className="keypad-key" onClick={() => handleKeypad(k)}>{k}</button>
+              ))}
+            </div>
+            {received > 0 && !pagaConCupon && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 12.5, color: 'var(--text-secondary)' }}>
+                <span>Recibido: <strong>{fmt(received)}</strong></span>
+                {received >= total && <span style={{ color: 'var(--color-success-text)', fontWeight: 600 }}>Cambio: {fmt(change)}</span>}
+              </div>
+            )}
+          </div>
+
+          <div className="divider"/>
+
+          <div className="clip-btn-wrap" style={{ opacity: (!canCharge || submitting) ? 0.55 : 1, pointerEvents: (!canCharge || submitting) ? 'none' : 'auto' }}>
+            <div className="clip-btn-corner"/>
+            <button id="btn-charge" className="clip-btn large"
+                    onClick={() => pagaConCupon ? canjearCupon() : setShowBillingModal(true)}
+                    disabled={!canCharge || submitting}>
+              {submitting ? 'Procesando…'
+                : pagaConCupon ? 'Canjear cupón e imprimir'
+                : `Cobrar ${fmt(total)}`}
+            </button>
+          </div>
+    </>
+  )
 
   return (
     <div className="pos-inner">
@@ -949,12 +1131,18 @@ export function POSPage() {
       </div>
 
       {/* ── Mode selector (3 cards) ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+      {/* En el teléfono las tres van en una línea, cuadradas, como el selector
+          de tamaño: apiladas se comían media pantalla de alto para elegir algo
+          que se elige una vez por orden. Lo que se sacrifica es la línea
+          explicativa de cada modo — el icono y el nombre alcanzan, y el alto
+          que se gana es el que hace falta para ver el servicio sin scrollear. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: esMovil ? 8 : 12 }}>
         {[
           {
             id: 'normal' as const,
             icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="2" y="7" width="20" height="13" rx="1.5"/><path d="M6 7V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2"/><line x1="2" y1="12" x2="22" y2="12"/></svg>,
             label: 'Normal',
+            corto: 'Normal',
             sub: 'Cliente que paga servicio completo',
             color: 'var(--corsa-green)',
           },
@@ -962,6 +1150,7 @@ export function POSPage() {
             id: 'flotilla' as const,
             icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="1" y="7" width="14" height="10"/><path d="M15 10h4l3 3v4h-7z"/><circle cx="6" cy="18" r="1.6"/><circle cx="17.5" cy="18" r="1.6"/></svg>,
             label: 'Flotilla Corp.',
+            corto: 'Flotilla',
             sub: 'Precio especial ÉLITE negociado',
             color: 'var(--corsa-orange)',
           },
@@ -969,6 +1158,7 @@ export function POSPage() {
             id: 'membresia' as const,
             icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="8" r="5"/><polyline points="8.5 13 7 22 12 19 17 22 15.5 13"/></svg>,
             label: 'Membresía',
+            corto: 'Membresía',
             sub: 'Próximamente disponible',
             color: 'var(--text-secondary)',
             disabled: true,
@@ -980,20 +1170,32 @@ export function POSPage() {
             onClick={() => !opt.disabled && handleModeChange(opt.id)}
             disabled={opt.disabled}
             style={{
-              padding: '14px 16px', borderRadius: 8, cursor: opt.disabled ? 'not-allowed' : 'pointer', textAlign: 'left',
+              padding: esMovil ? '10px 6px' : '14px 16px', borderRadius: 8,
+              cursor: opt.disabled ? 'not-allowed' : 'pointer',
+              textAlign: esMovil ? 'center' : 'left',
               border: `2px solid ${mode === opt.id ? opt.color : 'var(--border)'}`,
               background: mode === opt.id ? `${opt.color}0D` : 'var(--surface)',
               opacity: opt.disabled ? 0.5 : 1,
-              transition: 'all 0.12s', display: 'flex', alignItems: 'flex-start', gap: 12,
+              transition: 'all 0.12s', display: 'flex',
+              flexDirection: esMovil ? 'column' : 'row',
+              alignItems: esMovil ? 'center' : 'flex-start',
+              justifyContent: esMovil ? 'center' : undefined,
+              aspectRatio: esMovil ? '1 / 1' : undefined,
+              gap: esMovil ? 6 : 12,
             }}
           >
-            <div style={{ color: mode === opt.id ? opt.color : 'var(--text-secondary)', marginTop: 2, flexShrink: 0 }}>{opt.icon}</div>
+            <div style={{ color: mode === opt.id ? opt.color : 'var(--text-secondary)', marginTop: esMovil ? 0 : 2, flexShrink: 0 }}>{opt.icon}</div>
             <div>
-              <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 15, color: mode === opt.id ? opt.color : 'var(--text-primary)' }}>
-                {opt.label}
-                {mode === opt.id && <span style={{ marginLeft: 6, fontSize: 11, color: opt.color }}>●</span>}
+              <div style={{
+                fontFamily: "'Archivo',sans-serif", fontWeight: 700,
+                fontSize: esMovil ? 12.5 : 15, lineHeight: 1.15,
+                color: mode === opt.id ? opt.color : 'var(--text-primary)',
+              }}>
+                {esMovil ? opt.corto : opt.label}
+                {mode === opt.id && !esMovil && <span style={{ marginLeft: 6, fontSize: 11, color: opt.color }}>●</span>}
               </div>
-              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{opt.sub}</div>
+              {/* La explicación de cada modo sólo cabe en computadora. */}
+              {!esMovil && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{opt.sub}</div>}
             </div>
           </button>
         ))}
@@ -1029,7 +1231,7 @@ export function POSPage() {
 
           {/* Col 1: Customer (only normal mode) */}
           {mode === 'normal' && (
-            <div style={{ flex: '0 0 280px' }}>
+            <div style={{ flex: esMovil ? '1 1 100%' : '0 0 280px' }}>
               <CustomerSearchPanel selected={customer} onSelect={setCustomer} onClear={() => setCustomer(null)}/>
             </div>
           )}
@@ -1094,7 +1296,7 @@ export function POSPage() {
 
             {/* Aspirado add-on */}
             <div className="card" style={{ padding: 12 }}>
-              <div className="panel-section-label" style={{ marginBottom: 8 }}>Servicio adicional</div>
+              <div className="panel-section-label" style={{ marginBottom: 8 }}>Servicios adicionales</div>
               <button id="addon-aspirado" onClick={() => setWithAspirado(v => !v)}
                 style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', borderRadius: 6, border: `2px solid ${withAspirado ? 'var(--corsa-orange)' : 'var(--border)'}`, background: withAspirado ? 'rgba(255,106,40,0.08)' : 'var(--surface)', cursor: 'pointer', transition: 'all 0.12s', textAlign: 'left' }}>
                 <div style={{ width: 20, height: 20, borderRadius: 4, flexShrink: 0, border: `2px solid ${withAspirado ? 'var(--corsa-orange)' : 'var(--border)'}`, background: withAspirado ? 'var(--corsa-orange)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1116,11 +1318,71 @@ export function POSPage() {
                   +{fmt(aspiradoUnit)}
                 </div>
               </button>
+
+              {/* ── Seguro de lluvia ── */}
+              <button id="addon-seguro"
+                onClick={() => puedeVenderSeguro && !canjeandoSeguro && setConSeguro(v => !v)}
+                disabled={!puedeVenderSeguro || canjeandoSeguro}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '11px 14px', borderRadius: 6, marginTop: 8,
+                  border: `2px solid ${seguroActivo ? 'var(--corsa-green)' : 'var(--border)'}`,
+                  background: seguroActivo ? 'rgba(2,53,48,0.06)' : 'var(--surface)',
+                  cursor: puedeVenderSeguro && !canjeandoSeguro ? 'pointer' : 'not-allowed',
+                  opacity: puedeVenderSeguro && !canjeandoSeguro ? 1 : 0.55,
+                  transition: 'all 0.12s', textAlign: 'left',
+                }}>
+                <div style={{ width: 20, height: 20, borderRadius: 4, flexShrink: 0, border: `2px solid ${seguroActivo ? 'var(--corsa-green)' : 'var(--border)'}`, background: seguroActivo ? 'var(--corsa-green)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {seguroActivo && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+                    {ADDON_SEGURO.label}
+                  </div>
+                  {/* Cuando no se puede vender, la tarjeta dice qué falta. Un
+                      control deshabilitado sin explicación hace que el cajero
+                      lo intente tres veces antes de preguntar. */}
+                  <div style={{ fontSize: 11.5, color: puedeVenderSeguro ? 'var(--text-secondary)' : 'var(--color-warning-text, #9A6510)', marginTop: 1 }}>
+                    {!puedeVenderSeguro
+                      ? 'Requiere cliente registrado con placa'
+                      : `${ADDON_SEGURO.horas} h de cobertura · si llueve, vuelve por un PRO sin costo`}
+                  </div>
+                </div>
+                <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 18, color: seguroActivo ? 'var(--corsa-green)' : 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+                  +{fmt(ADDON_SEGURO.price)}
+                </div>
+              </button>
+
+              {/* ── Este carro ya tiene seguro vivo ── */}
+              {polizaVigente && (
+                <div style={{
+                  marginTop: 10, padding: '11px 14px', borderRadius: 6,
+                  border: `2px solid ${canjeandoSeguro ? 'var(--corsa-green)' : 'var(--corsa-orange)'}`,
+                  background: canjeandoSeguro ? 'rgba(2,53,48,0.06)' : 'rgba(255,106,40,0.08)',
+                }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Seguro de lluvia vigente · {polizaVigente.plate}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                    Le quedan {tiempoRestante(polizaVigente.horas_restantes)} — vence el{' '}
+                    {formatearFechaHora(polizaVigente.valid_until)}
+                  </div>
+                  <button
+                    onClick={() => setCanjeandoSeguro(v => !v)}
+                    className={canjeandoSeguro ? 'btn btn-ghost' : 'btn btn-primary'}
+                    style={{ marginTop: 9, width: '100%', justifyContent: 'center' }}>
+                    {canjeandoSeguro ? 'Cancelar el canje' : 'Canjear: lavado PRO sin costo'}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Col 3: Cobro */}
-          <div className="card" style={{ flex: '0 0 280px', display: 'flex', flexDirection: 'column', gap: 12, padding: 14 }}>
+          {/* El resumen y el cobro: de columna fija a bloque de ancho completo,
+              que en el teléfono queda al final del recorrido — mirar el total y
+              cobrar es lo último que se hace. */}
+          <div className="card" style={{ flex: esMovil ? '1 1 100%' : '0 0 280px', display: 'flex', flexDirection: 'column', gap: 12, padding: 14 }}>
             <div className="panel-section-label">Resumen</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1137,6 +1399,18 @@ export function POSPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px solid var(--border)' }}>
                   <div style={{ fontSize: 13, color: 'var(--text-primary)' }}>Aspirado</div>
                   <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--corsa-orange)', fontVariantNumeric: 'tabular-nums' }}>+{fmt(aspiradoPrice)}</div>
+                </div>
+              )}
+              {seguroPrice > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 13, color: 'var(--text-primary)' }}>Seguro de lluvia</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--corsa-green)', fontVariantNumeric: 'tabular-nums' }}>+{fmt(seguroPrice)}</div>
+                </div>
+              )}
+              {canjeandoSeguro && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 13, color: 'var(--corsa-green)', fontWeight: 600 }}>Canje de seguro de lluvia</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--corsa-green)' }}>sin costo</div>
                 </div>
               )}
             </div>
@@ -1156,92 +1430,59 @@ export function POSPage() {
               {fmt(total)}
             </div>
 
-            {/* Pago */}
-            <div>
-              <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 7 }}>Método de pago</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                {metodosPago.map(pm => (
-                  <button key={pm.id} id={`pay-${pm.id}`} onClick={() => setSelectedPayment(pm.id)}
-                    style={{ padding: '6px 10px', borderRadius: 5, fontSize: 12, fontWeight: 500, border: `1px solid ${selectedPayment === pm.id ? 'var(--corsa-green)' : 'var(--border)'}`, background: selectedPayment === pm.id ? 'var(--corsa-green)' : 'var(--surface)', color: selectedPayment === pm.id ? '#fff' : 'var(--text-primary)', cursor: 'pointer', transition: 'all 0.12s' }}>
-                    {pm.label}
-                  </button>
-                ))}
+            {/* En la computadora el cobro va acá, a la vista: hay lugar y el
+                cajero trabaja con el panel entero delante. En el teléfono ese
+                mismo bloque —seis métodos de pago y un teclado— empuja el
+                total fuera de la pantalla, así que pasa a una hoja que se abre
+                recién cuando la orden ya está armada. */}
+            {!esMovil ? bloqueDeCobro : (
+              <div className="clip-btn-wrap" style={{ opacity: (!canCharge || submitting) ? 0.55 : 1, pointerEvents: (!canCharge || submitting) ? 'none' : 'auto' }}>
+                <div className="clip-btn-corner"/>
+                <button id="btn-abrir-cobro" className="clip-btn large"
+                        onClick={() => setCobroAbierto(true)}
+                        disabled={!canCharge || submitting}>
+                  Cobrar {fmt(total)}
+                </button>
               </div>
-            </div>
+            )}
 
-            {/* Keypad — monto recibido, o número de cupón si se paga con cupón */}
-            <div>
-              <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                {pagaConCupon ? 'Número de cupón (6 dígitos)' : 'Monto recibido'}
-              </div>
-              <div style={{ border: `1.5px solid ${pagaConCupon && voucherFound ? (voucherFound.status === 'active' ? 'var(--corsa-green)' : 'var(--color-danger-text)') : 'var(--border)'}`, borderRadius: 6, padding: '8px 12px', marginBottom: 8, fontFamily: pagaConCupon ? "'SF Mono', monospace" : "'Archivo',sans-serif", fontSize: 20, fontWeight: 800, letterSpacing: pagaConCupon ? 3 : 0, fontVariantNumeric: 'tabular-nums', minHeight: 42, color: 'var(--text-primary)', textAlign: pagaConCupon ? 'center' : 'left' }}>
-                {pagaConCupon
-                  ? (voucherCode || <span style={{ color: 'var(--border)' }}>------</span>)
-                  : (keypadValue ? `$${keypadValue}` : <span style={{ color: 'var(--border)' }}>$0.00</span>)}
-              </div>
-
-              {pagaConCupon && (
-                <div style={{ marginBottom: 8 }}>
-                  {voucherChecking && (
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Validando…</div>
-                  )}
-                  {voucherMiss && (
-                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-danger-text)' }}>
-                      No existe ningún cupón con ese número.
-                    </div>
-                  )}
-                  {voucherFound && (
-                    <div style={{
-                      border: `1.5px solid ${voucherFound.status === 'active' ? 'var(--corsa-green)' : 'var(--color-danger-text)'}`,
-                      borderRadius: 6, padding: '8px 10px',
-                      background: voucherFound.status === 'active' ? 'rgba(2,53,48,0.05)' : 'var(--color-danger-bg, #FBE7E7)',
-                    }}>
-                      <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 3 }}>
-                        {voucherFound.status === 'active' ? 'Cupón válido'
-                          : voucherFound.status === 'redeemed' ? 'Ya fue canjeado' : 'Cupón anulado'}
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--text-primary)' }}>
-                        {voucherFound.service_name} {voucherFound.size} ·{' '}
-                        {voucherFound.includes_aspirado ? 'con aspirado' : 'sin aspirado'}
-                      </div>
-                      <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>{voucherFound.customer_name}</div>
-                      {voucherFound.status === 'redeemed' && voucherFound.redeemed_at && (
-                        <div style={{ fontSize: 11.5, color: 'var(--color-danger-text)', marginTop: 3 }}>
-                          Usado el {formatearFechaHora(voucherFound.redeemed_at)}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-              <div className="keypad">
-                {KEYPAD_KEYS.map(k => (
-                  <button key={k} id={`kp-${k}`} className="keypad-key" onClick={() => handleKeypad(k)}>{k}</button>
-                ))}
-              </div>
-              {received > 0 && !pagaConCupon && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 12.5, color: 'var(--text-secondary)' }}>
-                  <span>Recibido: <strong>{fmt(received)}</strong></span>
-                  {received >= total && <span style={{ color: 'var(--color-success-text)', fontWeight: 600 }}>Cambio: {fmt(change)}</span>}
-                </div>
-              )}
-            </div>
-
-            <div className="divider"/>
-
-            <div className="clip-btn-wrap" style={{ opacity: (!canCharge || submitting) ? 0.55 : 1, pointerEvents: (!canCharge || submitting) ? 'none' : 'auto' }}>
-              <div className="clip-btn-corner"/>
-              <button id="btn-charge" className="clip-btn large"
-                      onClick={() => pagaConCupon ? canjearCupon() : setShowBillingModal(true)}
-                      disabled={!canCharge || submitting}>
-                {submitting ? 'Procesando…'
-                  : pagaConCupon ? 'Canjear cupón e imprimir'
-                  : `Cobrar ${fmt(total)}`}
-              </button>
-            </div>
 
           </div>
         </div>
+      )}
+
+      {/* ── Hoja de cobro (sólo teléfono) ── */}
+      {esMovil && cobroAbierto && (
+        <>
+          <div
+            onClick={() => setCobroAbierto(false)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(2,20,18,0.5)', zIndex: 250 }}
+          />
+          <div style={{
+            position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 251,
+            background: 'var(--surface)', borderRadius: '14px 14px 0 0',
+            /* dvh: con la barra del navegador a la vista, 100vh deja el botón
+               de cobrar por debajo del borde. */
+            maxHeight: '92dvh', overflowY: 'auto',
+            padding: '10px 16px calc(16px + env(safe-area-inset-bottom, 0px))',
+            boxShadow: '0 -12px 40px rgba(0,0,0,0.22)',
+          }}>
+            <div style={{ width: 38, height: 4, borderRadius: 2, background: 'var(--border)', margin: '2px auto 12px' }}/>
+
+            {/* El total viaja con la hoja: es el número que el cajero le dice
+                al cliente mientras marca el monto recibido. */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
+              <span style={{ fontSize: 14, fontWeight: 700 }}>Total</span>
+              <span style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 26, fontVariantNumeric: 'tabular-nums' }}>
+                {fmt(total)}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {bloqueDeCobro}
+            </div>
+          </div>
+        </>
       )}
 
       {/* Fleet Modal */}

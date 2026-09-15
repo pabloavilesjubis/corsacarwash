@@ -148,6 +148,14 @@ const screenIcons: Record<string, React.ReactNode> = {
   memberships: icons.memberships,
   settings: icons.settings,
   users: icons.users,
+  // Paraguas: el seguro de lluvia.
+  rain: (
+    <Icon>
+      <path d="M12 3a7 7 0 0 0-7 7h14a7 7 0 0 0-7-7z"/>
+      <line x1="12" y1="10" x2="12" y2="18"/>
+      <path d="M9 18a1.5 1.5 0 0 0 3 0"/>
+    </Icon>
+  ),
 }
 
 function getInitials(name: string): string {
