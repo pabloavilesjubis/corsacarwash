@@ -577,6 +577,29 @@ create policy "plc_machines_manage"
 --     Las preguntas del negocio, respondidas desde los eventos crudos.
 -- ─────────────────────────────────────────────
 
+-- El comienzo del día, en hora de El Salvador.
+--
+-- `current_date` en Postgres es UTC. El Salvador es UTC−6, así que el día UTC
+-- empieza a las 6 de la tarde de acá: contar «lavados de hoy» contra
+-- current_date dejaría fuera todo lo de la tarde-noche y se lo sumaría al día
+-- siguiente. El resumen del día mostraría cero justo en las horas de más
+-- trabajo.
+--
+-- Devuelve timestamptz (no una fecha) para que las comparaciones sigan usando
+-- los índices sobre started_at.
+create or replace function public.corsa_inicio_del_dia()
+returns timestamptz
+language sql
+stable
+as $$
+  select ((now() at time zone 'America/El_Salvador')::date)
+           at time zone 'America/El_Salvador'
+$$;
+
+comment on function public.corsa_inicio_del_dia() is
+  'Medianoche de hoy en hora de El Salvador. El Salvador no tiene horario de verano, así que el desfase es fijo.';
+
+
 -- Estado de cada máquina, con cuánto hace que no se sabe de ella.
 drop view if exists public.v_plc_machines cascade;
 create view public.v_plc_machines as
@@ -592,14 +615,17 @@ select
   s.current_service,
   s.last_event_type,
   s.last_event_timestamp,
-  -- Sin eventos ni heartbeat en 5 minutos, no se puede afirmar que siga viva.
-  (s.last_event_timestamp is not null
-   and s.last_event_timestamp > now() - interval '5 minutes') as reporting,
+  -- Se mide contra last_seen_at, que actualiza el heartbeat cada 30 s, y no
+  -- contra el último evento: una máquina puede estar diez minutos sin lavar
+  -- nada y estar perfectamente viva. Usar los eventos haría que toda máquina
+  -- ociosa apareciera como caída, y entonces el indicador no significaría nada.
+  (m.last_seen_at is not null
+   and m.last_seen_at > now() - interval '5 minutes') as reporting,
   (select count(*) from public.plc_wash_cycles c
     where c.organization_id = m.organization_id
       and c.machine_id = m.machine_code
       and c.status in ('COMPLETED', 'COMPLETED_WITHOUT_START')
-      and c.started_at >= current_date)                       as washes_today
+      and c.started_at >= public.corsa_inicio_del_dia())       as washes_today
 from public.plc_machines m
 left join public.plc_machine_status s
        on s.organization_id = m.organization_id
@@ -714,11 +740,11 @@ select
   (g.last_seen_at is not null and g.last_seen_at > now() - interval '3 minutes') as online,
   (select count(*) from public.plc_machine_events e
     where e.organization_id = g.organization_id and e.gateway_id = g.gateway_id
-      and e.event_timestamp >= current_date)                as events_today,
+      and e.event_timestamp >= public.corsa_inicio_del_dia()) as events_today,
   (select count(*) from public.plc_wash_cycles c
     where c.organization_id = g.organization_id and c.gateway_id = g.gateway_id
       and c.status in ('COMPLETED', 'COMPLETED_WITHOUT_START')
-      and c.started_at >= current_date)                     as washes_today,
+      and c.started_at >= public.corsa_inicio_del_dia())     as washes_today,
   (select count(*) from public.plc_machines m
     where m.organization_id = g.organization_id and m.gateway_id = g.gateway_id
       and m.active)                                         as machines

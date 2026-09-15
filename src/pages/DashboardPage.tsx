@@ -100,6 +100,35 @@ function buildHeatmapFrom(rows: any[]): { label: string; cells: HourCell[] }[] {
   }))
 }
 
+/** Cómo se muestra cada estado que reporta el PLC. */
+const MACHINE_STATES: Record<string, { label: string; color: string; tint: string }> = {
+  WASHING:   { label: 'Lavando',   color: '#0B6E4F', tint: 'rgba(11,110,79,0.10)' },
+  READY:     { label: 'Lista',     color: '#0B6E4F', tint: 'rgba(11,110,79,0.10)' },
+  ONLINE:    { label: 'En línea',  color: '#0B6E4F', tint: 'rgba(11,110,79,0.10)' },
+  NOT_READY: { label: 'No lista',  color: '#9A6510', tint: 'rgba(154,101,16,0.12)' },
+  FAULT:     { label: 'En falla',  color: '#B3261E', tint: 'rgba(179,38,30,0.10)' },
+  OFFLINE:   { label: 'Fuera de línea', color: '#5F6368', tint: 'rgba(95,99,104,0.12)' },
+}
+
+/**
+ * `machine-1` se lee mal en una tarjeta. Si alguien le puso nombre en
+ * plc_machines, ese manda; si no, se arma uno legible a partir del código.
+ */
+function nombreDeMaquina(m: { name: string; machine_id: string }): string {
+  if (m.name && m.name !== m.machine_id) return m.name
+  const n = m.machine_id.match(/(\d+)\s*$/)
+  return n ? `Máquina ${n[1]}` : m.machine_id
+}
+
+interface MachineCard {
+  machine_id: string
+  name: string
+  status: string | null
+  washes_today: number
+  reporting: boolean
+  current_service: string | null
+}
+
 // ─── Sub-components ──────────────────────────────────────────
 
 function KpiCard({ label, value, sub, trend, primary }: {
@@ -137,6 +166,76 @@ function KpiCard({ label, value, sub, trend, primary }: {
         </div>
       )}
       {sub && !trend && <div style={{ marginTop: 8, fontSize: 13, color: 'var(--text-secondary)' }}>{sub}</div>}
+    </div>
+  )
+}
+
+/**
+ * Estado de una máquina de lavado, leído del PLC.
+ *
+ * El número grande son los lavados de hoy. El resto de la tarjeta existe para
+ * que ese número se pueda interpretar: un cero puede significar «no se lavó
+ * nada» o «hace media hora que no sabemos nada de esa máquina», y son cosas
+ * muy distintas para quien está a cargo del turno.
+ */
+function MachineCard({ m }: { m: MachineCard }) {
+  const estado = MACHINE_STATES[m.status ?? ''] ?? { label: m.status ?? 'Sin datos', color: 'var(--text-secondary)', tint: 'var(--subtle-bg)' }
+
+  return (
+    <div style={{
+      background: 'var(--surface)',
+      border: '1px solid var(--border)',
+      borderLeft: `4px solid ${m.reporting ? estado.color : 'var(--border)'}`,
+      borderRadius: 6,
+      padding: 20,
+      opacity: m.reporting ? 1 : 0.75,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{
+            fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 15,
+            color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {nombreDeMaquina(m)}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{m.machine_id}</div>
+        </div>
+
+        <span style={{
+          flexShrink: 0, fontSize: 11.5, fontWeight: 700, padding: '4px 9px', borderRadius: 4,
+          color: estado.color, background: estado.tint, whiteSpace: 'nowrap',
+        }}>
+          {estado.label}
+        </span>
+      </div>
+
+      <div style={{ marginTop: 16, display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <div style={{
+          fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 40, lineHeight: 1,
+          color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums',
+        }}>
+          {m.washes_today}
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+          {m.washes_today === 1 ? 'lavado hoy' : 'lavados hoy'}
+        </div>
+      </div>
+
+      {m.current_service && (
+        <div style={{ marginTop: 10, fontSize: 12.5, color: 'var(--text-secondary)' }}>
+          Servicio en curso: <strong style={{ color: 'var(--text-primary)' }}>{m.current_service}</strong>
+        </div>
+      )}
+
+      {/* Un cero sin explicación se lee como «no trabajó». Si además hace rato
+          que no llega un latido, eso hay que decirlo: puede que sí trabajara y
+          no nos estemos enterando. */}
+      {!m.reporting && (
+        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--color-warning-text, #9A6510)' }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor', flexShrink: 0 }}/>
+          Sin señal del gateway; el dato puede estar desactualizado
+        </div>
+      )}
     </div>
   )
 }
@@ -305,7 +404,7 @@ function WeekSummaryTable({ items }: { items: DailySummary[] }) {
 // ─── Main Page ────────────────────────────────────────────────
 
 export function DashboardPage() {
-  const { profile, currentBranch } = useAuth()
+  const { profile, currentBranch, hasPermission } = useAuth()
   const branchId = (currentBranch as any)?.id ?? null
 
   // State
@@ -318,6 +417,28 @@ export function DashboardPage() {
   const [activeOrders, setActiveOrders] = useState(0)
   const [cashAlert, setCashAlert] = useState<{ difference: number } | null>(null)
   const [voucherStats, setVoucherStats] = useState({ revenue: 0, sold: 0, redeemed: 0 })
+  const [machines, setMachines] = useState<MachineCard[]>([])
+
+  /**
+   * Estado de las máquinas, desde el gateway PLC.
+   *
+   * Va aparte de loadKPIs a propósito: si las tablas del PLC todavía no
+   * existen —la migración 0036 se corre en otro momento que el despliegue de
+   * la app— la consulta falla, y no puede llevarse puesto el resto del
+   * resumen del día. Acá el fallo se traduce en «no hay tarjetas», no en una
+   * pantalla rota.
+   */
+  const loadMachines = useCallback(async () => {
+    if (!hasPermission('plc.read')) return
+    const { data, error } = await (supabase as any)
+      .from('v_plc_machines')
+      .select('machine_id, name, status, washes_today, reporting, current_service, active')
+      .eq('active', true)
+      .order('machine_id')
+
+    if (error) { setMachines([]); return }
+    setMachines(data ?? [])
+  }, [hasPermission])
 
   const loadKPIs = useCallback(async () => {
     if (!branchId) return
@@ -450,6 +571,16 @@ export function DashboardPage() {
 
   useEffect(() => { loadKPIs() }, [loadKPIs])
 
+  // Las máquinas se refrescan solas: el operador deja este tablero abierto
+  // durante el turno y un número congelado desde que abrió la pantalla no
+  // sirve de nada. Treinta segundos es la cadencia del heartbeat del gateway;
+  // pedir más seguido no traería datos nuevos.
+  useEffect(() => {
+    loadMachines()
+    const t = setInterval(loadMachines, 30_000)
+    return () => clearInterval(t)
+  }, [loadMachines])
+
   // Realtime
   useEffect(() => {
     if (!branchId) return
@@ -460,6 +591,11 @@ export function DashboardPage() {
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [branchId, loadKPIs])
+
+  // Los lavados que contó el PLC. Puede no coincidir con los vehículos
+  // facturados, y esa diferencia es justamente lo interesante: un lavado que
+  // la máquina hizo y la caja no cobró.
+  const totalLavadosPlc = machines.reduce((acc, m) => acc + (m.washes_today ?? 0), 0)
 
   // Labels
   const today = new Date()
@@ -538,6 +674,23 @@ export function DashboardPage() {
           sub="en proceso ahora · tiempo real"
         />
       </div>
+
+      {/* ── Máquinas de lavado ── */}
+      {machines.length > 0 && (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 15, color: 'var(--text-primary)' }}>
+              Máquinas de lavado
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+              {totalLavadosPlc} {totalLavadosPlc === 1 ? 'lavado' : 'lavados'} hoy · lectura directa del PLC
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
+            {machines.map(m => <MachineCard key={m.machine_id} m={m} />)}
+          </div>
+        </div>
+      )}
 
       {/* ── Ventas por servicio + 7 días ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 16 }}>
