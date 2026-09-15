@@ -8,20 +8,26 @@
 
 -- ── 1. Todos los ciclos de hoy, contados y no contados ──
 --
--- Cómo leer el resultado:
---   COMPLETED / COMPLETED_WITHOUT_START → cuenta
+-- Cómo leer el resultado (estados desde la 0037):
+--   COMPLETED                → M18 lo confirmó. Cuenta
+--   COMPLETED_WITHOUT_SIGNAL → corrió lo que dura un programa entero y cerró
+--                              sin falla, pero el pulso M18 duró menos que el
+--                              segundo que tarda el gateway en leer. Cuenta
+--   COMPLETED_WITHOUT_START  → llegó el fin sin el inicio. Cuenta
 --   IN_PROGRESS  → la máquina está lavando ahora mismo; todavía no terminó
---   STOPPED      → M8 bajó y M18 nunca llegó: el gateway no vio la señal de
---                  «lavado completo», o el ciclo se cortó de verdad
+--   STOPPED      → M8 bajó antes de tiempo: el ciclo se cortó de verdad
 --   ABANDONED    → empezó otro lavado sin que éste cerrara
 --   FAULTED      → una falla lo interrumpió
+--
+-- Para ver el umbral de duración con el que se decide, y los programas que el
+-- sistema aprendió de cada máquina: scripts/verificar-dia-y-lavados.sql
 select
   machine_id,
   started_at   at time zone 'America/El_Salvador' as inicio_local,
   completed_at at time zone 'America/El_Salvador' as fin_local,
   status,
   duration_seconds,
-  case when status in ('COMPLETED','COMPLETED_WITHOUT_START')
+  case when public.corsa_cuenta_como_lavado(status)
        then 'sí' else 'NO' end                    as cuenta
 from public.plc_wash_cycles
 where started_at >= public.corsa_inicio_del_dia()
@@ -51,8 +57,9 @@ order by machine_id, event_timestamp;
 select
   machine_id,
   count(*)                                                              as ciclos_totales,
-  count(*) filter (where status in ('COMPLETED','COMPLETED_WITHOUT_START')) as contados,
-  count(*) filter (where status = 'STOPPED')                            as sin_senal_de_fin,
+  count(*) filter (where public.corsa_cuenta_como_lavado(status))       as contados,
+  count(*) filter (where status = 'COMPLETED_WITHOUT_SIGNAL')           as sin_pulso_m18,
+  count(*) filter (where status = 'STOPPED')                            as interrumpidos,
   count(*) filter (where status = 'IN_PROGRESS')                        as en_curso,
   count(*) filter (where status = 'ABANDONED')                          as abandonados,
   count(*) filter (where status = 'FAULTED')                            as con_falla
