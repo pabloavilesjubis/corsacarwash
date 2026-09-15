@@ -15,6 +15,7 @@
 import type { Sale } from '../../services/sales.service'
 import { EMISOR } from '../ticket/fromSale'
 import { findDepartamento, findMunicipio } from '../mh-catalogs'
+import { formatearFechaHora } from '../../utils/fecha'
 
 export interface FacturaDte {
   numeroControl?: string
@@ -66,7 +67,9 @@ export function buildFacturaHTML(sale: Sale, dte: FacturaDte = {}): string {
   const direccionReceptor = [sale.customer_direccion, mun?.nombre, dep?.nombre]
     .filter(Boolean).join(', ')
 
-  const fecha = new Date(sale.created_at).toLocaleString('es-SV', {
+  // En hora de El Salvador siempre: la fecha impresa en un documento fiscal no
+  // puede depender de cómo tenga configurado el reloj la computadora que imprime.
+  const fecha = formatearFechaHora(sale.created_at, {
     day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
   })
 

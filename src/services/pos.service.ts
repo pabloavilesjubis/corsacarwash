@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase'
+import { hoyLocal } from '../utils/fecha'
 
 export interface PlateSearchResult {
   vehicle: {
@@ -152,7 +153,9 @@ export async function getAvailableEmployees(branchId: string, date?: string) {
     .from('employee_shifts' as any)
     .select('id, employee_id, status, employees:employee_id(id, first_name, last_name, employee_number)')
     .eq('branch_id', branchId)
-    .eq('shift_date', date ?? new Date().toISOString().split('T')[0])
+    // El turno de la noche es del día de hoy acá, no del de mañana en UTC: sin
+    // esto, después de las 6 de la tarde el POS se quedaba sin empleados.
+    .eq('shift_date', date ?? hoyLocal())
     .in('status', ['active', 'break'])
     .order('created_at')
 

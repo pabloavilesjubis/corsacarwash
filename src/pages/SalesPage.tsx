@@ -16,6 +16,7 @@ import {
 import { printFactura } from '../lib/fiscal/facturaDocument'
 import { printCorsaTicket } from '../lib/ticket/corsaTicket'
 import { buildTicketArgsFromSale } from '../lib/ticket/fromSale'
+import { formatearFechaHora } from '../utils/fecha'
 
 const PRESETS = [
   { id: 'hoy',        label: 'Hoy' },
@@ -97,10 +98,7 @@ function money(n: number): string {
 }
 
 function fechaHora(iso: string): string {
-  return new Date(iso).toLocaleString('es-SV', {
-    day: '2-digit', month: 'short', year: '2-digit',
-    hour: '2-digit', minute: '2-digit',
-  })
+  return formatearFechaHora(iso)
 }
 
 export function SalesPage() {
@@ -186,7 +184,8 @@ export function SalesPage() {
     const filas = [
       ['Fecha', 'Orden', 'Cliente', 'Servicio', 'Aspirado', 'Placa', 'Pago', 'Documento', 'Subtotal', 'IVA', 'Total'],
       ...sales.map(s => [
-        new Date(s.created_at).toISOString(),
+        // Hora del carwash: el CSV lo lee gente de acá, no una máquina.
+        formatearFechaHora(s.created_at),
         s.order_number, s.customer_name, s.service_name ?? '',
         s.with_aspirado ? 'Sí' : 'No', s.plate ?? '', s.payment_method ?? '',
         DOC_LABELS[s.invoice_type ?? ''] ?? '',

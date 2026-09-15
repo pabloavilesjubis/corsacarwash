@@ -19,6 +19,7 @@ import { FCF_IDENTIFICACION_OBLIGATORIA_DESDE } from '../lib/mh-catalogs'
 import { printCorsaTicket } from '../lib/ticket/corsaTicket'
 import { buildTicketArgsFromPos, EMISOR, type PosSaleResult } from '../lib/ticket/fromSale'
 import { lookupVoucher, redeemVoucher, type VoucherLookup } from '../services/vouchers.service'
+import { formatearFechaHora } from '../utils/fecha'
 
 // ─── Catálogo ────────────────────────────────────────────────
 
@@ -857,7 +858,7 @@ export function POSPage() {
             codigoCupon: r.code,
             clienteNombre: voucherFound.customer_name,
             valor: Number(r.unit_value || 0),
-            fecha: new Date(r.redeemed_at).toLocaleString('es-SV'),
+            fecha: formatearFechaHora(r.redeemed_at),
           },
         })
       } catch (e) {
@@ -1206,7 +1207,7 @@ export function POSPage() {
                       <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>{voucherFound.customer_name}</div>
                       {voucherFound.status === 'redeemed' && voucherFound.redeemed_at && (
                         <div style={{ fontSize: 11.5, color: 'var(--color-danger-text)', marginTop: 3 }}>
-                          Usado el {new Date(voucherFound.redeemed_at).toLocaleString('es-SV')}
+                          Usado el {formatearFechaHora(voucherFound.redeemed_at)}
                         </div>
                       )}
                     </div>

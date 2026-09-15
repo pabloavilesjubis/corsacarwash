@@ -7,6 +7,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { inicioDelDiaISO } from '../utils/fecha'
 import type { WorkOrder, WorkOrderStatus } from '../types'
 
 // ─── Constants ───────────────────────────────────────────────
@@ -75,13 +76,13 @@ export function OrdersPage() {
     setLoading(true)
     setError(null)
 
-    const today = new Date().toISOString().split('T')[0]
-
+    // Desde la medianoche del carwash. Con el día UTC, a partir de las 6 de la
+    // tarde la lista se vaciaba: pedía las órdenes de un día que no empezó.
     let query = (supabase as any)
       .from('work_orders')
       .select('*')
       .eq('branch_id', currentBranch.id)
-      .gte('created_at', `${today}T00:00:00`)
+      .gte('created_at', inicioDelDiaISO())
       .order('created_at', { ascending: false })
       .limit(100)
 

@@ -17,6 +17,7 @@ import {
   type VoucherRow, type VoucherFilters,
 } from '../services/vouchers.service'
 import { printVouchers, printSingleVoucher } from '../lib/vouchers/voucherDocument'
+import { formatearFecha } from '../utils/fecha'
 
 const ESTADOS = [
   { id: '', label: 'Todos' },
@@ -29,7 +30,7 @@ function money(n: number) { return 'US$' + (Number(n) || 0).toFixed(2) }
 
 function fecha(iso: string | null): string {
   if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('es-SV', { day: '2-digit', month: 'short', year: '2-digit' })
+  return formatearFecha(iso, { day: '2-digit', month: 'short', year: '2-digit' })
 }
 
 export function CouponsPage() {

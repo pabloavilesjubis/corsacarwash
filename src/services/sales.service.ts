@@ -8,6 +8,7 @@
  */
 
 import { supabase } from '../lib/supabase'
+import { hoyLocal, sumarDias } from '../utils/fecha'
 
 export interface SaleItem {
   descripcion: string
@@ -151,28 +152,36 @@ export function summarize(sales: Sale[]): SalesTotals {
   }
 }
 
-/** Rangos de uso frecuente en caja. */
+/**
+ * Rangos de uso frecuente en caja.
+ *
+ * Todo se calcula sobre el día del carwash. `sale_date` en v_sales_history ya
+ * está convertido a hora de El Salvador; armar el rango con la fecha UTC hacía
+ * que "hoy" pasara a ser mañana desde las 6 de la tarde y la caja del turno de
+ * la noche apareciera vacía.
+ */
 export function dateRange(preset: 'hoy' | 'semana' | 'mes' | 'mes_pasado' | 'anio'): { from: string; to: string } {
-  const hoy = new Date()
-  const iso = (d: Date) => d.toISOString().slice(0, 10)
-  const y = hoy.getFullYear()
-  const m = hoy.getMonth()
+  const hoy = hoyLocal()
+  const [y, m] = hoy.split('-').map(Number)
+  const primerDia = (anio: number, mes: number) =>
+    `${anio}-${String(mes).padStart(2, '0')}-01`
 
   switch (preset) {
     case 'hoy':
-      return { from: iso(hoy), to: iso(hoy) }
-    case 'semana': {
-      const desde = new Date(hoy)
+      return { from: hoy, to: hoy }
+    case 'semana':
       // Semana corrida hacia atrás, no semana calendario: en caja interesa
       // "los últimos 7 días", no "desde el lunes".
-      desde.setDate(desde.getDate() - 6)
-      return { from: iso(desde), to: iso(hoy) }
-    }
+      return { from: sumarDias(hoy, -6), to: hoy }
     case 'mes':
-      return { from: iso(new Date(y, m, 1)), to: iso(hoy) }
-    case 'mes_pasado':
-      return { from: iso(new Date(y, m - 1, 1)), to: iso(new Date(y, m, 0)) }
+      return { from: primerDia(y, m), to: hoy }
+    case 'mes_pasado': {
+      const desde = m === 1 ? primerDia(y - 1, 12) : primerDia(y, m - 1)
+      // El día anterior al primero de este mes: el último del mes pasado, sin
+      // tener que saber cuántos días tuvo.
+      return { from: desde, to: sumarDias(primerDia(y, m), -1) }
+    }
     case 'anio':
-      return { from: iso(new Date(y, 0, 1)), to: iso(hoy) }
+      return { from: primerDia(y, 1), to: hoy }
   }
 }

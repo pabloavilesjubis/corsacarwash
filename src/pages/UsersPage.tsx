@@ -19,6 +19,7 @@ import {
 // ASSIGNABLE_SCREENS y no SCREENS: las pantallas ocultas no se ofrecen ni se
 // cuentan, o un rol figuraría con "8 de 12" sin poder llegar nunca a 12.
 import { ASSIGNABLE_SCREENS, SCREEN_PERMISSION_CODES } from '../lib/screens'
+import { formatearFecha } from '../utils/fecha'
 
 const SUPER_ADMIN_ROLE_ID = '00000000-0000-0000-0002-000000000001'
 
@@ -40,7 +41,7 @@ function relativeDate(iso: string | null): string {
   if (days === 0) return 'Hoy'
   if (days === 1) return 'Ayer'
   if (days < 30) return `Hace ${days} días`
-  return new Date(iso).toLocaleDateString('es-SV', { day: '2-digit', month: 'short', year: 'numeric' })
+  return formatearFecha(iso)
 }
 
 function RoleChips({ names }: { names: string[] }) {

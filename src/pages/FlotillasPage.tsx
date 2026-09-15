@@ -8,6 +8,7 @@ import { createPortal } from 'react-dom'
 import toast from 'react-hot-toast'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
+import { hoyLocal } from '../utils/fecha'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -230,7 +231,8 @@ function CreateCompanyModal({ orgId, onCreated, onCancel }: CreateCompanyModalPr
       // en silencio, dejando flotillas sin contrato.
       const { error: contractErr } = await db.from('fleet_contracts').insert({
         fleet_id: fleet.id,
-        starts_at: new Date().toISOString().split('T')[0],
+        // Un contrato firmado a las 7 de la noche arrancaba mañana con el día UTC.
+        starts_at: hoyLocal(),
         billing_frequency: 'monthly',
         credit_limit: 0,
         credit_days: 0,

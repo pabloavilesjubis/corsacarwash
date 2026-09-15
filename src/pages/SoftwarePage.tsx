@@ -15,9 +15,10 @@ import {
   fetchReleases, downloadRelease, checkFileExists, formatBytes,
   type SoftwareRelease,
 } from '../services/software.service'
+import { formatearFecha } from '../utils/fecha'
 
 function fecha(iso: string): string {
-  return new Date(iso).toLocaleDateString('es-SV', { day: '2-digit', month: 'long', year: 'numeric' })
+  return formatearFecha(iso, { day: '2-digit', month: 'long', year: 'numeric' })
 }
 
 export function SoftwarePage() {

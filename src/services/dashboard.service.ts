@@ -1,18 +1,21 @@
 import { supabase } from '../lib/supabase'
+import { hoyLocal, sumarDias } from '../utils/fecha'
 import type { DashboardKPIs } from '../types'
 
 export async function fetchDashboardKPIs(branchId: string, date?: string): Promise<DashboardKPIs> {
   const { data, error } = await (supabase.rpc as any)('get_dashboard_kpis', {
     p_branch_id: branchId,
-    p_date: date ?? new Date().toISOString().split('T')[0],
+    p_date: date ?? hoyLocal(),
   })
   if (error) throw error
   return data as DashboardKPIs
 }
 
 export async function fetchServicePerformanceToday(branchId: string) {
-  const today = new Date()
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString()
+  // `month` en v_service_performance ya viene truncado a hora de El Salvador,
+  // así que el límite se arma con el mes de acá y sin hora: comparar contra un
+  // instante UTC mezclaba dos escalas y podía dejar afuera el primer día.
+  const monthStart = `${hoyLocal().slice(0, 7)}-01`
 
   const { data, error } = await supabase
     .from('v_service_performance' as any)
@@ -38,14 +41,11 @@ export async function fetchMembershipsExpiringSoon(_organizationId: string) {
 }
 
 export async function fetchDailySalesLastWeek(branchId: string) {
-  const sevenDaysAgo = new Date()
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-
   const { data, error } = await supabase
     .from('v_daily_sales' as any)
     .select('sale_date, total_orders, gross_revenue, completed_orders')
     .eq('branch_id', branchId)
-    .gte('sale_date', sevenDaysAgo.toISOString().split('T')[0])
+    .gte('sale_date', sumarDias(hoyLocal(), -7))
     .order('sale_date', { ascending: true })
 
   if (error) throw error

@@ -20,6 +20,7 @@
  */
 
 import { resolveServiceProgram } from './servicePrograms'
+import { formatearFechaHora } from '../../utils/fecha'
 
 // ─── Tipos ───────────────────────────────────────────────────
 
@@ -171,7 +172,10 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
     ?? (d.numeroControl ? 'DTE' : 'TICKET DE VENTA')
 
   const fechaEmision = d.fhProcesamiento
-    ?? (v.fecha ? new Date(v.fecha).toLocaleString('es-SV') : '')
+    ?? (v.fecha ? formatearFechaHora(v.fecha, {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    }) : '')
 
   const sello = d.selloRecibido
     ? `${d.selloRecibido.slice(0, 40)}${d.selloRecibido.length > 40 ? '…' : ''}`
