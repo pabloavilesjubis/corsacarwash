@@ -155,19 +155,51 @@ export async function checkPlateConflict(plate: string, currentCustomerId: strin
   return data as any
 }
 
+/**
+ * Tipos de vehículo del catálogo (0008). Hacen falta para dar de alta uno:
+ * la columna es obligatoria, así que sin tipo el alta no entra.
+ */
+export async function fetchVehicleTypes(organizationId: string) {
+  const { data, error } = await (supabase as any)
+    .from('vehicle_types')
+    .select('id, code, name, size_category')
+    .eq('organization_id', organizationId)
+    .eq('active', true)
+    .order('sort_order')
+  if (error) throw error
+  return (data ?? []) as { id: string; code: string; name: string; size_category: string }[]
+}
+
 export async function addVehicleToCustomer(payload: {
   customer_id: string
   organization_id: string
   plate: string
-  brand?: string
-  model?: string
+  brand?: string | null
+  model?: string | null
+  color?: string | null
+  /** Si no viene, se usa el primero del catálogo: el tipo es obligatorio en la base. */
   vehicle_type_id?: string
 }) {
+  let tipo = payload.vehicle_type_id
+  if (!tipo) {
+    const tipos = await fetchVehicleTypes(payload.organization_id)
+    tipo = tipos[0]?.id
+    if (!tipo) throw new Error('No hay tipos de vehículo configurados')
+  }
+
+  // `normalized_plate` NO se manda: en la base es una columna generada
+  // (0008_vehicles.sql). Escribirla hace que Postgres rechace el insert
+  // entero, así que el alta de vehículos fallaba siempre desde la app.
   const { data, error } = await (supabase as any)
     .from('vehicles')
     .insert([{
-      ...payload,
-      normalized_plate: payload.plate.toUpperCase().replace(/\s+/g, ' ').trim(),
+      customer_id: payload.customer_id,
+      organization_id: payload.organization_id,
+      vehicle_type_id: tipo,
+      plate: payload.plate.toUpperCase().trim(),
+      brand: payload.brand || null,
+      model: payload.model || null,
+      color: payload.color || null,
       active: true,
     }])
     .select()

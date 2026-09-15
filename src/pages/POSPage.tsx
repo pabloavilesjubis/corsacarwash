@@ -21,6 +21,10 @@ import { printCorsaTicket } from '../lib/ticket/corsaTicket'
 import { buildTicketArgsFromPos, EMISOR, type PosSaleResult } from '../lib/ticket/fromSale'
 import { lookupVoucher, redeemVoucher, type VoucherLookup } from '../services/vouchers.service'
 import { fetchPolizaVigente, tiempoRestante, type RainPolicy } from '../services/rain.service'
+import { getCustomerVehicles } from '../services/customers.service'
+import {
+  ModalNuevoCliente, ModalNuevoVehiculo, SelectorVehiculos, type VehiculoPos,
+} from '../components/pos/AltaRapida'
 import { formatearFechaHora } from '../utils/fecha'
 
 // ─── Catálogo ────────────────────────────────────────────────
@@ -387,10 +391,11 @@ function FleetModal({ onVehicleSelected, onCancel }: FleetModalProps) {
 
 // ─── Customer Search Panel ────────────────────────────────────
 
-function CustomerSearchPanel({ selected, onSelect, onClear }: {
+function CustomerSearchPanel({ selected, onSelect, onClear, onNuevo }: {
   selected: CustomerResult | null
   onSelect: (c: CustomerResult) => void
   onClear: () => void
+  onNuevo: () => void
 }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<CustomerResult[]>([])
@@ -437,7 +442,12 @@ function CustomerSearchPanel({ selected, onSelect, onClear }: {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{displayName(selected)}</div>
-          {selected.vehicle && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{[selected.vehicle.brand, selected.vehicle.model].filter(Boolean).join(' ')} · <strong>{selected.vehicle.plate}</strong></div>}
+          {/* La placa ya no se muestra acá: la eligen los vehículos de abajo, y
+              repetirla haría dudar de cuál manda. */}
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+            {selected.customer_type === 'company' ? 'Empresa' : 'Persona natural'}
+            {selected.phone ? ` · ${selected.phone}` : ''}
+          </div>
         </div>
         <button onClick={onClear} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 18 }}>×</button>
       </div>
@@ -493,6 +503,19 @@ function CustomerSearchPanel({ selected, onSelect, onClear }: {
           </div>
         )}
       </div>
+
+      {/* Dar de alta sin salir del POS. Mandar al cajero a la pantalla de
+          Clientes con el cliente esperando enfrente significa, en la práctica,
+          que nadie lo registra: se cobra como genérico y el carro no queda. */}
+      <button onClick={onNuevo}
+        style={{
+          width: '100%', marginTop: 8, padding: '9px 12px', borderRadius: 6,
+          border: '1.5px dashed var(--border)', background: 'transparent',
+          color: 'var(--text-secondary)', fontSize: 12.5, fontWeight: 600,
+          cursor: 'pointer', fontFamily: 'var(--font-body)', minHeight: 40,
+        }}>
+        + Nuevo cliente
+      </button>
     </div>
   )
 }
@@ -747,13 +770,16 @@ function BillingModal({ total, paymentMethod, customer, onConfirm, onCancel }: B
 // ─── Main POS Page ────────────────────────────────────────────
 
 export function POSPage() {
-  const { currentBranch, hasPermission } = useAuth()
+  const { profile, currentBranch, hasPermission } = useAuth()
   const esMovil = useEsMovil()
   const puedeCanjearCupon = hasPermission('vouchers.redeem')
   const metodosPago = PAYMENT_METHODS.filter(
     pm => pm.id !== 'cupon' || puedeCanjearCupon
   )
   const branchId = (currentBranch as any)?.id ?? null
+  // El alta rápida necesita la organización: los clientes y los vehículos se
+  // crean dentro de la del usuario, nunca en otra.
+  const orgId = (profile as any)?.organization_id ?? null
 
   // Mode
   const [mode, setMode] = useState<OrderMode>('normal')
@@ -766,6 +792,12 @@ export function POSPage() {
   const [conSeguro, setConSeguro] = useState(false)
   // Póliza viva del vehículo elegido, si tiene una. La trae el servidor.
   const [polizaVigente, setPolizaVigente] = useState<RainPolicy | null>(null)
+  // Los vehículos del cliente elegido, y con cuál entra. Un cliente con tres
+  // carros cobrado siempre sobre el primero deja un historial inservible.
+  const [vehiculos, setVehiculos] = useState<VehiculoPos[]>([])
+  const [vehiculoElegido, setVehiculoElegido] = useState<VehiculoPos | null>(null)
+  const [altaCliente, setAltaCliente] = useState(false)
+  const [altaVehiculo, setAltaVehiculo] = useState(false)
   // Cuando el cajero decide cobrar el lavado CON el seguro, en lugar de cobrarlo.
   const [canjeandoSeguro, setCanjeandoSeguro] = useState(false)
 
@@ -811,12 +843,12 @@ export function POSPage() {
    * en lugar de mostrar un error después de que el cajero ya lo intentó. Nunca
    * al revés: esta comprobación es cortesía, la del servidor es la que manda.
    */
-  const vehiculoDelCliente = mode === 'flotilla' ? fleetVehicle : customer?.vehicle
+  const vehiculoDelCliente = mode === 'flotilla' ? fleetVehicle : vehiculoElegido
   // Las dos formas de vehículo del POS no comparten el nombre del id: el de
   // flotilla lo llama vehicle_id. Se normaliza acá y no en cada uso.
   const vehiculoId = mode === 'flotilla'
     ? fleetVehicle?.vehicle_id ?? null
-    : customer?.vehicle?.id ?? null
+    : vehiculoElegido?.id ?? null
   const puedeVenderSeguro = Boolean(
     (mode === 'flotilla' ? fleetCompany?.customer_id : customer?.id)
     && vehiculoDelCliente?.plate
@@ -930,6 +962,7 @@ export function POSPage() {
       setCustomer(null); setSelectedPayment('efectivo')
       setWithAspirado(false); setKeypadValue('')
       setConSeguro(false); setCanjeandoSeguro(false); setPolizaVigente(null)
+      setVehiculos([]); setVehiculoElegido(null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'No se pudo canjear el cupón')
     }
@@ -953,7 +986,7 @@ export function POSPage() {
         p_with_aspirado:   withAspirado,
         p_aspirado_price:  aspiradoPrice,
         p_customer_id:     mode === 'flotilla' ? (fleetCompany?.customer_id ?? null) : (customer?.id ?? null),
-        p_vehicle_id:      mode === 'flotilla' ? (fleetVehicle?.vehicle_id ?? null) : (customer?.vehicle?.id ?? null),
+        p_vehicle_id:      mode === 'flotilla' ? (fleetVehicle?.vehicle_id ?? null) : (vehiculoElegido?.id ?? null),
         p_doc_type:        billing.docType,
         p_fcf_name:        billing.fcfName ?? null,
         p_ccf_customer_id: billing.ccfCustomer?.id ?? null,
@@ -976,9 +1009,9 @@ export function POSPage() {
           clienteDoc: receptor
             ? { tipo: receptor.nit ? 'NIT' : 'DUI', numero: receptor.nit ?? receptor.dui, nrc: receptor.nrc }
             : undefined,
-          placa: mode === 'flotilla' ? fleetVehicle?.plate : customer?.vehicle?.plate,
-          vehiculo: customer?.vehicle
-            ? [customer.vehicle.brand, customer.vehicle.model, customer.vehicle.color].filter(Boolean).join(' ')
+          placa: mode === 'flotilla' ? fleetVehicle?.plate : vehiculoElegido?.plate,
+          vehiculo: vehiculoElegido
+            ? [vehiculoElegido.brand, vehiculoElegido.model, vehiculoElegido.color].filter(Boolean).join(' ') || undefined
             : undefined,
           metodoPago: PAYMENT_METHODS.find(p => p.id === selectedPayment)?.label,
           aspiradoPrecio: aspiradoPrice,
@@ -998,11 +1031,36 @@ export function POSPage() {
     setSubmitting(false)
   }, [branchId, mode, fleetCompany, fleetVehicle, customer, svc, selectedSize, total, selectedPayment,
       withAspirado, aspiradoPrice, currentBranch, seguroActivo, seguroPrice,
-      canjeandoSeguro, polizaVigente])
+      canjeandoSeguro, polizaVigente, vehiculoElegido])
 
   // Con cupón el botón sólo se habilita si el cupón existe y está sin usar:
   // canjear uno ya utilizado o inexistente falla en el servidor, y es mejor
   // no dejar que el cajero lo intente delante del cliente.
+  /**
+   * Los carros del cliente.
+   *
+   * Se piden al elegir el cliente y no al vender: el cajero tiene que ver las
+   * placas ANTES de cobrar, porque de ahí sale sobre cuál se emite el seguro y
+   * a qué vehículo queda asociada la orden. El que trae la búsqueda por placa
+   * queda preseleccionado, que es el caso normal: se buscó por esa placa.
+   */
+  useEffect(() => {
+    if (!customer?.id) { setVehiculos([]); setVehiculoElegido(null); return }
+    let vivo = true
+    getCustomerVehicles(customer.id)
+      .then(vs => {
+        if (!vivo) return
+        const lista = (vs ?? []) as VehiculoPos[]
+        setVehiculos(lista)
+        setVehiculoElegido(prev => {
+          const buscado = customer.vehicle?.id
+          return lista.find(v => v.id === (prev?.id ?? buscado)) ?? lista[0] ?? null
+        })
+      })
+      .catch(() => { if (vivo) { setVehiculos([]); setVehiculoElegido(null) } })
+    return () => { vivo = false }
+  }, [customer])
+
   /**
    * ¿Este carro ya tiene seguro vigente?
    *
@@ -1232,7 +1290,26 @@ export function POSPage() {
           {/* Col 1: Customer (only normal mode) */}
           {mode === 'normal' && (
             <div style={{ flex: esMovil ? '1 1 100%' : '0 0 280px' }}>
-              <CustomerSearchPanel selected={customer} onSelect={setCustomer} onClear={() => setCustomer(null)}/>
+              <CustomerSearchPanel
+                selected={customer}
+                onSelect={setCustomer}
+                onClear={() => setCustomer(null)}
+                onNuevo={() => setAltaCliente(true)}
+              />
+
+              {/* Los carros del cliente, para elegir con cuál entra. Con
+                  ninguno registrado, el botón de agregar es lo único que se ve
+                  — y es lo que habilita el seguro de lluvia. */}
+              {customer && (
+                <div className="card" style={{ padding: 14, marginTop: 10 }}>
+                  <SelectorVehiculos
+                    vehiculos={vehiculos}
+                    elegido={vehiculoElegido}
+                    onElegir={setVehiculoElegido}
+                    onAgregar={() => setAltaVehiculo(true)}
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -1449,6 +1526,34 @@ export function POSPage() {
 
           </div>
         </div>
+      )}
+
+      {/* ── Alta rápida ── */}
+      {altaCliente && orgId && (
+        <ModalNuevoCliente
+          orgId={orgId}
+          onCancelar={() => setAltaCliente(false)}
+          onCreado={cliente => {
+            setAltaCliente(false)
+            setCustomer(cliente as any)
+            // El efecto de arriba carga los vehículos; si vino con uno, queda
+            // elegido de una vez.
+            if (cliente.vehicle) setVehiculoElegido(cliente.vehicle)
+          }}
+        />
+      )}
+
+      {altaVehiculo && orgId && customer?.id && (
+        <ModalNuevoVehiculo
+          orgId={orgId}
+          clienteId={customer.id}
+          onCancelar={() => setAltaVehiculo(false)}
+          onCreado={v => {
+            setAltaVehiculo(false)
+            setVehiculos(prev => [...prev, v])
+            setVehiculoElegido(v)
+          }}
+        />
       )}
 
       {/* ── Hoja de cobro (sólo teléfono) ── */}
