@@ -148,6 +148,15 @@ const screenIcons: Record<string, React.ReactNode> = {
   memberships: icons.memberships,
   settings: icons.settings,
   users: icons.users,
+  // Las dos máquinas de lavado, con su indicador.
+  machines: (
+    <Icon>
+      <rect x="3" y="5" width="18" height="14" rx="2"/>
+      <path d="M7 9v6"/>
+      <path d="M12 9v6"/>
+      <circle cx="17" cy="12" r="1.4"/>
+    </Icon>
+  ),
   // Paraguas: el seguro de lluvia.
   rain: (
     <Icon>

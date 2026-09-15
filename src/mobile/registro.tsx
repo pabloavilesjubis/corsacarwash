@@ -48,6 +48,8 @@ export const PANTALLAS_RESPONSIVAS: readonly string[] = [
   // Nace responsiva: la tabla es de computadora y la lista de teléfono es la
   // misma pantalla, con el detalle en hoja.
   'rain',
+  // Tabla en computadora, día por día en tarjetas en el teléfono.
+  'machines',
 ]
 
 /** ¿Tiene una pantalla hecha para el teléfono? Lo consulta el ruteo. */

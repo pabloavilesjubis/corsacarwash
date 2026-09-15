@@ -94,3 +94,54 @@ export function duracionCorta(segundos: number | null | undefined): string {
   if (!segundos) return '—'
   return `${Math.floor(segundos / 60)}:${String(segundos % 60).padStart(2, '0')}`
 }
+
+// ─── Análisis de máquinas ─────────────────────────────────────
+
+export interface ProduccionDiaria {
+  machine_id: string
+  /** Día del carwash (YYYY-MM-DD), no día UTC: lo resuelve la vista. */
+  day: string
+  washes: number
+  pro: number
+  elite: number
+  signature: number
+  unknown: number
+  faulted: number
+  interrupted: number
+  avg_seconds: number | null
+  /** Segundos que la máquina estuvo efectivamente lavando ese día. */
+  busy_seconds: number | null
+}
+
+/**
+ * Producción por día y máquina dentro de un rango.
+ *
+ * Sale de v_plc_production_daily (0038), que ya agrupa por el día de El
+ * Salvador y cuenta con el mismo criterio que el resto del módulo. No hay una
+ * consulta propia de esta pantalla a propósito: si el análisis contara los
+ * lavados a su manera, terminaría discrepando con el tablero sobre el mismo
+ * día y no habría forma de saber cuál mirar.
+ */
+export async function fetchProduccionDiaria(
+  desde: string,
+  hasta: string,
+): Promise<ProduccionDiaria[]> {
+  const { data, error } = await (supabase as any)
+    .from('v_plc_production_daily')
+    .select('machine_id, day, washes, pro, elite, signature, unknown, faulted, interrupted, avg_seconds, busy_seconds')
+    .gte('day', desde)
+    .lte('day', hasta)
+    .order('day', { ascending: false })
+
+  if (error) return []
+  return (data ?? []) as ProduccionDiaria[]
+}
+
+/** 7 320 s → «2 h 02 m». Para tiempos de operación, que son de horas. */
+export function duracionLarga(segundos: number | null | undefined): string {
+  const s = Number(segundos) || 0
+  if (s <= 0) return '—'
+  const h = Math.floor(s / 3600)
+  const m = Math.round((s % 3600) / 60)
+  return h > 0 ? `${h} h ${String(m).padStart(2, '0')} m` : `${m} m`
+}
