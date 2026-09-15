@@ -6,6 +6,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
+import { hoyLocal, inicioDelDiaISO, sumarDias, formatearFecha } from '../utils/fecha'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -128,13 +129,38 @@ function nombreDeMaquina(m: { name: string; machine_id: string }): string {
   return n ? `Máquina ${n[1]}` : m.machine_id
 }
 
+/**
+ * Los tres servicios de CORSA, en orden de duración.
+ *
+ * El PLC no informa cuál corrió: la nube lo deduce de cuánto duró el ciclo,
+ * contra los límites configurados por máquina (0038). UNKNOWN es un lavado
+ * real cuya duración cae fuera de todo rango razonable — no es un servicio
+ * más, es una señal de que hay algo que mirar.
+ */
+const SERVICIOS = ['PRO', 'ELITE', 'SIGNATURE'] as const
+
 interface MachineCard {
   machine_id: string
   name: string
   status: string | null
   washes_today: number
+  pro_today: number
+  elite_today: number
+  signature_today: number
+  unknown_today: number
+  avg_seconds_today: number | null
+  /** Ciclos de hoy que corrieron pero no llegaron a ser un lavado. */
+  interrupted_today: number
+  washes_in_progress: number
   reporting: boolean
   current_service: string | null
+}
+
+/** 341 s se lee peor que 5:41 cuando lo que importa es comparar ciclos. */
+function duracion(segundos: number | null | undefined): string {
+  if (!segundos) return '—'
+  const m = Math.floor(segundos / 60)
+  return `${m}:${String(segundos % 60).padStart(2, '0')}`
 }
 
 // ─── Sub-components ──────────────────────────────────────────
@@ -241,9 +267,44 @@ function MachineCard({ m }: { m: MachineCard }) {
         </span>
       </div>
 
+      {/* De qué fueron esos lavados. Es lo único que dice si el día estuvo
+          cargado de SIGNATURE o de lavados PRO, que para el mismo número de
+          carros es una diferencia de plata y de tiempo de máquina. */}
+      {m.washes_today > 0 && (
+        <div style={{ marginTop: 12, display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12.5 }}>
+          {SERVICIOS.map(s => {
+            const n = s === 'PRO' ? m.pro_today : s === 'ELITE' ? m.elite_today : m.signature_today
+            return (
+              <div key={s} style={{ color: n > 0 ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                <strong style={{ fontVariantNumeric: 'tabular-nums' }}>{n}</strong>{' '}
+                <span style={{ fontSize: 11.5, letterSpacing: 0.3 }}>{s}</span>
+              </div>
+            )
+          })}
+          {m.unknown_today > 0 && (
+            <div style={{ color: 'var(--color-warning-text, #9A6510)' }}>
+              <strong>{m.unknown_today}</strong> <span style={{ fontSize: 11.5 }}>sin clasificar</span>
+            </div>
+          )}
+          {!!m.avg_seconds_today && (
+            <div style={{ color: 'var(--text-secondary)', marginLeft: 'auto' }}>
+              promedio {duracion(m.avg_seconds_today)}
+            </div>
+          )}
+        </div>
+      )}
+
       {m.current_service && (
         <div style={{ marginTop: 14, fontSize: 12.5, color: 'var(--text-secondary)' }}>
           Servicio en curso: <strong style={{ color: 'var(--text-primary)' }}>{m.current_service}</strong>
+        </div>
+      )}
+
+      {/* Un ciclo interrumpido no es un lavado y no se cobra, pero sí ocupó la
+          máquina. Si son muchos, el problema está en la máquina, no en el conteo. */}
+      {m.interrupted_today > 0 && (
+        <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-secondary)' }}>
+          {m.interrupted_today === 1 ? '1 ciclo interrumpido' : `${m.interrupted_today} ciclos interrumpidos`}
         </div>
       )}
 
@@ -254,6 +315,104 @@ function MachineCard({ m }: { m: MachineCard }) {
         <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--color-warning-text, #9A6510)' }}>
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor', flexShrink: 0 }}/>
           Sin señal del gateway; el dato puede estar desactualizado
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Qué se lavó hoy, según el PLC.
+ *
+ * Es la otra mitad del número de lavados: doce carros de PRO y doce de
+ * SIGNATURE ocupan la misma línea en el conteo y son días completamente
+ * distintos en plata y en tiempo de máquina.
+ *
+ * El servicio se deduce de la duración del ciclo (0038), así que esto no
+ * depende de que alguien lo haya facturado. La diferencia contra lo vendido en
+ * caja es, justamente, lo que conviene mirar.
+ */
+function ServiciosDelDia({ servicios, total, porHora }: {
+  servicios: { tipo: string; washes: number; avg_seconds: number }[]
+  total: number
+  porHora: Map<number, number>
+}) {
+  const de = (tipo: string) => servicios.find(s => s.tipo === tipo)
+  const sinClasificar = de('UNKNOWN')
+
+  // Sólo las horas con actividad, y siempre de la primera a la última: una
+  // franja de 24 columnas dejaría la mitad vacía todos los días.
+  const horas = [...porHora.keys()].sort((a, b) => a - b)
+  const desde = horas[0] ?? 0
+  const hasta = horas[horas.length - 1] ?? 0
+  const pico = Math.max(...porHora.values(), 1)
+
+  return (
+    <div style={{ marginTop: 16, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '18px 20px' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 15, color: 'var(--text-primary)' }}>
+          Servicios detectados hoy
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+          por duración del ciclo · no depende de la caja
+        </div>
+      </div>
+
+      <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+        {SERVICIOS.map(tipo => {
+          const s = de(tipo)
+          const n = s?.washes ?? 0
+          const pct = total > 0 ? Math.round((n / total) * 100) : 0
+          return (
+            <div key={tipo} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '12px 14px' }}>
+              <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 0.6, color: 'var(--text-secondary)' }}>{tipo}</div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 6 }}>
+                <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 28, lineHeight: 1, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{n}</div>
+                <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>{pct}%</div>
+              </div>
+              {/* Barra de proporción: comparar tres números de dos dígitos es
+                  más rápido con una barra que leyéndolos. */}
+              <div style={{ marginTop: 8, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{ width: `${pct}%`, height: '100%', background: '#023530' }}/>
+              </div>
+              <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
+                {n > 0 ? `duración promedio ${duracion(s?.avg_seconds)}` : 'sin lavados'}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Un lavado sin clasificar es un ciclo que corrió fuera de todo rango
+          razonable. No se esconde: o hay que recalibrar los límites, o pasó
+          algo con la máquina. */}
+      {!!sinClasificar?.washes && (
+        <div style={{ marginTop: 12, fontSize: 12.5, color: 'var(--color-warning-text, #9A6510)' }}>
+          {sinClasificar.washes} {sinClasificar.washes === 1 ? 'lavado' : 'lavados'} sin clasificar
+          {' '}(duración fuera del rango esperado, promedio {duracion(sinClasificar.avg_seconds)})
+        </div>
+      )}
+
+      {horas.length > 0 && (
+        <div style={{ marginTop: 18 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>Lavados por hora</div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 56 }}>
+            {Array.from({ length: hasta - desde + 1 }, (_, i) => desde + i).map(h => {
+              const n = porHora.get(h) ?? 0
+              return (
+                <div key={h} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{n || ''}</div>
+                  <div style={{
+                    width: '100%',
+                    height: Math.max(2, Math.round((n / pico) * 34)),
+                    background: n > 0 ? '#023530' : 'var(--border)',
+                    borderRadius: 2,
+                  }}/>
+                  <div style={{ fontSize: 10, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{h}</div>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
     </div>
@@ -438,6 +597,8 @@ export function DashboardPage() {
   const [cashAlert, setCashAlert] = useState<{ difference: number } | null>(null)
   const [voucherStats, setVoucherStats] = useState({ revenue: 0, sold: 0, redeemed: 0 })
   const [machines, setMachines] = useState<MachineCard[]>([])
+  const [lavadosPorHora, setLavadosPorHora] = useState<Map<number, number>>(new Map())
+  const [serviciosPlc, setServiciosPlc] = useState<{ tipo: string; washes: number; avg_seconds: number }[]>([])
 
   /**
    * Estado de las máquinas, desde el gateway PLC.
@@ -452,19 +613,66 @@ export function DashboardPage() {
     if (!hasPermission('plc.read')) return
     const { data, error } = await (supabase as any)
       .from('v_plc_machines')
-      .select('machine_id, name, status, washes_today, reporting, current_service, active')
+      .select('machine_id, name, status, washes_today, pro_today, elite_today, signature_today, ' +
+              'unknown_today, avg_seconds_today, interrupted_today, washes_in_progress, ' +
+              'reporting, current_service, active')
       .eq('active', true)
       .order('machine_id')
 
     if (error) { setMachines([]); return }
     setMachines(data ?? [])
+
+    // Duración promedio por servicio. Las tarjetas ya traen los conteos; esto
+    // agrega el «cuánto dura», que es lo que permite ver si un SIGNATURE se
+    // está corriendo más lento de lo que debería.
+    const { data: svc } = await (supabase as any)
+      .from('v_plc_servicios_diarios')
+      .select('service_type, washes, avg_seconds')
+      .eq('day', hoyLocal())
+
+    const acum = new Map<string, { washes: number; segundos: number }>()
+    for (const s of (svc ?? []) as any[]) {
+      const prev = acum.get(s.service_type) ?? { washes: 0, segundos: 0 }
+      prev.washes += Number(s.washes ?? 0)
+      // Promedio ponderado: cada máquina aporta su promedio por la cantidad de
+      // lavados que hizo, no por igual.
+      prev.segundos += Number(s.avg_seconds ?? 0) * Number(s.washes ?? 0)
+      acum.set(s.service_type, prev)
+    }
+    setServiciosPlc([...acum.entries()].map(([tipo, v]) => ({
+      tipo,
+      washes: v.washes,
+      avg_seconds: v.washes > 0 ? Math.round(v.segundos / v.washes) : 0,
+    })))
+
+    // Los lavados por hora van en una consulta aparte y su fallo no se
+    // propaga: el tablero sin la franja horaria sigue sirviendo, sin el
+    // conteo no sirve de nada.
+    const { data: horas } = await (supabase as any)
+      .from('v_plc_production_hourly')
+      .select('hour, washes')
+      .gte('hour', `${hoyLocal()}T00:00:00`)
+      .lt('hour', `${sumarDias(hoyLocal(), 1)}T00:00:00`)
+
+    // `hour` viene truncado a la hora local, sin zona: se lee la hora tal cual
+    // en lugar de dejar que el navegador la reinterprete en la suya.
+    const porHora = new Map<number, number>()
+    for (const h of (horas ?? []) as any[]) {
+      const hh = Number(String(h.hour).slice(11, 13))
+      porHora.set(hh, (porHora.get(hh) ?? 0) + Number(h.washes ?? 0))
+    }
+    setLavadosPorHora(porHora)
   }, [hasPermission])
 
   const loadKPIs = useCallback(async () => {
     if (!branchId) return
     setLoading(true)
     try {
-      const today = new Date().toISOString().split('T')[0]
+      // El día del carwash, no el día UTC. `sale_date` en las vistas ya está
+      // convertido a hora de El Salvador; pedirle el día UTC dejaba el tablero
+      // en cero desde las 6 de la tarde, que es cuando más se trabaja.
+      const today = hoyLocal()
+      const desdeMedianoche = inicioDelDiaISO(today)
 
       // Totales del día desde v_daily_totals (0032), que separa plata de
       // servicio. Calcularlo acá sumando work_orders mezclaría las tres
@@ -481,7 +689,7 @@ export function DashboardPage() {
         .from('work_orders')
         .select('status, order_kind')
         .eq('branch_id', branchId)
-        .gte('created_at', `${today}T00:00:00`)
+        .gte('created_at', desdeMedianoche)
 
       // Un día sin ventas es un dato, no un error: se muestran ceros.
       setKpis({
@@ -510,7 +718,7 @@ export function DashboardPage() {
         .select('service_id, description_snapshot, total, work_orders!inner(branch_id, status, created_at)')
         .eq('work_orders.branch_id', branchId)
         .neq('work_orders.status', 'cancelled')
-        .gte('work_orders.created_at', `${today}T00:00:00`)
+        .gte('work_orders.created_at', desdeMedianoche)
 
       if (svcData) {
         const porServicio = new Map<string, { name: string; count: number; revenue: number }>()
@@ -542,9 +750,7 @@ export function DashboardPage() {
       setHeatmapRows(buildHeatmapFrom(heatData ?? []))
 
       // 7-day summary
-      const weekAgo = new Date()
-      weekAgo.setDate(weekAgo.getDate() - 6)
-      const weekStart = weekAgo.toISOString().split('T')[0]
+      const weekStart = sumarDias(today, -6)
 
       const { data: weekData } = await (supabase as any)
         .from('v_daily_sales')
@@ -618,8 +824,7 @@ export function DashboardPage() {
   const totalLavadosPlc = machines.reduce((acc, m) => acc + (m.washes_today ?? 0), 0)
 
   // Labels
-  const today = new Date()
-  const todayLabel = today.toLocaleDateString('es-SV', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+  const todayLabel = formatearFecha(new Date(), { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
   const firstName = (profile as any)?.first_name ?? 'equipo'
   const branchName = (currentBranch as any)?.name ?? ''
 
@@ -709,6 +914,14 @@ export function DashboardPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
             {machines.map(m => <MachineCard key={m.machine_id} m={m} />)}
           </div>
+
+          {totalLavadosPlc > 0 && (
+            <ServiciosDelDia
+              servicios={serviciosPlc}
+              total={totalLavadosPlc}
+              porHora={lavadosPorHora}
+            />
+          )}
         </div>
       )}
 
