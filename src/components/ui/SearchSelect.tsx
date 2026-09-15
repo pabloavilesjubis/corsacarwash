@@ -123,7 +123,7 @@ export function SearchSelect({
           role="listbox"
           style={{
             position: 'absolute', top: 'calc(100% + 3px)', left: 0, right: 0, zIndex: 60,
-            background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6,
+            background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12,
             boxShadow: '0 8px 24px rgba(0,0,0,0.14)', maxHeight: 240, overflowY: 'auto',
           }}
         >

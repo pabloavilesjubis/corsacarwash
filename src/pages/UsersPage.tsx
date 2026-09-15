@@ -79,7 +79,7 @@ function RolePicker({
           style={{
             display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 11px',
             border: `1px solid ${selected.has(r.id) ? 'var(--corsa-green)' : 'var(--border)'}`,
-            borderRadius: 5, cursor: 'pointer',
+            borderRadius: 10, cursor: 'pointer',
             background: selected.has(r.id) ? 'var(--subtle-bg)' : 'transparent',
           }}
         >
@@ -192,7 +192,7 @@ function NewUserPanel({
         <button
           type="submit"
           disabled={saving}
-          style={{ textAlign: 'center', fontSize: 13.5, fontWeight: 700, color: '#fff', background: 'var(--corsa-green)', borderRadius: 5, padding: 10, cursor: 'pointer', border: 'none', marginTop: 4 }}
+          style={{ textAlign: 'center', fontSize: 13.5, fontWeight: 700, color: '#fff', background: 'var(--corsa-green)', borderRadius: 10, padding: 10, cursor: 'pointer', border: 'none', marginTop: 4 }}
         >
           {saving ? 'Creando…' : 'Crear usuario'}
         </button>
@@ -307,7 +307,7 @@ function EditUserPanel({
       <button
         onClick={save}
         disabled={saving || !dirty}
-        style={{ textAlign: 'center', fontSize: 13.5, fontWeight: 700, color: '#fff', background: dirty ? 'var(--corsa-green)' : 'var(--text-secondary)', borderRadius: 5, padding: 10, cursor: dirty ? 'pointer' : 'default', border: 'none', opacity: dirty ? 1 : 0.5 }}
+        style={{ textAlign: 'center', fontSize: 13.5, fontWeight: 700, color: '#fff', background: dirty ? 'var(--corsa-green)' : 'var(--text-secondary)', borderRadius: 10, padding: 10, cursor: dirty ? 'pointer' : 'default', border: 'none', opacity: dirty ? 1 : 0.5 }}
       >
         {saving ? 'Guardando…' : 'Guardar roles'}
       </button>
@@ -411,7 +411,7 @@ function RoleScreensPanel({
       <div className="panel-divider"/>
 
       {missing.length > 0 && (
-        <div style={{ fontSize: 11.5, color: 'var(--color-danger-text)', background: 'var(--color-danger-bg, #FBE7E7)', padding: '8px 10px', borderRadius: 5 }}>
+        <div style={{ fontSize: 11.5, color: 'var(--color-danger-text)', background: 'var(--color-danger-bg, #FBE7E7)', padding: '8px 10px', borderRadius: 10 }}>
           Faltan {missing.length} permisos de pantalla en la base. Corré la migración
           <strong> 0027_screen_access.sql</strong> antes de usar esta sección.
         </div>
@@ -436,7 +436,7 @@ function RoleScreensPanel({
                   style={{
                     display: 'flex', alignItems: 'center', gap: 9, padding: '8px 11px',
                     border: `1px solid ${checked ? 'var(--corsa-green)' : 'var(--border)'}`,
-                    borderRadius: 5, cursor: perm ? 'pointer' : 'not-allowed',
+                    borderRadius: 10, cursor: perm ? 'pointer' : 'not-allowed',
                     background: checked ? 'var(--subtle-bg)' : 'transparent',
                     opacity: perm ? 1 : 0.45,
                   }}
@@ -466,7 +466,7 @@ function RoleScreensPanel({
           <button
             onClick={save}
             disabled={saving || !dirty}
-            style={{ textAlign: 'center', fontSize: 13.5, fontWeight: 700, color: '#fff', background: dirty ? 'var(--corsa-green)' : 'var(--text-secondary)', borderRadius: 5, padding: 10, cursor: dirty ? 'pointer' : 'default', border: 'none', opacity: dirty ? 1 : 0.5 }}
+            style={{ textAlign: 'center', fontSize: 13.5, fontWeight: 700, color: '#fff', background: dirty ? 'var(--corsa-green)' : 'var(--text-secondary)', borderRadius: 10, padding: 10, cursor: dirty ? 'pointer' : 'default', border: 'none', opacity: dirty ? 1 : 0.5 }}
           >
             {saving ? 'Guardando…' : 'Guardar pantallas'}
           </button>
@@ -544,7 +544,7 @@ export function UsersPage() {
       <div className="page-inner">
         <div className="page-header">
           <div className="page-header-left">
-            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 26 }}>Usuarios y roles</h1>
+            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 34, letterSpacing: '-0.025em' }}>Usuarios y roles</h1>
           </div>
         </div>
         <div className="empty-state">
@@ -570,7 +570,7 @@ export function UsersPage() {
     <div className="page-inner">
       <div className="page-header">
         <div className="page-header-left">
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 26 }}>Usuarios y roles</h1>
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 34, letterSpacing: '-0.025em' }}>Usuarios y roles</h1>
           <div className="page-header-sub">
             {users.length} usuarios · {roles.length} roles disponibles
             {withoutRole > 0 && ` · ${withoutRole} sin rol asignado`}

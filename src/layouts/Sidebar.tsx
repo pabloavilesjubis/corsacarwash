@@ -185,7 +185,7 @@ function SidebarLink({ to, icon, label, exact = false }: {
 function SectionActive({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
     <div className="sidebar-item active-section" style={{ cursor: 'default' }}>
-      <span className="sidebar-icon" style={{ color: '#FF6A28' }}>{icon}</span>
+      <span className="sidebar-icon" style={{ color: 'var(--corsa-orange)' }}>{icon}</span>
       <span>{label}</span>
     </div>
   )
@@ -209,16 +209,16 @@ function BranchSelector() {
         width: '100%',
         background: 'rgba(255,255,255,0.08)',
         color: '#fff',
-        border: '1px solid rgba(255,255,255,0.15)',
-        borderRadius: 6,
-        padding: '7px 10px',
+        border: '1px solid rgba(255,255,255,0.14)',
+        borderRadius: 16,
+        padding: '9px 12px',
         fontSize: 13,
         cursor: 'pointer',
         fontFamily: 'inherit',
       }}
     >
       {accessibleBranches.map(b => (
-        <option key={b.id} value={b.id} style={{ background: '#023530' }}>
+        <option key={b.id} value={b.id} style={{ background: 'var(--rail-bg)' }}>
           {(b as Branch).name}
         </option>
       ))}

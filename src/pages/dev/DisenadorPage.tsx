@@ -75,10 +75,10 @@ export function DisenadorPage() {
   return (
     <div style={{
       minHeight: '100vh', background: '#101a18', color: '#E8EFEC',
-      fontFamily: "'IBM Plex Sans', sans-serif", padding: '18px 22px 40px',
+      fontFamily: "var(--font-body)", padding: '18px 22px 40px',
     }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: 4 }}>
-        <div style={{ fontFamily: "'Archivo', sans-serif", fontWeight: 800, fontSize: 19 }}>
+        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 19 }}>
           Diseñador móvil
         </div>
         <div style={{ fontSize: 12.5, color: '#7E948E' }}>
@@ -168,7 +168,7 @@ export function DisenadorPage() {
           flex: '1 1 240px', minWidth: 240, maxWidth: 360,
           background: '#17241f', border: '1px solid #26382f', borderRadius: 8, padding: '14px 16px',
         }}>
-          <div style={{ fontFamily: "'Archivo', sans-serif", fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
             Modelo móvil
           </div>
           <div style={{ fontSize: 12, color: '#7E948E', marginBottom: 12 }}>
@@ -275,7 +275,7 @@ function FilaPantalla({ label, estado, onClick }: {
         display: 'flex', alignItems: 'center', gap: 8, width: '100%',
         padding: '7px 0', background: 'none', border: 'none', cursor: 'pointer',
         color: '#E8EFEC', fontSize: 12.5, textAlign: 'left',
-        fontFamily: "'IBM Plex Sans', sans-serif",
+        fontFamily: "var(--font-body)",
       }}
     >
       <span style={{

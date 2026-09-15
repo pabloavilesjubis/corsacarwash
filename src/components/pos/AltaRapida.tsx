@@ -95,7 +95,7 @@ function Dialogo({ titulo, children, onCerrar }: {
     <div onClick={e => { if (e.target === e.currentTarget) onCerrar() }}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 320, padding: 20 }}>
       <div style={{
-        background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10,
+        background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14,
         width: '100%', maxWidth: 460, maxHeight: '88vh', overflowY: 'auto', padding: 20,
         boxShadow: '0 24px 64px rgba(0,0,0,0.25)',
       }}>
@@ -126,13 +126,13 @@ function SelectorTamano({ tamanos, elegido, onElegir }: {
         return (
           <button key={t.id} onClick={() => onElegir(t.id)} type="button"
             style={{
-              flex: 1, padding: '9px 6px', borderRadius: 6, cursor: 'pointer',
+              flex: 1, padding: '9px 6px', borderRadius: 12, cursor: 'pointer',
               minHeight: 48, textAlign: 'center', fontFamily: 'var(--font-body)',
               border: `2px solid ${sel ? 'var(--corsa-green)' : 'var(--border)'}`,
               background: sel ? 'var(--corsa-green)' : 'var(--surface)',
               color: sel ? '#fff' : 'var(--text-primary)',
             }}>
-            <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 18, lineHeight: 1 }}>
+            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, lineHeight: 1 }}>
               {t.tamano}
             </div>
             <div style={{ fontSize: 10.5, marginTop: 2, opacity: 0.85 }}>
@@ -245,9 +245,9 @@ export function ModalNuevoCliente({ orgId, onCreado, onCancelar }: {
         ]).map(o => (
           <button key={o.id} onClick={() => setTipo(o.id)}
             style={{
-              padding: '11px 10px', borderRadius: 7, cursor: 'pointer', fontSize: 13.5, fontWeight: 600,
+              padding: '11px 10px', borderRadius: 14, cursor: 'pointer', fontSize: 13.5, fontWeight: 600,
               border: `2px solid ${tipo === o.id ? 'var(--corsa-green)' : 'var(--border)'}`,
-              background: tipo === o.id ? 'rgba(2,53,48,0.06)' : 'var(--surface)',
+              background: tipo === o.id ? 'rgba(22,25,26,0.05)' : 'var(--surface)',
               color: 'var(--text-primary)', fontFamily: 'var(--font-body)',
             }}>
             {o.label}
@@ -447,9 +447,9 @@ export function SelectorVehiculos({ vehiculos, elegido, onElegir, onAgregar, tam
             <button key={v.id} onClick={() => onElegir(v)}
               style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
-                padding: '7px 11px', borderRadius: 6, cursor: 'pointer', minHeight: 44,
+                padding: '7px 11px', borderRadius: 12, cursor: 'pointer', minHeight: 44,
                 border: `2px solid ${sel ? 'var(--corsa-green)' : 'var(--border)'}`,
-                background: sel ? 'rgba(2,53,48,0.06)' : 'var(--surface)',
+                background: sel ? 'rgba(22,25,26,0.05)' : 'var(--surface)',
                 fontFamily: 'var(--font-body)', textAlign: 'left',
               }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -458,7 +458,7 @@ export function SelectorVehiculos({ vehiculos, elegido, onElegir, onAgregar, tam
                 </span>
                 {tamanoDe?.(v) && (
                   <span style={{
-                    fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 11,
+                    fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 11,
                     padding: '1px 5px', borderRadius: 3,
                     background: sel ? 'var(--corsa-green)' : 'var(--subtle-bg)',
                     color: sel ? '#fff' : 'var(--text-secondary)',
@@ -478,7 +478,7 @@ export function SelectorVehiculos({ vehiculos, elegido, onElegir, onAgregar, tam
 
         <button onClick={onAgregar}
           style={{
-            padding: '7px 11px', borderRadius: 6, cursor: 'pointer', minHeight: 44,
+            padding: '7px 11px', borderRadius: 12, cursor: 'pointer', minHeight: 44,
             border: '1.5px dashed var(--border)', background: 'transparent',
             color: 'var(--text-secondary)', fontSize: 12.5, fontWeight: 600,
             fontFamily: 'var(--font-body)',

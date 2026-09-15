@@ -126,7 +126,7 @@ export function CouponsPage() {
     <div className="page-inner">
       <div className="page-header">
         <div className="page-header-left">
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 26 }}>Cupones</h1>
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 34, letterSpacing: '-0.025em' }}>Cupones</h1>
           <div className="page-header-sub">{rows.length} cupones en el filtro actual</div>
         </div>
       </div>
@@ -134,7 +134,7 @@ export function CouponsPage() {
       {escaneado && (
         <div style={{
           border: `2px solid ${escaneado.status === 'active' ? 'var(--corsa-green)' : 'var(--color-danger-text)'}`,
-          borderRadius: 8, padding: '14px 18px', marginBottom: 16,
+          borderRadius: 16, padding: '14px 18px', marginBottom: 16,
           background: escaneado.status === 'active' ? 'rgba(2,53,48,0.05)' : 'var(--color-danger-bg, #FBE7E7)',
         }}>
           <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>

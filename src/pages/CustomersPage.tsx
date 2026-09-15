@@ -242,7 +242,7 @@ function ViewPanel({
         <button
           onClick={handleAddVehicle}
           disabled={saving || !newPlate.trim()}
-          style={{ marginTop: 6, width: '100%', textAlign: 'center', fontSize: 12.5, fontWeight: 600, color: 'var(--corsa-green)', border: '1px solid var(--border)', borderRadius: 5, padding: 7, cursor: 'pointer', background: 'transparent' }}
+          style={{ marginTop: 6, width: '100%', textAlign: 'center', fontSize: 12.5, fontWeight: 600, color: 'var(--corsa-green)', border: '1px solid var(--border)', borderRadius: 10, padding: 7, cursor: 'pointer', background: 'transparent' }}
         >
           {saving ? 'Guardando…' : 'Agregar vehículo'}
         </button>
@@ -250,7 +250,7 @@ function ViewPanel({
         {/* Conflict */}
         {conflict && (
           <div className="alert-banner danger" style={{ marginTop: 8 }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B23232" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-danger-text)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
               <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/>
               <line x1="12" y1="9" x2="12" y2="13"/>
               <line x1="12" y1="17" x2="12.01" y2="17"/>
@@ -352,7 +352,7 @@ export function CustomersPage() {
       {/* Header */}
       <div className="page-header">
         <div className="page-header-left">
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 26 }}>Clientes</h1>
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 34, letterSpacing: '-0.025em' }}>Clientes</h1>
           <div className="page-header-sub">
             {customers.length} clientes · {totalVehicles} vehículos registrados
           </div>

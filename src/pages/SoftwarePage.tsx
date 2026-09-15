@@ -82,7 +82,7 @@ export function SoftwarePage() {
     <div className="page-inner">
       <div className="page-header">
         <div className="page-header-left">
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 26 }}>Software</h1>
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 34, letterSpacing: '-0.025em' }}>Software</h1>
           <div className="page-header-sub">Instaladores para equipos de la operación</div>
         </div>
       </div>
@@ -90,7 +90,7 @@ export function SoftwarePage() {
       {loading ? (
         <div className="loading-center"><div className="spinner"/><span>Cargando…</span></div>
       ) : releases.length === 0 ? (
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 24, maxWidth: 620 }}>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 24, maxWidth: 620 }}>
           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Todavía no hay instaladores publicados</div>
           <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
             El paquete del <strong>PLC Gateway</strong> se sube una sola vez al
@@ -104,7 +104,7 @@ export function SoftwarePage() {
           {releases.map(r => {
             const falta = faltantes.has(r.id)
             return (
-              <div key={r.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 18 }}>
+              <div key={r.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 18 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
                   <div style={{ flex: '1 1 320px', minWidth: esMovil ? 0 : 260 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -129,7 +129,7 @@ export function SoftwarePage() {
                     style={{
                       fontSize: 13.5, fontWeight: 700, color: '#fff',
                       background: falta ? 'var(--text-secondary)' : 'var(--corsa-green)',
-                      borderRadius: 5, padding: '10px 18px', border: 'none',
+                      borderRadius: 10, padding: '10px 18px', border: 'none',
                       cursor: falta ? 'not-allowed' : 'pointer',
                       opacity: falta ? 0.5 : 1, whiteSpace: 'nowrap',
                     }}
@@ -139,7 +139,7 @@ export function SoftwarePage() {
                 </div>
 
                 {falta && (
-                  <div style={{ marginTop: 12, fontSize: 12, color: 'var(--color-danger-text)', background: 'var(--color-danger-bg, #FBE7E7)', padding: '9px 12px', borderRadius: 5 }}>
+                  <div style={{ marginTop: 12, fontSize: 12, color: 'var(--color-danger-text)', background: 'var(--color-danger-bg, #FBE7E7)', padding: '9px 12px', borderRadius: 10 }}>
                     La versión está registrada pero el archivo no está en el bucket
                     <code> software</code>. Subilo en la ruta <code>{r.storage_path}</code>.
                   </div>
@@ -164,7 +164,7 @@ export function SoftwarePage() {
                     <pre style={{
                       whiteSpace: 'pre-wrap', fontSize: 12, lineHeight: 1.6,
                       background: 'var(--page-bg)', border: '1px solid var(--border)',
-                      borderRadius: 6, padding: 12, marginTop: 8, fontFamily: 'inherit',
+                      borderRadius: 12, padding: 12, marginTop: 8, fontFamily: 'inherit',
                     }}>{r.release_notes}</pre>
                   </details>
                 )}

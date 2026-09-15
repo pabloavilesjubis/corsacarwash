@@ -90,7 +90,7 @@ export function TicketPreviewPage() {
     <div style={{ display: 'flex', gap: 24, padding: 24, alignItems: 'flex-start', flexWrap: 'wrap', minHeight: '100vh', background: 'var(--bg, #f4f4f2)' }}>
 
       {/* ── Controles ── */}
-      <div style={{ flex: '0 0 300px', background: 'var(--surface, #fff)', border: '1px solid var(--border, #ddd)', borderRadius: 8, padding: 18 }}>
+      <div style={{ flex: '0 0 300px', background: 'var(--surface, #fff)', border: '1px solid var(--border, #ddd)', borderRadius: 16, padding: 18 }}>
         <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 4 }}>Ticket térmico</div>
         <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 16 }}>
           Banco de pruebas · sólo desarrollo
@@ -165,7 +165,7 @@ export function TicketPreviewPage() {
 
         <button
           onClick={() => printCorsaTicket(args)}
-          style={{ width: '100%', textAlign: 'center', fontSize: 13.5, fontWeight: 700, color: '#fff', background: 'var(--corsa-green, #157A52)', borderRadius: 5, padding: 10, cursor: 'pointer', border: 'none', marginTop: 6 }}
+          style={{ width: '100%', textAlign: 'center', fontSize: 13.5, fontWeight: 700, color: '#fff', background: 'var(--corsa-green, #157A52)', borderRadius: 10, padding: 10, cursor: 'pointer', border: 'none', marginTop: 6 }}
         >
           Imprimir prueba
         </button>

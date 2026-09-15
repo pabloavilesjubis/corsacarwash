@@ -235,7 +235,7 @@ export function SegurosPage() {
     <div className="page-inner">
       <div className="page-header">
         <div className="page-header-left">
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 26 }}>Seguros de lluvia</h1>
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 34, letterSpacing: '-0.025em' }}>Seguros de lluvia</h1>
           <div className="page-header-sub">
             Cobertura de 48 horas · {resumen.activos} activos
             {resumen.porVencer > 0 && (

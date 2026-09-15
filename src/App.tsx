@@ -44,21 +44,21 @@ export default function App() {
             toastOptions={{
               duration: 4000,
               style: {
-                fontFamily: "'IBM Plex Sans', sans-serif",
+                fontFamily: "var(--font-body)",
                 fontSize: 14,
-                borderRadius: 6,
+                borderRadius: 14,
               },
               success: {
                 style: {
-                  background: '#E4F5EE', color: '#157A52', border: '1px solid #1E9E6B',
+                  background: '#E3F5EA', color: '#1B7A4C', border: '1px solid #2FAE73',
                 },
-                iconTheme: { primary: '#157A52', secondary: '#E4F5EE' },
+                iconTheme: { primary: '#1B7A4C', secondary: '#E3F5EA' },
               },
               error: {
                 style: {
-                  background: '#FBE7E7', color: '#B23232', border: '1px solid #E24B4B',
+                  background: '#FBE9E7', color: '#B03A33', border: '1px solid #E2564E',
                 },
-                iconTheme: { primary: '#B23232', secondary: '#FBE7E7' },
+                iconTheme: { primary: '#B03A33', secondary: '#FBE9E7' },
               },
             }}
           />

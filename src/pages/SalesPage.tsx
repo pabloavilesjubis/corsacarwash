@@ -219,7 +219,7 @@ function IconAction({ icon, label, onClick, disabled, reason }: {
       aria-label={label}
       style={{
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        width: 28, height: 28, borderRadius: 5, marginRight: 4,
+        width: 28, height: 28, borderRadius: 10, marginRight: 4,
         border: '1px solid var(--border)', background: 'var(--surface)',
         color: disabled ? 'var(--text-secondary)' : 'var(--text-primary)',
         opacity: disabled ? 0.4 : 1,
@@ -401,7 +401,7 @@ export function SalesPage() {
     <div className="page-inner">
       <div className="page-header">
         <div className="page-header-left">
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 26 }}>Ventas</h1>
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 34, letterSpacing: '-0.025em' }}>Ventas</h1>
           <div className="page-header-sub">
             Historial completo · {sales.length} {sales.length === 1 ? 'venta' : 'ventas'} en el rango
           </div>

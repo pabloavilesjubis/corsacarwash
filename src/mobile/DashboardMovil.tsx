@@ -22,12 +22,14 @@ import {
 
 const SERVICIOS = ['PRO', 'ELITE', 'SIGNATURE'] as const
 
-const ESTADOS: Record<string, { label: string; bg: string }> = {
-  WASHING:   { label: 'LAVANDO',  bg: '#1E9E6B' },
-  READY:     { label: 'LISTA',    bg: '#0F7B5A' },
-  NOT_READY: { label: 'NO LISTA', bg: '#9A6510' },
-  FAULT:     { label: 'FALLA',    bg: '#B3261E' },
-  OFFLINE:   { label: 'OFFLINE',  bg: '#5F6368' },
+const ESTADOS: Record<string, { label: string; bg: string; fg: string }> = {
+  // Mismo criterio que en computadora: el lima marca lo que está ocurriendo
+  // ahora, y encima del lima se escribe en tinta.
+  WASHING:   { label: 'LAVANDO',  bg: 'var(--corsa-orange)', fg: 'var(--on-accent)' },
+  READY:     { label: 'LISTA',    bg: 'var(--corsa-green)',  fg: 'var(--on-primary)' },
+  NOT_READY: { label: 'NO LISTA', bg: '#8A6414', fg: '#fff' },
+  FAULT:     { label: 'FALLA',    bg: '#B03A33', fg: '#fff' },
+  OFFLINE:   { label: 'OFFLINE',  bg: '#5F6368', fg: '#fff' },
 }
 
 function money(n: number): string {
@@ -63,7 +65,8 @@ function Kpi({ label, valor, sub, destacado }: {
 }
 
 function TarjetaMaquina({ m }: { m: MaquinaPlc }) {
-  const estado = ESTADOS[m.status ?? ''] ?? { label: (m.status ?? 'SIN DATOS').toUpperCase(), bg: '#5F6368' }
+  const estado = ESTADOS[m.status ?? '']
+    ?? { label: (m.status ?? 'SIN DATOS').toUpperCase(), bg: '#5F6368', fg: '#fff' }
 
   return (
     <div className="corsa-movil__tarjeta" style={{
@@ -78,9 +81,9 @@ function TarjetaMaquina({ m }: { m: MaquinaPlc }) {
         {/* El estado grande y en color es lo que se lee de lejos, que es como
             se mira el teléfono cuando uno está caminando por el local. */}
         <span style={{
-          background: estado.bg, color: '#fff', fontFamily: 'var(--font-heading)',
+          background: estado.bg, color: estado.fg, fontFamily: 'var(--font-heading)',
           fontWeight: 800, fontSize: 13, letterSpacing: 0.4, lineHeight: 1,
-          padding: '8px 12px', borderRadius: 5, whiteSpace: 'nowrap',
+          padding: '8px 12px', borderRadius: 10, whiteSpace: 'nowrap',
         }}>
           {estado.label}
         </span>

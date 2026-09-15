@@ -196,7 +196,7 @@ export function PosAdminPage() {
       <div className="page-inner">
         <div className="page-header">
           <div className="page-header-left">
-            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 26 }}>Cupones emitidos</h1>
+            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 34, letterSpacing: '-0.025em' }}>Cupones emitidos</h1>
             <div className="page-header-sub">
               Orden {resultado.order_number}
               {resultado.is_gift && ' · Regalía, sin documento fiscal'}
@@ -204,7 +204,7 @@ export function PosAdminPage() {
           </div>
         </div>
 
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 20, maxWidth: 620 }}>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 20, maxWidth: 620 }}>
           <div className="kpi-grid" style={{ marginBottom: 18 }}>
             {[
               { label: 'Cupones', value: String(resultado.quantity) },
@@ -229,7 +229,7 @@ export function PosAdminPage() {
           }}>
             {resultado.vouchers.map(v => (
               <div key={v.id} style={{
-                border: '1px solid var(--border)', borderRadius: 5,
+                border: '1px solid var(--border)', borderRadius: 10,
                 padding: '6px 8px', textAlign: 'center', background: 'var(--page-bg)',
               }}>
                 <div className="font-mono" style={{ fontSize: 16, fontWeight: 800, letterSpacing: 1 }}>
@@ -264,14 +264,14 @@ export function PosAdminPage() {
     <div className="page-inner">
       <div className="page-header">
         <div className="page-header-left">
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 26 }}>POS Administrativo</h1>
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 34, letterSpacing: '-0.025em' }}>POS Administrativo</h1>
           <div className="page-header-sub">Venta de cupones prepagados</div>
         </div>
       </div>
 
       <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         {/* ── Configuración ── */}
-        <div style={{ flex: '1 1 480px', minWidth: esMovil ? 0 : 400, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 18 }}>
+        <div style={{ flex: '1 1 480px', minWidth: esMovil ? 0 : 400, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 18 }}>
 
           {/* Naturaleza de la emisión: define si hay cobro y documento fiscal. */}
           <div className="panel-section-label">Tipo de emisión</div>
@@ -284,7 +284,7 @@ export function PosAdminPage() {
             </button>
           </div>
           {esRegalia && (
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', background: 'var(--subtle-bg)', padding: '9px 12px', borderRadius: 6, marginBottom: 14, lineHeight: 1.5 }}>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', background: 'var(--subtle-bg)', padding: '9px 12px', borderRadius: 12, marginBottom: 14, lineHeight: 1.5 }}>
               Se emiten sin cobro y sin documento fiscal. Los cupones salen a
               nombre de <strong>Cliente General</strong> y con el costo rotulado
               como <strong>Regalía</strong>. Toman el mismo correlativo que las ventas.
@@ -293,7 +293,7 @@ export function PosAdminPage() {
 
           {!esRegalia && <div className="panel-section-label">Cliente</div>}
           {esRegalia ? null : cliente ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderRadius: 7, border: '1.5px solid var(--corsa-green)', background: 'rgba(2,53,48,0.05)', marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderRadius: 14, border: '1.5px solid var(--corsa-green)', background: 'rgba(2,53,48,0.05)', marginBottom: 14 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 700 }}>{nombreCliente(cliente)}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
@@ -309,7 +309,7 @@ export function PosAdminPage() {
               <input className="corsa-input" value={query} onChange={e => setQuery(e.target.value)}
                      placeholder="Buscá por nombre, razón social o NIT…" autoFocus/>
               {resultados.length > 0 && (
-                <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 60, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, boxShadow: '0 8px 24px rgba(0,0,0,0.14)', maxHeight: 220, overflowY: 'auto' }}>
+                <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 60, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.14)', maxHeight: 220, overflowY: 'auto' }}>
                   {resultados.map(c => (
                     <button key={c.id} onClick={() => { setCliente(c); setResultados([]) }}
                       style={{ width: '100%', textAlign: 'left', padding: '9px 13px', border: 'none', background: 'transparent', cursor: 'pointer', borderBottom: '1px solid var(--border)' }}>
@@ -384,7 +384,7 @@ export function PosAdminPage() {
           </div>
 
           {ccfStatus && !ccfStatus.ok && (
-            <div style={{ marginTop: 10, fontSize: 12, color: 'var(--color-danger-text)', background: 'var(--color-danger-bg, #FBE7E7)', padding: '8px 12px', borderRadius: 5 }}>
+            <div style={{ marginTop: 10, fontSize: 12, color: 'var(--color-danger-text)', background: 'var(--color-danger-bg, #FBE7E7)', padding: '8px 12px', borderRadius: 10 }}>
               Para emitir CCF faltan datos del cliente: {ccfStatus.missing.join(', ')}.
               Completalos en Clientes.
             </div>
@@ -393,7 +393,7 @@ export function PosAdminPage() {
         </div>
 
         {/* ── Resumen ── */}
-        <div style={{ flex: '0 1 280px', minWidth: esMovil ? 0 : 250, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 18 }}>
+        <div style={{ flex: '0 1 280px', minWidth: esMovil ? 0 : 250, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 18 }}>
           <div className="panel-section-label">Resumen</div>
           <div className="panel-row"><span style={{ color: 'var(--text-secondary)', fontSize: 12.5 }}>Servicio</span>
             <span style={{ fontWeight: 600, fontSize: 12.5 }}>{SERVICIOS.find(s => s.code === servicio)?.name} {tamano}</span></div>
@@ -415,7 +415,7 @@ export function PosAdminPage() {
           <button
             onClick={vender}
             disabled={!puedeCobrar}
-            style={{ width: '100%', marginTop: 14, textAlign: 'center', fontSize: 13.5, fontWeight: 700, color: '#fff', background: puedeCobrar ? 'var(--corsa-green)' : 'var(--text-secondary)', borderRadius: 5, padding: 11, cursor: puedeCobrar ? 'pointer' : 'not-allowed', border: 'none', opacity: puedeCobrar ? 1 : 0.5 }}
+            style={{ width: '100%', marginTop: 14, textAlign: 'center', fontSize: 13.5, fontWeight: 700, color: '#fff', background: puedeCobrar ? 'var(--corsa-green)' : 'var(--text-secondary)', borderRadius: 10, padding: 11, cursor: puedeCobrar ? 'pointer' : 'not-allowed', border: 'none', opacity: puedeCobrar ? 1 : 0.5 }}
           >
             {vendiendo ? 'Emitiendo…' : esRegalia ? `Emitir ${cant || 0} cupones de regalía` : `Cobrar y emitir ${cant || 0} cupones`}
           </button>

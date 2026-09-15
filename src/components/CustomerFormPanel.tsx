@@ -459,7 +459,7 @@ export function CustomerFormPanel({
         <button
           type="submit"
           disabled={isSubmitting}
-          style={{ textAlign: 'center', fontSize: 13.5, fontWeight: 700, color: '#fff', background: 'var(--corsa-green)', borderRadius: 5, padding: 10, cursor: 'pointer', border: 'none', marginTop: 4 }}
+          style={{ textAlign: 'center', fontSize: 13.5, fontWeight: 700, color: '#fff', background: 'var(--corsa-green)', borderRadius: 10, padding: 10, cursor: 'pointer', border: 'none', marginTop: 4 }}
         >
           {isSubmitting ? 'Guardando…' : isEdit ? 'Guardar cambios' : 'Guardar cliente'}
         </button>

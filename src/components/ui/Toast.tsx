@@ -10,25 +10,25 @@ export function ToastProvider() {
       toastOptions={{
         duration: 4000,
         style: {
-          fontFamily: "'IBM Plex Sans', sans-serif",
+          fontFamily: "var(--font-body)",
           fontSize: 14,
-          borderRadius: 6,
+          borderRadius: 12,
         },
         success: {
           style: {
-            background: '#E4F5EE',
-            color: '#157A52',
+            background: 'var(--color-success-tint)',
+            color: 'var(--color-success-text)',
             border: '1px solid #1E9E6B',
           },
-          iconTheme: { primary: '#157A52', secondary: '#E4F5EE' },
+          iconTheme: { primary: 'var(--color-success-text)', secondary: 'var(--color-success-tint)' },
         },
         error: {
           style: {
-            background: '#FBE7E7',
-            color: '#B23232',
+            background: 'var(--color-danger-tint)',
+            color: 'var(--color-danger-text)',
             border: '1px solid #E24B4B',
           },
-          iconTheme: { primary: '#B23232', secondary: '#FBE7E7' },
+          iconTheme: { primary: 'var(--color-danger-text)', secondary: 'var(--color-danger-tint)' },
         },
       }}
     />

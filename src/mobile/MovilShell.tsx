@@ -81,7 +81,7 @@ function HojaMas({ pantallas, alCerrar }: { pantallas: ScreenDef[]; alCerrar: ()
               }}
               style={{
                 width: '100%', padding: '11px 12px', fontSize: 15,
-                border: '1px solid var(--border)', borderRadius: 7,
+                border: '1px solid var(--border)', borderRadius: 14,
                 background: 'var(--surface)', color: 'var(--text-primary)',
               }}
             >

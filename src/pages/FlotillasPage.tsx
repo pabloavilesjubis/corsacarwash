@@ -269,10 +269,10 @@ function CreateCompanyModal({ orgId, onCreated, onCancel }: CreateCompanyModalPr
   return createPortal(
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 20 }}
       onClick={e => { if (e.target === e.currentTarget) onCancel() }}>
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.2)' }}>
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.2)' }}>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 20, color: 'var(--text-primary)' }}>Nueva flotilla</div>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 20, color: 'var(--text-primary)' }}>Nueva flotilla</div>
           <button onClick={onCancel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 22 }}>×</button>
         </div>
 
@@ -290,7 +290,7 @@ function CreateCompanyModal({ orgId, onCreated, onCancel }: CreateCompanyModalPr
 
             {origen === 'existente' ? (
               elegido ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderRadius: 7, border: '1.5px solid var(--corsa-green)', background: 'rgba(2,53,48,0.05)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderRadius: 14, border: '1.5px solid var(--corsa-green)', background: 'rgba(2,53,48,0.05)' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{customerLabel(elegido)}</div>
                     <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 1 }}>
@@ -307,7 +307,7 @@ function CreateCompanyModal({ orgId, onCreated, onCancel }: CreateCompanyModalPr
                          placeholder="Buscá por nombre, razón social o NIT…" autoFocus/>
                   {buscando && <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4 }}>Buscando…</div>}
                   {resultados.length > 0 && (
-                    <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 300, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, boxShadow: '0 8px 24px rgba(0,0,0,0.14)', maxHeight: 220, overflowY: 'auto' }}>
+                    <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 300, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.14)', maxHeight: 220, overflowY: 'auto' }}>
                       {resultados.map(c => (
                         <button key={c.id} onClick={() => { setElegido(c); setResultados([]) }}
                           style={{ width: '100%', textAlign: 'left', padding: '9px 13px', border: 'none', background: 'transparent', cursor: 'pointer', borderBottom: '1px solid var(--border)' }}>
@@ -568,9 +568,9 @@ function AddVehicleModal({ fleetId, customerId, orgId, onAdded, onCancel }: AddV
   return createPortal(
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 20 }}
       onClick={e => { if (e.target === e.currentTarget) onCancel() }}>
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, width: '100%', maxWidth: 440, boxShadow: '0 24px 64px rgba(0,0,0,0.2)' }}>
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: 440, boxShadow: '0 24px 64px rgba(0,0,0,0.2)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 22px', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 18, color: 'var(--text-primary)' }}>Agregar vehículo a la flota</div>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, color: 'var(--text-primary)' }}>Agregar vehículo a la flota</div>
           <button onClick={onCancel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 22 }}>×</button>
         </div>
         <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -786,7 +786,7 @@ export function FlotillasPage() {
       {/* Header */}
       <div className="page-header">
         <div className="page-header-left">
-          <h1 style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 26, margin: 0, color: 'var(--text-primary)' }}>
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 34, letterSpacing: '-0.025em', margin: 0, color: 'var(--text-primary)' }}>
             Flotillas corporativas
           </h1>
           <div className="page-header-sub">
@@ -807,7 +807,7 @@ export function FlotillasPage() {
         {/* ── Lista de empresas ── */}
         <div style={{ flex: '0 0 340px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           {/* Search */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '9px 12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '9px 12px' }}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input
               value={search}
@@ -833,13 +833,13 @@ export function FlotillasPage() {
                   style={{
                     background: 'var(--surface)',
                     border: `1px solid ${selected?.id === c.id ? 'var(--corsa-green)' : 'var(--border)'}`,
-                    borderRadius: 6, padding: '12px 14px', cursor: 'pointer',
+                    borderRadius: 12, padding: '12px 14px', cursor: 'pointer',
                     transition: 'all 0.12s',
                     borderLeft: selected?.id === c.id ? '4px solid var(--corsa-green)' : '1px solid var(--border)',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 6, background: selected?.id === c.id ? 'var(--corsa-green)' : 'var(--subtle-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: selected?.id === c.id ? '#fff' : 'var(--text-primary)', flexShrink: 0 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 12, background: selected?.id === c.id ? 'var(--corsa-green)' : 'var(--subtle-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: selected?.id === c.id ? '#fff' : 'var(--text-primary)', flexShrink: 0 }}>
                       {initials(c.trade_name ?? c.legal_name ?? '?')}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -874,7 +874,7 @@ export function FlotillasPage() {
             <div className="card" style={{ padding: 18 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
                 <div>
-                  <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 20, color: 'var(--text-primary)' }}>
+                  <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 20, color: 'var(--text-primary)' }}>
                     {selected.trade_name ?? selected.legal_name}
                   </div>
                   {selected.legal_name && selected.trade_name && (
@@ -905,7 +905,7 @@ export function FlotillasPage() {
                       && selected.elite_price_m === selected.elite_price_l)
                       ? (
                         <div style={{ textAlign: 'center' }}>
-                          <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 22, color: 'var(--corsa-orange)', fontVariantNumeric: 'tabular-nums' }}>
+                          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--corsa-orange)', fontVariantNumeric: 'tabular-nums' }}>
                             {selected.elite_price_s != null ? `$${selected.elite_price_s}` : '—'}
                           </div>
                           <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Cualquier tamaño</div>
@@ -913,7 +913,7 @@ export function FlotillasPage() {
                       )
                       : [['S · Pequeños', selected.elite_price_s], ['M · Medianos', selected.elite_price_m], ['L · Grandes', selected.elite_price_l]].map(([label, price]) => (
                         <div key={String(label)} style={{ textAlign: 'center' }}>
-                          <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 22, color: 'var(--corsa-orange)', fontVariantNumeric: 'tabular-nums' }}>
+                          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--corsa-orange)', fontVariantNumeric: 'tabular-nums' }}>
                             {price ? `$${price}` : '—'}
                           </div>
                           <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{label}</div>
@@ -922,7 +922,7 @@ export function FlotillasPage() {
 
                     {selected.aspirado_enabled && (
                       <div style={{ textAlign: 'center', paddingLeft: 16, borderLeft: '1px solid var(--border)' }}>
-                        <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 22, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+                        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
                           {selected.aspirado_price != null ? `$${selected.aspirado_price}` : '—'}
                         </div>
                         <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Aspirado · cualquier tamaño</div>
@@ -936,7 +936,7 @@ export function FlotillasPage() {
             {/* Vehicles */}
             <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
-                <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 16, color: 'var(--text-primary)' }}>
+                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, color: 'var(--text-primary)' }}>
                   Vehículos en flota
                   <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', background: 'var(--subtle-bg)', padding: '2px 8px', borderRadius: 4 }}>
                     {vehicles.filter(v => v.active).length} activos

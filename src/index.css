@@ -1,58 +1,95 @@
 /* ============================================================
    CORSA Carwash — Design System
-   Tipografía: Archivo (headings) · IBM Plex Sans (interface)
-   Paleta: Verde CORSA #023530 · Naranja #FF6A28
+   Tipografía: Outfit (títulos) · Inter (interfaz)
+   Paleta: tinta #16191A · lima #DFF56B · lienzo salvia
    Tema: dual light/dark via data-theme="dark" en <html>
+
+   SOBRE LOS NOMBRES DE LOS TOKENS: siguen diciendo --corsa-green y
+   --corsa-orange aunque ya no sean verde ni naranja. Están escritos en
+   decenas de estilos en línea a lo largo de toda la app; renombrarlos
+   obligaría a tocar cada archivo para no cambiar nada de comportamiento.
+   Lo que se cambió es su VALOR, que es lo que define el aspecto:
+     --corsa-green  → la tinta, casi negra. Manda en lo estructural.
+     --corsa-orange → el lima. Es acento, nunca fondo de texto claro.
+   Por eso existe --on-accent: cualquier cosa encima del lima se escribe en
+   tinta, porque blanco sobre lima no se lee.
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Inter:wght@400;450;500;600;700&display=swap');
 
 /* ─── TOKENS LIGHT (default) ─── */
 :root {
   /* Brand */
-  --corsa-green: #023530;
-  --corsa-green-hover: #0B4A42;
-  --corsa-green-deep: #011f1c;
-  --corsa-orange: #FF6A28;
-  --corsa-orange-hover: #E85A1C;
+  --corsa-green: #16191A;
+  --corsa-green-hover: #2B302E;
+  --corsa-green-deep: #0B0D0E;
+  --corsa-orange: #DFF56B;
+  --corsa-orange-hover: #D3EB53;
+
+  /* Qué color lleva el texto encima de cada fondo de marca. */
+  --on-primary: #FFFFFF;
+  --on-accent: #16191A;
 
   /* Status colors */
-  --color-success: #1E9E6B;
-  --color-success-text: #157A52;
-  --color-success-tint: #E4F5EE;
-  --color-warning: #F0A93A;
-  --color-warning-text: #9A6510;
-  --color-warning-tint: #FDF1DC;
-  --color-danger: #E24B4B;
-  --color-danger-text: #B23232;
-  --color-danger-tint: #FBE7E7;
+  --color-success: #2FAE73;
+  --color-success-text: #1B7A4C;
+  --color-success-tint: #E3F5EA;
+  --color-warning: #E9B23C;
+  --color-warning-text: #8A6414;
+  --color-warning-tint: #FBF1DC;
+  --color-danger: #E2564E;
+  --color-danger-text: #B03A33;
+  --color-danger-tint: #FBE9E7;
 
   /* Theme — light */
-  --page-bg: #F3F6F5;
+  --canvas: #C7D3C4;
+  --page-bg: #EFF2EC;
   --surface: #FFFFFF;
-  --border: #DCE4E1;
-  --text-primary: #10201C;
-  --text-secondary: #52655F;
-  --subtle-bg: #F0F5F3;
+  --border: #E3E8DE;
+  --text-primary: #16191A;
+  --text-secondary: #6C7671;
+  --subtle-bg: #E9EEE4;
+
+  /* El riel lateral es oscuro en los dos temas: es el ancla visual. */
+  --rail-bg: #16191A;
+  --rail-fg: rgba(255,255,255,0.62);
+  --rail-fg-active: #FFFFFF;
 
   /* Typography */
-  --font-heading: 'Archivo', sans-serif;
-  --font-body: 'IBM Plex Sans', sans-serif;
+  --font-heading: 'Outfit', sans-serif;
+  --font-body: 'Inter', sans-serif;
 
   /* Layout */
-  --sidebar-width: 240px;
-  --radius: 6px;
-  --radius-sm: 4px;
+  --sidebar-width: 236px;
+  --radius: 18px;
+  --radius-sm: 10px;
+  --radius-pill: 999px;
+  --shadow-soft: 0 12px 34px rgba(16,25,18,0.07);
+
+  /* La escala del mapa de calor. En claro es tinta; en oscuro, tinta sobre
+     fondo oscuro sería invisible, así que allá manda el lima. Va como tres
+     canales sueltos para poder componer la opacidad desde JavaScript. */
+  --heat-rgb: 22 25 26;
 }
 
 /* ─── TOKENS DARK ─── */
 [data-theme="dark"] {
-  --page-bg: #0B211D;
-  --surface: #0F2A25;
-  --border: #1D4038;
-  --text-primary: #F2F7F5;
-  --text-secondary: #9FBFB6;
-  --subtle-bg: #123128;
+  --canvas: #0A0C0B;
+  --page-bg: #15181A;
+  --surface: #1C2022;
+  --border: #2B3134;
+  --text-primary: #F1F4EF;
+  --text-secondary: #99A39D;
+  --subtle-bg: #23282B;
+
+  /* En oscuro la tinta desaparece contra el fondo: manda el lima, y encima
+     de él el texto va en tinta. */
+  --corsa-green: #DFF56B;
+  --corsa-green-hover: #D3EB53;
+  --on-primary: #16191A;
+
+  --rail-bg: #0F1213;
+  --heat-rgb: 223 245 107;
 }
 
 /* ─── RESET ─── */
@@ -61,36 +98,48 @@ html, body, #root { height: 100%; }
 
 body {
   font-family: var(--font-body);
-  background: var(--page-bg);
+  background: var(--canvas);
   color: var(--text-primary);
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
-a { color: var(--corsa-green); text-decoration: underline; text-decoration-color: rgba(2,53,48,0.35); text-underline-offset: 2px; }
-a:hover { color: var(--corsa-orange); }
-::selection { background: var(--corsa-orange); color: #fff; }
+a { color: var(--text-primary); text-decoration: underline; text-decoration-color: rgba(22,25,26,0.28); text-underline-offset: 3px; }
+a:hover { text-decoration-color: var(--corsa-orange); }
+/* Tinta sobre lima: blanco encima del acento no se lee. */
+::selection { background: var(--corsa-orange); color: var(--on-accent); }
 input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
-  outline: 2px solid var(--corsa-orange);
+  outline: 2px solid var(--corsa-green);
   outline-offset: 2px;
 }
 
 /* ─── APP SHELL ─── */
-.app-shell { display: flex; height: 100vh; overflow: hidden; }
+/* La app es un panel redondeado flotando sobre el lienzo, no una pantalla
+   pegada a los bordes. El aire de alrededor es lo que hace que se lea como
+   una superficie y no como un documento. */
+.app-shell {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  padding: 14px;
+  gap: 12px;
+  background: var(--canvas);
+}
 
 /* ─── SIDEBAR ─── */
 .sidebar {
   width: var(--sidebar-width);
   min-width: var(--sidebar-width);
-  background: var(--corsa-green);
+  background: var(--rail-bg);
   color: #fff;
   display: flex;
   flex-direction: column;
-  padding: 20px 16px;
-  gap: 22px;
+  padding: 18px 12px;
+  gap: 20px;
   overflow-y: auto;
   flex-shrink: 0;
+  border-radius: 26px;
 }
 
 .sidebar-logo {
@@ -129,10 +178,10 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 .sidebar-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 10px;
-  border-radius: var(--radius);
-  color: rgba(255,255,255,0.62);
+  gap: 11px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  color: var(--rail-fg);
   cursor: pointer;
   text-decoration: none;
   font-size: 14px;
@@ -143,18 +192,20 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
   width: 100%;
   text-align: left;
 }
-.sidebar-item:hover { background: rgba(255,255,255,0.06); color: #fff; }
+.sidebar-item:hover { background: rgba(255,255,255,0.07); color: var(--rail-fg-active); }
+/* La activa lleva el acento a la izquierda en vez de un fondo más claro:
+   se distingue de un simple hover incluso de reojo. */
 .sidebar-item.active {
-  background: rgba(255,255,255,0.14);
-  color: #fff;
+  background: rgba(255,255,255,0.10);
+  color: var(--rail-fg-active);
   font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--corsa-orange);
 }
 .sidebar-item.active-section {
-  background: rgba(255,255,255,0.12);
-  border-left: 3px solid var(--corsa-orange);
-  color: #fff;
+  background: rgba(255,255,255,0.08);
+  box-shadow: inset 3px 0 0 var(--corsa-orange);
+  color: var(--rail-fg-active);
   font-weight: 600;
-  padding-left: 7px;
 }
 .sidebar-item .sidebar-icon { flex-shrink: 0; }
 
@@ -201,10 +252,10 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
   padding: 8px 4px;
 }
 .sidebar-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius);
-  background: #0B4A42;
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.12);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -228,18 +279,25 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 }
 
 /* ─── MAIN CONTENT ─── */
-.main-content { flex: 1; min-width: 0; overflow-y: auto; }
-.page-inner { padding: 32px 40px 48px; display: flex; flex-direction: column; gap: 22px; }
-.pos-inner  { padding: 26px 32px 40px; display: flex; flex-direction: column; gap: 18px; }
+.main-content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  background: var(--page-bg);
+  border-radius: 26px;
+}
+.page-inner { padding: 30px 34px 44px; display: flex; flex-direction: column; gap: 18px; }
+.pos-inner  { padding: 26px 30px 40px; display: flex; flex-direction: column; gap: 16px; }
 
 /* ─── PAGE HEADER ─── */
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; flex-wrap: wrap; }
 .page-header-left h1 {
   font-family: var(--font-heading);
   font-weight: 700;
-  font-size: 28px;
+  font-size: 34px;
+  letter-spacing: -0.025em;
   color: var(--text-primary);
-  line-height: 1.2;
+  line-height: 1.08;
 }
 .page-header-sub { margin-top: 4px; font-size: 14px; color: var(--text-secondary); }
 .page-header-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
@@ -250,11 +308,12 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
   align-items: center;
   gap: 8px;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 9px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  padding: 10px 16px;
   min-width: 260px;
 }
+.search-bar:focus-within { border-color: var(--corsa-green); }
 .search-bar input {
   border: none;
   outline: none;
@@ -268,9 +327,9 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 .search-kbd {
   font-size: 11px;
   color: var(--text-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 2px 6px;
+  background: var(--subtle-bg);
+  border-radius: var(--radius-pill);
+  padding: 3px 9px;
 }
 
 /* ─── BRANCH SELECTOR ─── */
@@ -279,9 +338,9 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
   align-items: center;
   gap: 6px;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 9px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  padding: 10px 14px;
   cursor: pointer;
   font-size: 14px;
   font-weight: 500;
@@ -317,42 +376,46 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 .alert-link { font-size: 13px; font-weight: 600; white-space: nowrap; color: inherit; }
 
 /* ─── KPI CARDS ─── */
-.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
 
 .kpi-card {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: var(--radius);
   padding: 20px;
 }
+/* La esquina recortada en diagonal era la firma de la identidad anterior. Con
+   radios grandes ya no se lee como intención sino como error de render, así
+   que el destaque pasa a ser el contraste del bloque de tinta y un punto de
+   acento. */
 .kpi-card.primary {
   background: var(--corsa-green);
-  color: #fff;
+  color: var(--on-primary);
   position: relative;
-  clip-path: polygon(0 0, calc(100% - 26px) 0, 100% 26px, 100% 100%, 0 100%);
   overflow: hidden;
 }
 .kpi-card.primary .kpi-corner {
   position: absolute;
-  top: 0; right: 0;
-  width: 26px; height: 26px;
+  top: 16px; right: 16px;
+  width: 10px; height: 10px;
+  border-radius: 50%;
   background: var(--corsa-orange);
-  clip-path: polygon(100% 0, 100% 100%, 0 0);
 }
 .kpi-label { font-size: 14px; color: var(--text-secondary); }
-.kpi-card.primary .kpi-label { color: rgba(255,255,255,0.8); }
+.kpi-card.primary .kpi-label { color: color-mix(in srgb, var(--on-primary) 72%, transparent); }
 .kpi-value {
   margin-top: 8px;
   font-family: var(--font-heading);
-  font-weight: 800;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   font-size: 32px;
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
   line-height: 1.1;
 }
-.kpi-card.primary .kpi-value { font-size: 36px; color: #fff; }
+.kpi-card.primary .kpi-value { font-size: 36px; color: var(--on-primary); }
 .kpi-sub { margin-top: 8px; font-size: 13px; color: var(--text-secondary); }
-.kpi-trend-up { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; color: #8FE3BE; }
+.kpi-trend-up { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; color: var(--corsa-orange); }
 .kpi-trend-badge {
   display: inline-flex;
   font-size: 12px;
@@ -367,14 +430,15 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 /* ─── SURFACE CARD ─── */
 .card {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: var(--radius);
   padding: 18px 20px;
 }
 .card-title {
   font-family: var(--font-heading);
-  font-weight: 700;
-  font-size: 17px;
+  font-weight: 600;
+  font-size: 18px;
+  letter-spacing: -0.015em;
   color: var(--text-primary);
 }
 .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
@@ -392,15 +456,15 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
   display: inline-block;
   font-size: 11.5px;
   font-weight: 600;
-  padding: 3px 8px;
-  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
 }
 .badge-success { color: var(--color-success-text); background: var(--color-success-tint); }
 .badge-warning { color: var(--color-warning-text); background: var(--color-warning-tint); }
 .badge-danger  { color: var(--color-danger-text);  background: var(--color-danger-tint);  }
 .badge-neutral { color: var(--text-secondary); background: var(--subtle-bg); }
-.badge-green   { color: #fff; background: var(--corsa-green); }
-.badge-orange  { color: #fff; background: var(--corsa-orange); }
+.badge-green   { color: var(--on-primary); background: var(--corsa-green); }
+.badge-orange  { color: var(--on-accent);  background: var(--corsa-orange); }
 
 /* ─── AVATAR ─── */
 .avatar {
@@ -416,25 +480,20 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 }
 
 /* ─── CLIP BUTTON (naranja CORSA con esquina diagonal) ─── */
+/* El botón principal deja de ser naranja con la esquina cortada y pasa a ser
+   la píldora de tinta. El marcado no cambia —sigue habiendo un wrap y una
+   esquina— para no tocar quince pantallas: la esquina simplemente se apaga. */
 .clip-btn-wrap {
   position: relative;
-  border-radius: var(--radius);
+  border-radius: var(--radius-pill);
   overflow: hidden;
-  clip-path: polygon(0 0, 100% 0, 100% 100%, 16px 100%, 0 calc(100% - 16px));
   cursor: pointer;
 }
-.clip-btn-corner {
-  position: absolute;
-  bottom: 0; left: 0;
-  width: 16px; height: 16px;
-  background: var(--corsa-green);
-  clip-path: polygon(0 100%, 100% 100%, 0 0);
-  pointer-events: none;
-}
+.clip-btn-corner { display: none; }
 .clip-btn {
   display: block;
-  background: var(--corsa-orange);
-  color: #fff;
+  background: var(--corsa-green);
+  color: var(--on-primary);
   padding: 11px 18px;
   font-weight: 600;
   font-size: 14px;
@@ -444,23 +503,26 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
   transition: background 0.12s;
   white-space: nowrap;
 }
-.clip-btn:hover { background: var(--corsa-orange-hover); }
+.clip-btn:hover { background: var(--corsa-green-hover); }
 .clip-btn.large {
   text-align: center;
-  padding: 14px;
+  padding: 15px;
   font-family: var(--font-heading);
-  font-weight: 800;
+  font-weight: 700;
   font-size: 16px;
+  letter-spacing: -0.01em;
 }
 
 /* ─── TABLES ─── */
 .table-wrap { overflow-x: auto; }
 .corsa-table { width: 100%; border-collapse: collapse; }
 .corsa-table th {
-  padding: 10px 16px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--border);
-  font-size: 11.5px;
+  font-size: 10.5px;
   font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--text-secondary);
   text-align: left;
 }
@@ -473,20 +535,22 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 /* ─── FILTER PILLS ─── */
 .filter-pills { display: flex; gap: 6px; flex-wrap: wrap; }
 .filter-pill {
-  padding: 7px 13px;
-  border-radius: 5px;
-  font-size: 13px;
-  font-weight: 600;
+  padding: 9px 18px;
+  border-radius: var(--radius-pill);
+  font-size: 13.5px;
+  font-weight: 500;
   cursor: pointer;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   background: var(--surface);
   color: var(--text-primary);
   transition: all 0.12s;
 }
+.filter-pill:hover { background: var(--subtle-bg); }
 .filter-pill.active {
   background: var(--corsa-green);
-  color: #fff;
+  color: var(--on-primary);
   border-color: var(--corsa-green);
+  font-weight: 600;
 }
 
 /* ─── FORMS ─── */
@@ -494,24 +558,24 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 .field label { font-size: 12px; color: var(--text-secondary); font-weight: 600; }
 .corsa-input {
   width: 100%;
-  background: var(--page-bg);
+  background: var(--subtle-bg);
   color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 10px 13px;
   font-size: 13px;
   font-family: var(--font-body);
   outline: none;
   transition: border-color 0.12s;
 }
-.corsa-input:focus { border-color: var(--corsa-orange); }
+.corsa-input:focus { border-color: var(--corsa-green); background: var(--surface); }
 .corsa-input::placeholder { color: var(--text-secondary); }
 
 /* ─── BUTTONS ─── */
-.btn { display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; border-radius: var(--radius); font-size: 13.5px; font-weight: 600; cursor: pointer; border: none; font-family: var(--font-body); transition: background 0.12s, color 0.12s; }
-.btn-primary { background: var(--corsa-green); color: #fff; }
+.btn { display: inline-flex; align-items: center; gap: 7px; padding: 10px 18px; border-radius: var(--radius-pill); font-size: 13.5px; font-weight: 600; cursor: pointer; border: none; font-family: var(--font-body); transition: background 0.12s, color 0.12s; }
+.btn-primary { background: var(--corsa-green); color: var(--on-primary); }
 .btn-primary:hover { background: var(--corsa-green-hover); }
-.btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-primary); }
+.btn-ghost { background: var(--surface); border: 1px solid var(--border); color: var(--text-primary); }
 .btn-ghost:hover { background: var(--subtle-bg); }
 .btn-danger { background: var(--color-danger); color: #fff; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -701,9 +765,9 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 .machine-pills { display: flex; flex-wrap: wrap; gap: 6px; }
 .machine-pill {
   min-width: 64px;
-  height: 34px;
-  padding: 0 10px;
-  border-radius: 5px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: var(--radius-pill);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -715,7 +779,7 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
   color: var(--text-primary);
   transition: all 0.12s;
 }
-.machine-pill.selected { background: var(--corsa-green); border-color: var(--corsa-green); color: #fff; }
+.machine-pill.selected { background: var(--corsa-green); border-color: var(--corsa-green); color: var(--on-primary); }
 .machine-pill.conflict { background: var(--color-danger-tint); border-color: var(--color-danger); color: var(--color-danger-text); }
 
 /* Order stepper */
@@ -737,7 +801,7 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 .keypad-key {
   text-align: center;
   padding: 10px 0;
-  border-radius: 5px;
+  border-radius: 14px;
   background: var(--subtle-bg);
   font-size: 15px;
   font-weight: 600;
@@ -752,7 +816,7 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 /* ─── LOGIN ─── */
 .login-page {
   min-height: 100vh;
-  background: var(--corsa-green);
+  background: var(--rail-bg);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -763,7 +827,7 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
   max-width: 420px;
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 10px;
+  border-radius: 26px;
   padding: 40px;
   backdrop-filter: blur(10px);
 }
@@ -856,15 +920,15 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
   margin-bottom: 8px;
 }
 .panel-divider { height: 1px; background: var(--border); }
-.panel-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; background: var(--page-bg); border-radius: 5px; }
+.panel-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--subtle-bg); border-radius: 12px; }
 
 /* ─── MEMBERSHIP BADGE in panel ─── */
 .membership-indicator {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
-  border-radius: 5px;
+  padding: 8px 12px;
+  border-radius: var(--radius-pill);
 }
 .membership-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 
@@ -873,9 +937,9 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 10px;
+  padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: 12px;
   cursor: pointer;
   transition: background 0.1s;
 }

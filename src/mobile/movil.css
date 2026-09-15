@@ -21,24 +21,28 @@
 }
 
 /* ── Cabecera ───────────────────────────────────────────── */
+/* La cabecera es el bloque de tinta que ancla la pantalla, igual que el riel
+   lateral en computadora. Se redondea por abajo para que se lea como una
+   superficie apoyada y no como una barra de sistema. */
 .corsa-movil__header {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 16px;
-  padding-top: calc(10px + env(safe-area-inset-top, 0px));
-  background: var(--corsa-green);
+  padding: 12px 18px 16px;
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  background: var(--rail-bg);
   color: #fff;
+  border-radius: 0 0 22px 22px;
 }
 
 .corsa-movil__titulo {
   font-family: var(--font-heading);
-  font-weight: 800;
-  font-size: 15px;
+  font-weight: 700;
+  font-size: 17px;
   line-height: 1.1;
-  letter-spacing: 0.2px;
+  letter-spacing: -0.02em;
 }
 
 .corsa-movil__subtitulo {
@@ -48,12 +52,12 @@
 }
 
 .corsa-movil__avatar {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  color: #fff;
+  background: var(--corsa-orange);
+  border: none;
+  color: var(--on-accent);
   font-size: 12.5px;
   font-weight: 700;
   display: flex;
@@ -107,15 +111,15 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.corsa-movil__tab.activo { color: var(--corsa-green); }
+.corsa-movil__tab.activo { color: var(--text-primary); font-weight: 700; }
 .corsa-movil__tab.activo svg { stroke-width: 2.2; }
 
 /* ── Tarjetas ───────────────────────────────────────────── */
 .corsa-movil__tarjeta {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 14px;
+  border: 1px solid transparent;
+  border-radius: 18px;
+  padding: 15px;
 }
 
 .corsa-movil__grid2 {
@@ -132,8 +136,9 @@
 
 .corsa-movil__numero {
   font-family: var(--font-heading);
-  font-weight: 800;
-  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-size: 25px;
   line-height: 1.1;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
@@ -142,8 +147,9 @@
 
 .corsa-movil__seccion {
   font-family: var(--font-heading);
-  font-weight: 700;
-  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-size: 15px;
   color: var(--text-primary);
   margin: 18px 2px 8px;
 }
@@ -163,7 +169,7 @@
   bottom: 0;
   z-index: 41;
   background: var(--surface);
-  border-radius: 14px 14px 0 0;
+  border-radius: 24px 24px 0 0;
   padding: 8px 0 calc(12px + env(safe-area-inset-bottom, 0px));
   max-height: 78dvh;
   overflow-y: auto;

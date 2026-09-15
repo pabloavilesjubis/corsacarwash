@@ -31,7 +31,7 @@ const STATUS_STYLE: Record<WorkOrderStatus, { color: string; tint: string }> = {
   washing:          { color: 'var(--color-success-text)', tint: 'var(--color-success-tint)' },
   drying_detailing: { color: 'var(--color-warning-text)', tint: 'var(--color-warning-tint)' },
   quality_control:  { color: 'var(--text-secondary)', tint: 'var(--subtle-bg)' },
-  ready:            { color: '#157A52', tint: '#C6F0DE' },
+  ready:            { color: 'var(--color-success-text)', tint: 'var(--color-success-tint)' },
   paid:             { color: 'var(--color-success-text)', tint: 'var(--color-success-tint)' },
   delivered:        { color: 'var(--text-secondary)', tint: 'var(--subtle-bg)' },
   cancelled:        { color: 'var(--color-danger-text)', tint: 'var(--color-danger-tint)' },
@@ -138,7 +138,7 @@ export function OrdersPage() {
       {/* Header */}
       <div className="page-header">
         <div className="page-header-left">
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 26, color: 'var(--text-primary)' }}>
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 34, letterSpacing: '-0.025em', color: 'var(--text-primary)' }}>
             Órdenes del turno
           </h1>
           <div className="page-header-sub">

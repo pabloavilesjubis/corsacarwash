@@ -62,11 +62,11 @@ function etiquetaHora(h: number): string {
 
 // Service category colors
 const CAT_COLORS: Record<number, { color: string; tint: string; bar: string }> = {
-  0: { color: '#023530', tint: '#E4F5EE', bar: '#023530' },
-  1: { color: '#157A52', tint: '#C6F0DE', bar: '#1E9E6B' },
-  2: { color: '#FF6A28', tint: '#FFE8DC', bar: '#FF6A28' },
-  3: { color: '#9A6510', tint: '#FDF1DC', bar: '#F0A93A' },
-  4: { color: '#B23232', tint: '#FBE7E7', bar: '#E24B4B' },
+  0: { color: 'var(--corsa-green)', tint: 'var(--color-success-tint)', bar: 'var(--corsa-green)' },
+  1: { color: 'var(--color-success-text)', tint: 'var(--color-success-tint)', bar: 'var(--color-success)' },
+  2: { color: 'var(--corsa-orange)', tint: 'rgba(223,245,107,0.35)', bar: 'var(--corsa-orange)' },
+  3: { color: 'var(--color-warning-text)', tint: 'var(--color-warning-tint)', bar: '#F0A93A' },
+  4: { color: 'var(--color-danger-text)', tint: 'var(--color-danger-tint)', bar: 'var(--color-danger)' },
 }
 
 // ─── Helpers ──────────────────────────────────────────────────
@@ -81,9 +81,12 @@ function fmtShort(n: number) {
 }
 
 function heatColor(intensity: number): string {
-  // from very light green to deep CORSA green
-  const alpha = 0.08 + intensity * 0.84
-  return `rgba(2,53,48,${alpha.toFixed(2)})`
+  // De un velo casi imperceptible al color pleno. Una sola tonalidad y no un
+  // degradado de colores: lo que se compara es cuánto, no qué. El tono sale
+  // del tema (--heat-rgb), porque la tinta que funciona en claro desaparece
+  // sobre el fondo oscuro.
+  const alpha = 0.06 + intensity * 0.86
+  return `rgb(var(--heat-rgb) / ${alpha.toFixed(2)})`
 }
 
 /**
@@ -134,13 +137,16 @@ function buildHeatmapFrom(rows: any[]): { label: string; cells: HourCell[] }[] {
  * tamaño, «Fuera de línea» parte en dos renglones y deja de leerse de un
  * golpe.
  */
-const MACHINE_STATES: Record<string, { label: string; bg: string }> = {
-  WASHING:   { label: 'LAVANDO',  bg: '#FF6A28' },
-  READY:     { label: 'STANDBY',  bg: '#0B6E4F' },
-  ONLINE:    { label: 'STANDBY',  bg: '#0B6E4F' },
-  NOT_READY: { label: 'NO LISTA', bg: '#9A6510' },
-  FAULT:     { label: 'FALLA',    bg: '#B3261E' },
-  OFFLINE:   { label: 'OFFLINE',  bg: '#5F6368' },
+const MACHINE_STATES: Record<string, { label: string; bg: string; fg: string }> = {
+  // LAVANDO va en lima: es el único estado que dice «está pasando algo ahora»
+  // y tiene que saltar sobre los demás. Encima del lima el texto va en tinta,
+  // porque blanco sobre lima no se lee ni de cerca.
+  WASHING:   { label: 'LAVANDO',  bg: 'var(--corsa-orange)', fg: 'var(--on-accent)' },
+  READY:     { label: 'STANDBY',  bg: 'var(--corsa-green)',  fg: 'var(--on-primary)' },
+  ONLINE:    { label: 'STANDBY',  bg: 'var(--corsa-green)',  fg: 'var(--on-primary)' },
+  NOT_READY: { label: 'NO LISTA', bg: '#8A6414', fg: '#fff' },
+  FAULT:     { label: 'FALLA',    bg: '#B03A33', fg: '#fff' },
+  OFFLINE:   { label: 'OFFLINE',  bg: '#5F6368', fg: '#fff' },
 }
 
 /**
@@ -195,29 +201,30 @@ function KpiCard({ label, value, sub, trend, primary }: {
   if (primary) return (
     <div style={{
       position: 'relative',
-      background: '#023530',
-      color: '#fff',
-      borderRadius: 6,
+      background: 'var(--corsa-green)',
+      color: 'var(--on-primary)',
+      borderRadius: 'var(--radius)',
       padding: 20,
-      clipPath: 'polygon(0 0, calc(100% - 26px) 0, 100% 26px, 100% 100%, 0 100%)',
       overflow: 'hidden',
     }}>
-      <div style={{ position: 'absolute', top: 0, right: 0, width: 26, height: 26, background: '#FF6A28', clipPath: 'polygon(100% 0, 100% 100%, 0 0)' }}/>
-      <div style={{ fontSize: 13.5, color: 'rgba(255,255,255,0.8)' }}>{label}</div>
-      <div style={{ marginTop: 8, fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 36, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+      {/* Un punto de acento en lugar de la esquina recortada: con radios
+          grandes, un corte en diagonal se lee como un error de render. */}
+      <div style={{ position: 'absolute', top: 16, right: 16, width: 10, height: 10, borderRadius: '50%', background: 'var(--corsa-orange)' }}/>
+      <div style={{ fontSize: 13.5, opacity: 0.72 }}>{label}</div>
+      <div style={{ marginTop: 8, fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 36, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
       {trend && (
-        <div style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 13, fontWeight: 600, color: trend.up ? '#8FE3BE' : '#FFB3A0' }}>
+        <div style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 13, fontWeight: 600, color: trend.up ? 'var(--corsa-orange)' : 'var(--color-danger-tint)' }}>
           <span>{trend.up ? '▲' : '▼'}</span><span>{trend.val}</span>
         </div>
       )}
-      {sub && !trend && <div style={{ marginTop: 8, fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>{sub}</div>}
+      {sub && !trend && <div style={{ marginTop: 8, fontSize: 13, opacity: 0.6 }}>{sub}</div>}
     </div>
   )
 
   return (
-    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: 20 }}>
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 20 }}>
       <div style={{ fontSize: 13.5, color: 'var(--text-secondary)' }}>{label}</div>
-      <div style={{ marginTop: 8, fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 32, fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)', lineHeight: 1.1 }}>{value}</div>
+      <div style={{ marginTop: 8, fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 32, fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)', lineHeight: 1.1 }}>{value}</div>
       {trend && (
         <div style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: trend.up ? 'var(--color-success-text)' : 'var(--color-danger-text)', background: trend.up ? 'var(--color-success-tint)' : 'var(--color-danger-tint)', padding: '3px 8px', borderRadius: 4 }}>
           {trend.up ? '▲' : '▼'} {trend.val}
@@ -237,19 +244,20 @@ function KpiCard({ label, value, sub, trend, primary }: {
  * muy distintas para quien está a cargo del turno.
  */
 function MachineCard({ m }: { m: MachineCard }) {
-  const estado = MACHINE_STATES[m.status ?? ''] ?? { label: (m.status ?? 'SIN DATOS').toUpperCase(), bg: '#5F6368' }
+  const estado = MACHINE_STATES[m.status ?? '']
+    ?? { label: (m.status ?? 'SIN DATOS').toUpperCase(), bg: '#5F6368', fg: '#fff' }
 
   return (
     <div style={{
       background: 'var(--surface)',
       border: '1px solid var(--border)',
       borderLeft: `4px solid ${m.reporting ? estado.bg : 'var(--border)'}`,
-      borderRadius: 6,
+      borderRadius: 12,
       padding: 20,
       opacity: m.reporting ? 1 : 0.75,
     }}>
       <div style={{
-        fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 15,
+        fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15,
         color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
       }}>
         {nombreDeMaquina(m)}
@@ -265,7 +273,7 @@ function MachineCard({ m }: { m: MachineCard }) {
       }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
           <div style={{
-            fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 44, lineHeight: 1,
+            fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 44, lineHeight: 1,
             color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums',
           }}>
             {m.washes_today}
@@ -277,14 +285,14 @@ function MachineCard({ m }: { m: MachineCard }) {
 
         <span style={{
           background: estado.bg,
-          color: '#fff',
-          fontFamily: "'Archivo',sans-serif",
+          color: estado.fg,
+          fontFamily: 'var(--font-heading)',
           fontWeight: 800,
           fontSize: 26,
           letterSpacing: 0.5,
           lineHeight: 1,
           padding: '12px 22px',
-          borderRadius: 6,
+          borderRadius: 12,
           whiteSpace: 'nowrap',
         }}>
           {estado.label}
@@ -372,9 +380,9 @@ function ServiciosDelDia({ servicios, total, porHora }: {
   const pico = Math.max(...porHora.values(), 1)
 
   return (
-    <div style={{ marginTop: 16, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '18px 20px' }}>
+    <div style={{ marginTop: 16, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '18px 20px' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 15, color: 'var(--text-primary)' }}>
+        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, color: 'var(--text-primary)' }}>
           Servicios detectados hoy
         </div>
         <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
@@ -388,16 +396,16 @@ function ServiciosDelDia({ servicios, total, porHora }: {
           const n = s?.washes ?? 0
           const pct = total > 0 ? Math.round((n / total) * 100) : 0
           return (
-            <div key={tipo} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '12px 14px' }}>
+            <div key={tipo} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px' }}>
               <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 0.6, color: 'var(--text-secondary)' }}>{tipo}</div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 6 }}>
-                <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 28, lineHeight: 1, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{n}</div>
+                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, lineHeight: 1, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{n}</div>
                 <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>{pct}%</div>
               </div>
               {/* Barra de proporción: comparar tres números de dos dígitos es
                   más rápido con una barra que leyéndolos. */}
               <div style={{ marginTop: 8, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
-                <div style={{ width: `${pct}%`, height: '100%', background: '#023530' }}/>
+                <div style={{ width: `${pct}%`, height: '100%', background: 'var(--corsa-green)' }}/>
               </div>
               <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
                 {n > 0 ? `duración promedio ${duracion(s?.avg_seconds)}` : 'sin lavados'}
@@ -429,7 +437,7 @@ function ServiciosDelDia({ servicios, total, porHora }: {
                   <div style={{
                     width: '100%',
                     height: Math.max(2, Math.round((n / pico) * 34)),
-                    background: n > 0 ? '#023530' : 'var(--border)',
+                    background: n > 0 ? 'var(--corsa-green)' : 'var(--border)',
                     borderRadius: 2,
                   }}/>
                   <div style={{ fontSize: 10, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{h}</div>
@@ -488,7 +496,7 @@ function BarChart7Days({ items }: { items: DailySummary[] }) {
             style={{
               width: '100%', maxWidth: 36,
               height: `${d.pct}%`,
-              background: d.is_today ? '#FF6A28' : '#023530',
+              background: d.is_today ? 'var(--corsa-orange)' : 'var(--corsa-green)',
               borderRadius: '3px 3px 0 0',
               transition: 'height 0.4s ease',
               cursor: 'default',
@@ -581,12 +589,12 @@ function WeekSummaryTable({ items }: { items: DailySummary[] }) {
             alignItems: 'center',
             padding: '8px 0',
             borderBottom: i < items.length - 1 ? '1px solid var(--border)' : 'none',
-            background: d.is_today ? 'rgba(255,106,40,0.04)' : 'transparent',
+            background: d.is_today ? 'rgba(223,245,107,0.22)' : 'transparent',
           }}
         >
           <div style={{ flex: 1, fontSize: 13, fontWeight: d.is_today ? 700 : 500, color: d.is_today ? 'var(--corsa-orange)' : 'var(--text-primary)' }}>
             {d.label}
-            {d.is_today && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 600, color: 'var(--corsa-orange)', background: '#FFE8DC', padding: '1px 5px', borderRadius: 3 }}>hoy</span>}
+            {d.is_today && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 600, color: 'var(--corsa-orange)', background: 'rgba(223,245,107,0.35)', padding: '1px 5px', borderRadius: 3 }}>hoy</span>}
           </div>
           <div style={{ width: 60, textAlign: 'center', fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{d.total_orders}</div>
           <div style={{ width: 100, textAlign: 'right', fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{fmtShort(d.gross_revenue)}</div>
@@ -597,7 +605,7 @@ function WeekSummaryTable({ items }: { items: DailySummary[] }) {
       <div style={{ display: 'flex', alignItems: 'center', padding: '10px 0 0', marginTop: 4, borderTop: '2px solid var(--border)' }}>
         <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Total 7 días</div>
         <div style={{ width: 60, textAlign: 'center', fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{totalOrders}</div>
-        <div style={{ width: 100, textAlign: 'right', fontSize: 14, fontWeight: 800, fontFamily: "'Archivo',sans-serif", color: 'var(--corsa-green)', fontVariantNumeric: 'tabular-nums' }}>{fmt(totalRevenue)}</div>
+        <div style={{ width: 100, textAlign: 'right', fontSize: 14, fontWeight: 800, fontFamily: 'var(--font-heading)', color: 'var(--corsa-green)', fontVariantNumeric: 'tabular-nums' }}>{fmt(totalRevenue)}</div>
         <div style={{ width: 64, textAlign: 'right', fontSize: 12, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{fmt(totalRevenue / totalOrders)}</div>
       </div>
     </div>
@@ -880,7 +888,7 @@ export function DashboardPage() {
       {/* ── Header ── */}
       <div className="page-header">
         <div className="page-header-left">
-          <h1 style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 28, color: 'var(--text-primary)', margin: 0 }}>
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 36, letterSpacing: '-0.03em', color: 'var(--text-primary)', margin: 0 }}>
             Hola, {firstName}
           </h1>
           <div className="page-header-sub">
@@ -892,7 +900,7 @@ export function DashboardPage() {
       {/* ── Cash alert ── */}
       {cashAlert && (
         <div className="alert-banner warning">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9A6510" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-warning-text)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
             <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/>
             <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
           </svg>
@@ -933,7 +941,7 @@ export function DashboardPage() {
       {machines.length > 0 && (
         <div>
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
-            <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 15, color: 'var(--text-primary)' }}>
+            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, color: 'var(--text-primary)' }}>
               Máquinas de lavado
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
@@ -958,10 +966,10 @@ export function DashboardPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 16 }}>
 
         {/* Servicios vendidos hoy */}
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 4 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-            <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 17, color: 'var(--text-primary)' }}>Servicios vendidos hoy</div>
-            <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 18, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{fmt(totalRevenueSvc)}</div>
+            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, color: 'var(--text-primary)' }}>Servicios vendidos hoy</div>
+            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{fmt(totalRevenueSvc)}</div>
           </div>
 
           {loading && serviceKpis.length === 0 ? (
@@ -973,14 +981,14 @@ export function DashboardPage() {
               {/* Service type mini KPIs */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 12 }}>
                 {serviceKpis.slice(0, 3).map((s, i) => (
-                  <div key={s.service_id} style={{ background: 'var(--subtle-bg)', borderRadius: 5, padding: '10px 12px' }}>
+                  <div key={s.service_id} style={{ background: 'var(--subtle-bg)', borderRadius: 10, padding: '10px 12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
                       <div style={{ width: 8, height: 8, borderRadius: '50%', background: CAT_COLORS[i % 5].bar, flexShrink: 0 }}/>
                       <div style={{ fontSize: 11, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {s.service_name.split('·')[0].trim()}
                       </div>
                     </div>
-                    <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 20, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{s.count}</div>
+                    <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{s.count}</div>
                     <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{fmt(s.revenue)}</div>
                   </div>
                 ))}
@@ -1000,8 +1008,8 @@ export function DashboardPage() {
         </div>
 
         {/* Últimos 7 días */}
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 17, color: 'var(--text-primary)' }}>Servicios por día — últimos 7 días</div>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, color: 'var(--text-primary)' }}>Servicios por día — últimos 7 días</div>
           <BarChart7Days items={dailySales} />
           <div style={{ height: 1, background: 'var(--border)' }}/>
           <WeekSummaryTable items={dailySales} />
@@ -1014,8 +1022,8 @@ export function DashboardPage() {
           cupones suma plata pero no servicios, y el canje suma servicio pero
           no plata. Mezclarlos con el ticket promedio lo distorsionaría. */}
       {(voucherStats.sold > 0 || voucherStats.redeemed > 0) && (
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '14px 18px', display: 'flex', gap: 28, flexWrap: 'wrap', alignItems: 'center' }}>
-          <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 14 }}>Cupones</div>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 18px', display: 'flex', gap: 28, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 14 }}>Cupones</div>
           <div>
             <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>Vendidos hoy</div>
             <div style={{ fontSize: 18, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
@@ -1041,10 +1049,10 @@ export function DashboardPage() {
           aportar más información. */}
       <div style={{
         background: 'var(--surface)', border: '1px solid var(--border)',
-        borderRadius: 6, padding: '16px 18px', maxWidth: 560,
+        borderRadius: 12, padding: '16px 18px', maxWidth: 560,
       }}>
         <div style={{ marginBottom: 12 }}>
-          <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 700, fontSize: 15, color: 'var(--text-primary)' }}>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, color: 'var(--text-primary)' }}>
             Mapa de calor · lavados por hora
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
@@ -1059,10 +1067,10 @@ export function DashboardPage() {
         {serviceKpis.map((s, i) => {
           const style = CAT_COLORS[i % 5]
           return (
-            <div key={s.service_id} style={{ background: 'var(--surface)', border: `1px solid var(--border)`, borderLeft: `4px solid ${style.bar}`, borderRadius: 6, padding: '14px 16px' }}>
+            <div key={s.service_id} style={{ background: 'var(--surface)', border: `1px solid var(--border)`, borderLeft: `4px solid ${style.bar}`, borderRadius: 12, padding: '14px 16px' }}>
               <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 6 }}>{s.service_name}</div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                <div style={{ fontFamily: "'Archivo',sans-serif", fontWeight: 800, fontSize: 28, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{s.count}</div>
+                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{s.count}</div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{fmt(s.revenue)}</div>
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{s.pct}% del total</div>
