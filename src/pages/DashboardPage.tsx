@@ -124,7 +124,25 @@ function heatInk(intensidad: number, esOscuro: boolean): string {
 }
 
 function buildHeatmapFrom(rows: any[]): { label: string; cells: HourCell[] }[] {
-  const max = Math.max(1, ...rows.map(r => Number(r.washes) || 0))
+  // La vista trae UNA FILA POR MÁQUINA para cada día y hora, así que hay que
+  // sumarlas. Antes acá se hacía rows.find(), que devuelve la primera: con dos
+  // máquinas lavando a la misma hora, la segunda desaparecía sin dejar rastro
+  // y el mapa mostraba menos trabajo del que hubo. El error crece justo cuando
+  // el local está más ocupado, que es cuando las dos máquinas coinciden.
+  const porCelda = new Map<string, number>()
+  for (const r of rows) {
+    const dia = Number(r.day_of_week)
+    const hora = Number(r.hour_of_day)
+    if (!Number.isFinite(dia) || !Number.isFinite(hora)) continue
+    const clave = `${dia}:${hora}`
+    porCelda.set(clave, (porCelda.get(clave) ?? 0) + (Number(r.washes) || 0))
+  }
+
+  // El máximo sale de los totales ya sumados, no de las filas sueltas. Con el
+  // máximo por máquina, una celda con las dos máquinas trabajando podía pasar
+  // del tope y saturar la escala de color.
+  const max = Math.max(1, ...porCelda.values())
+
   // La vista devuelve el dow de Postgres (0 = domingo); la grilla arranca en
   // lunes porque así lee la semana el equipo de piso.
   const dows = [1, 2, 3, 4, 5, 6, 0]
@@ -142,9 +160,7 @@ function buildHeatmapFrom(rows: any[]): { label: string; cells: HourCell[] }[] {
     label: nombres[i],
     cells: Array.from({ length: hasta - desde + 1 }, (_, hi) => {
       const hora = desde + hi
-      const hit = rows.find(r =>
-        Number(r.day_of_week) === dow && Number(r.hour_of_day) === hora)
-      const count = Number(hit?.washes) || 0
+      const count = porCelda.get(`${dow}:${hora}`) ?? 0
       return { hour: etiquetaHora(hora), count, intensity: count / max }
     }),
   }))
@@ -923,6 +939,12 @@ export function DashboardPage() {
     return mejor ? `Pico: ${mejor.hora} · ${mejor.dia} (${mejor.count} lavados)` : null
   })()
 
+  // El total del mapa, a la vista. Sin esto, «¿cuadra con lo que dice la base?»
+  // se contesta sumando celdas a mano — que es como se encontró que faltaba
+  // una máquina.
+  const totalMapa = heatmapRows.reduce(
+    (suma, fila) => suma + fila.cells.reduce((s, c) => s + c.count, 0), 0)
+
   return (
     <div className="page-inner">
 
@@ -1097,7 +1119,10 @@ export function DashboardPage() {
             Mapa de calor · lavados por hora
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-            {picoLabel ?? 'Sin lavados registrados todavía'}
+            {totalMapa > 0
+              ? `${totalMapa} ${totalMapa === 1 ? 'lavado' : 'lavados'} en total${
+                  picoLabel ? ' · ' + picoLabel.toLowerCase() : ''}`
+              : 'Sin lavados registrados todavía'}
           </div>
         </div>
         <Heatmap rows={heatmapRows} />
