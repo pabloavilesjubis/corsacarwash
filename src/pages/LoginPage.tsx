@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
-import { CorsaLogo } from '../components/ui/CorsaLogo'
+import { CorsaLogoCompleto } from '../components/ui/CorsaLogoCompleto'
 
 export function LoginPage() {
   const { signIn, session, loading } = useAuth()
@@ -25,10 +25,11 @@ export function LoginPage() {
   return (
     <div className="login-page">
       <div className="login-card">
-        {/* Logo */}
+        {/* El logo completo, tal como está en el arte: símbolo, CORSA y
+            CARWASH en una sola pieza. Antes eran el símbolo y un <span> con
+            la palabra al lado, que es un parecido y no la marca. */}
         <div className="login-logo">
-          <CorsaLogo size={38}/>
-          <span className="login-logo-text">CORSA</span>
+          <CorsaLogoCompleto width={190}/>
         </div>
         <p className="login-subtitle">Sistema Operativo Digital</p>
 

@@ -6,13 +6,19 @@
 |---|---|
 | `corsa-logo-completo.png` | El arte como llegó: símbolo + «CORSA» + «CARWASH» |
 | `corsa-brandmark.svg` | Sólo el símbolo, vectorizado del anterior |
+| `corsa-logo-completo.svg` | El bloque entero —símbolo + CORSA + CARWASH— vectorizado, huecos de las letras incluidos |
 | `CORSA Brand Application Design.zip` | Bundle de diseño de pantallas. **No es la marca** — traía un boceto de dos píldoras que no corresponde |
 
 ## De dónde sale lo que ve el usuario
 
-Todo —el favicon, los cinco iconos del PWA, el badge de las notificaciones y
-el logo del riel lateral— sale de **`src/brand/brandmark.ts`**, que contiene el
-path vectorizado.
+| Dónde aparece | De dónde sale |
+|---|---|
+| Favicon, iconos del PWA, badge de notificaciones, logo del riel | `src/brand/brandmark.ts` — sólo el símbolo |
+| Pantalla de ingreso | `src/brand/logoCompleto.ts` — el bloque entero |
+
+Están en archivos separados a propósito: el bloque completo pesa unos 32 KB de
+path y sólo se usa para ingresar. La pantalla de ingreso se carga por separado,
+así que ese peso no entra en el paquete principal.
 
 ```bash
 npm i --no-save sharp
