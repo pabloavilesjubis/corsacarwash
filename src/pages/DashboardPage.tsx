@@ -6,6 +6,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
+import { useTheme } from '../contexts/ThemeContext'
 import { hoyLocal, inicioDelDiaISO, sumarDias, formatearFecha } from '../utils/fecha'
 
 // ─── Types ────────────────────────────────────────────────────
@@ -101,6 +102,27 @@ function heatColor(intensity: number): string {
  * Sin lavados registrados la grilla queda vacía: no se dibuja un patrón
  * plausible, que es lo que hacía la primera versión con pesos inventados.
  */
+/**
+ * Qué tinta lleva el número dentro de una celda del mapa de calor.
+ *
+ * La celda va de casi transparente a color pleno, así que una sola tinta se
+ * pierde en uno de los dos extremos. Y el punto donde hay que cambiar NO es
+ * el mismo en los dos temas: en claro la celda intensa es tinta oscura, en
+ * oscuro es lima brillante. O sea que la inversión va al revés.
+ *
+ * Los dos umbrales salen de calcular el contraste WCAG a lo largo de toda la
+ * escala y quedarse con el corte que deja mejor el peor punto: 4.66 en claro
+ * y 4.64 en oscuro, los dos sobre el mínimo de 4.5. Con tintas «casi» blanco
+ * y «casi» negro en vez de puras, el peor punto caía a 3.97 — de ahí que acá
+ * vayan puras y no los grises del tema.
+ */
+function heatInk(intensidad: number, esOscuro: boolean): string {
+  const corte = esOscuro ? 0.42 : 0.62
+  const intensa = intensidad > corte
+  if (esOscuro) return intensa ? '#000000' : '#FFFFFF'
+  return intensa ? '#FFFFFF' : '#000000'
+}
+
 function buildHeatmapFrom(rows: any[]): { label: string; cells: HourCell[] }[] {
   const max = Math.max(1, ...rows.map(r => Number(r.washes) || 0))
   // La vista devuelve el dow de Postgres (0 = domingo); la grilla arranca en
@@ -511,6 +533,7 @@ function BarChart7Days({ items }: { items: DailySummary[] }) {
 
 function Heatmap({ rows }: { rows: { label: string; cells: HourCell[] }[] }) {
   const [tooltip, setTooltip] = useState<{ label: string; hour: string; count: number } | null>(null)
+  const { isDark } = useTheme()
   return (
     <div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -531,10 +554,28 @@ function Heatmap({ rows }: { rows: { label: string; cells: HourCell[] }[] }) {
                     background: heatColor(cell.intensity),
                     cursor: 'default',
                     transition: 'transform 0.1s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: heatInk(cell.intensity, isDark),
+                    fontSize: 11,
+                    fontWeight: 700,
+                    fontVariantNumeric: 'tabular-nums',
+                    lineHeight: 1,
+                    // Con celdas angostas —el teléfono, o una semana completa
+                    // en pantalla— un número de dos cifras desbordaría y
+                    // ensancharía la fila entera.
+                    overflow: 'hidden',
                   }}
                   onMouseOver={e => { (e.currentTarget as HTMLDivElement).style.transform = 'scale(1.3)' }}
                   onMouseOut={e => { (e.currentTarget as HTMLDivElement).style.transform = 'scale(1)' }}
-                />
+                >
+                  {/* Las horas sin lavados van vacías. Una grilla sembrada de
+                      ceros es ruido: la celda pálida ya dice «acá no pasó
+                      nada», y el cero compite por la mirada con los números
+                      que sí importan. */}
+                  {cell.count > 0 ? cell.count : ''}
+                </div>
               ))}
             </div>
           </div>
