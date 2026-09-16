@@ -1,27 +1,31 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"
-     role="img" aria-label="CORSA">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="CORSA">
   <!--
-    El brandmark de CORSA, tal como está definido en el bundle de marca: dos
-    píldoras inclinadas que se entrelazan, la segunda en el naranja.
+    CORSA — brandmark para la pestaña del navegador.
 
-    Generado por scripts/generar-iconos.mjs junto con los iconos del PWA y el
-    badge de las notificaciones. Si hay que cambiar la marca, se cambia ahí y
-    se regenera todo: que cada icono tenga su propia copia del dibujo es
-    exactamente como el favicon terminó con las dos píldoras blancas.
+    El anterior era un rayo morado que venía de la plantilla del proyecto y no
+    tenía nada que ver con la marca.
+
+    Dos decisiones para que se lea a 16 px, que es el tamaño real de una
+    pestaña: el trazo va grueso (5.4 en un lienzo de 64, ≈1.3 px reales) porque
+    a ese tamaño un trazo fino desaparece, y el fondo es la teja verde y no
+    transparente — sobre la barra clara de Chrome, un mark blanco sin fondo se
+    vuelve invisible.
   -->
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="fondo" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#12564A"/>
       <stop offset="1" stop-color="#06322A"/>
     </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="14" fill="url(#g)"/>
-  <g transform="translate(1.6000000000000014 14.817391304347826) scale(1.3217391304347825) translate(3 1)">
-    <g fill="none" stroke-width="2.4" stroke-linejoin="round">
-      <rect x="1"  y="4" width="20" height="16" rx="8"
-            transform="rotate(-18 11 12)" stroke="#FFFFFF"/>
-      <rect x="19" y="4" width="20" height="16" rx="8"
-            transform="rotate(-18 29 12)" stroke="#FF6A28"/>
-    </g>
+
+  <rect width="64" height="64" rx="14" fill="url(#fondo)"/>
+
+  <!-- El mark: dos píldoras inclinadas que se entrelazan. Mismas proporciones
+       que el logo del riel lateral (CorsaLogo), para que sean la misma marca
+       y no dos dibujos parecidos. -->
+  <g transform="translate(5.6 15.8) scale(1.36)" fill="none" stroke="#FFFFFF"
+     stroke-width="4" stroke-linejoin="round">
+    <rect x="1" y="4" width="20" height="16" rx="8" transform="rotate(-18 11 12)"/>
+    <rect x="19" y="4" width="20" height="16" rx="8" transform="rotate(-18 29 12)"/>
   </g>
 </svg>
