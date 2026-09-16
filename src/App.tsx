@@ -32,6 +32,7 @@ const TicketPreviewPage = lazy(() => import('./pages/TicketPreviewPage').then(m 
 // Banco de trabajo del modelo móvil. También sólo en desarrollo: monta la app
 // dentro de marcos del tamaño de cada teléfono.
 const DisenadorPage = lazy(() => import('./pages/dev/DisenadorPage').then(m => ({ default: m.DisenadorPage })))
+const PantallaPage = lazy(() => import('./pages/dev/PantallaPage').then(m => ({ default: m.PantallaPage })))
 
 // Pantallas con versión de teléfono. adaptativa() elige una u otra por ancho,
 // por dentro del ScreenGuard: el permiso se verifica una sola vez, arriba, y
@@ -88,6 +89,12 @@ export default function App() {
               {import.meta.env.DEV && (
                 <Route path="/dev/disenador" element={<DisenadorPage/>}/>
               )}
+              {/* Ésta SÍ va en producción: el problema a diagnosticar ocurre en
+                  el teléfono contra el CORSA desplegado, y una herramienta que
+                  sólo existe en desarrollo no sirve para eso. No expone nada
+                  —sólo mide la pantalla del propio aparato— y no pide sesión,
+                  porque el error puede estar antes de poder entrar. */}
+              <Route path="/dev/pantalla" element={<PantallaPage/>}/>
 
               {/* Protected — with AppShell.
                   Cada ruta pasa por ScreenGuard: sin el permiso de su pantalla

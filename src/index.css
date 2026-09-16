@@ -96,6 +96,33 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body, #root { height: 100%; }
 
+/*
+ * Apagar el inflado automático de texto de iOS.
+ *
+ * Safari agranda por su cuenta el texto de los bloques que considera
+ * estrechos, y el meta viewport NO lo desactiva. Chrome en Android sí lo
+ * apaga cuando hay viewport declarado. Ése es el motivo de que la misma
+ * pantalla se vea más grande en iPhone que en Android: no es el diseño, es
+ * que iOS está reescribiendo los tamaños de fuente.
+ *
+ * Con 100% el texto mide lo que dice el CSS, y el usuario sigue pudiendo
+ * agrandarlo desde los ajustes del sistema —que es distinto: eso es una
+ * decisión suya, esto era el navegador decidiendo solo.
+ */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+
+  /* Las zonas seguras, expuestas como variables para poder leerlas desde JS.
+     env() sólo se puede usar dentro de una declaración CSS; asignarlo a una
+     custom property es la única forma de que getComputedStyle las vea, y sin
+     eso /dev/pantalla informaría cero en un iPhone con isla dinámica. */
+  --sa-top: env(safe-area-inset-top, 0px);
+  --sa-right: env(safe-area-inset-right, 0px);
+  --sa-bottom: env(safe-area-inset-bottom, 0px);
+  --sa-left: env(safe-area-inset-left, 0px);
+}
+
 body {
   font-family: var(--font-body);
   background: var(--canvas);
@@ -120,7 +147,12 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
    una superficie y no como un documento. */
 .app-shell {
   display: flex;
+  /* dvh y no vh: en iOS, 100vh mide la pantalla SIN la barra del navegador,
+     así que la app queda más alta de lo que se ve y empuja el contenido
+     fuera. dvh sigue la altura real. El vh de arriba es la reserva para
+     navegadores viejos. */
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   padding: 14px;
   gap: 12px;
@@ -817,6 +849,7 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 /* ─── LOGIN ─── */
 .login-page {
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--rail-bg);
   display: flex;
   align-items: center;
