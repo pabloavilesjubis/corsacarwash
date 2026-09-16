@@ -682,7 +682,6 @@ export function DashboardPage() {
   const [dailySales, setDailySales] = useState<DailySummary[]>([])
   const [heatmapRows, setHeatmapRows] = useState<{ label: string; cells: HourCell[] }[]>([])
   const [loading, setLoading] = useState(false)
-  const [activeOrders, setActiveOrders] = useState(0)
   const [cashAlert, setCashAlert] = useState<{ difference: number } | null>(null)
   const [voucherStats, setVoucherStats] = useState({ revenue: 0, sold: 0, redeemed: 0 })
   const [machines, setMachines] = useState<MachineCard[]>([])
@@ -794,9 +793,6 @@ export function DashboardPage() {
         sold: Number(totales?.voucher_sales ?? 0),
         redeemed: Number(totales?.vouchers_redeemed ?? 0),
       })
-      setActiveOrders((orders ?? []).filter(
-        (o: any) => o.order_kind === 'service' && !['delivered', 'cancelled'].includes(o.status)
-      ).length)
 
       // Desglose por servicio del día.
       // No se usa v_service_performance: esa vista agrupa por MES, y la
@@ -917,6 +913,17 @@ export function DashboardPage() {
   // la máquina hizo y la caja no cobró.
   const totalLavadosPlc = machines.reduce((acc, m) => acc + (m.washes_today ?? 0), 0)
 
+  // Lavados que las máquinas hicieron y la caja no registró: la diferencia
+  // entre los dos KPI, y la razón por la que vale la pena tener los dos —uno
+  // mide el PLC y el otro la facturación.
+  //
+  // Sólo tiene sentido si la caja está en uso. Con cero facturado, la brecha
+  // es igual al total y la tarjeta diría «33 sin cobrar» todos los días
+  // mientras el local no use el POS: una alarma que suena siempre deja de
+  // significar algo.
+  const facturados = kpis?.completed_orders ?? 0
+  const brechaConCaja = facturados > 0 ? Math.max(0, totalLavadosPlc - facturados) : 0
+
   // Labels
   const todayLabel = formatearFecha(new Date(), { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
   const firstName = (profile as any)?.first_name ?? 'equipo'
@@ -993,10 +1000,24 @@ export function DashboardPage() {
           value={kpis ? fmt(kpis.avg_ticket) : '—'}
           trend={kpis && kpis.avg_ticket > 25 ? { val: 'Sobre meta US$25', up: true } : null}
         />
+        {/* Lo que de verdad hicieron las máquinas hoy, sumando las dos.
+            Reemplaza a «Órdenes activas», que contaba órdenes de taller — un
+            flujo que este local no usa, así que marcaba cero todos los días y
+            ocupaba el lugar de un dato real.
+
+            Con máquinas sin reportar muestra «—» y no «0»: que no haya datos
+            y que no se haya lavado nada son cosas distintas, y a las siete de
+            la mañana un cero es normal mientras que un gateway caído no. */}
         <KpiCard
-          label="Órdenes activas"
-          value={String(activeOrders)}
-          sub="en proceso ahora · tiempo real"
+          label="Servicios brindados"
+          value={machines.length ? String(totalLavadosPlc) : '—'}
+          sub={
+            machines.length === 0
+              ? 'sin lectura de las máquinas'
+              : brechaConCaja > 0
+                ? `${brechaConCaja} sin cobrar en caja`
+                : `${machines.length === 1 ? 'la máquina' : `las ${machines.length} máquinas`} · lectura del PLC`
+          }
         />
       </div>
 
