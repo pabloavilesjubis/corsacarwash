@@ -65,3 +65,17 @@ verify_jwt = true
 # registra un error que parece «clave equivocada» cuando en realidad la clave
 # nunca llegó a compararse.
 verify_jwt = false
+
+[functions.push-dispatch]
+# No: a esta función la llaman tres clientes distintos y sólo uno de ellos es
+# un usuario de Supabase.
+#
+#   · el cron y el trigger de la base, que no tienen sesión y se identifican
+#     con X-Dispatch-Key;
+#   · el navegador pidiendo la clave pública VAPID, sin autenticar;
+#   · el usuario, para el push de prueba, con su JWT.
+#
+# Con verify_jwt = true, la plataforma rechazaría los dos primeros antes de
+# ejecutar una línea de nuestro código. La verificación de los tres casos está
+# dentro del index.ts, donde se puede distinguir cuál es cuál.
+verify_jwt = false

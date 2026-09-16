@@ -101,6 +101,7 @@ npm run dev
 - [BUSINESS_RULES.md](docs/BUSINESS_RULES.md) — Reglas de negocio CORSA
 - [API.md](docs/API.md) — RPCs y funciones disponibles
 - [DEPLOYMENT.md](docs/DEPLOYMENT.md) — Guía de deployment
+- [NOTIFICACIONES_PUSH.md](docs/NOTIFICACIONES_PUSH.md) — Push en la PWA: despliegue, activación en iPhone/Android y la lógica del cierre del día
 - [PHASE_2_FRONTEND_HANDOFF.md](docs/PHASE_2_FRONTEND_HANDOFF.md) — Handoff para Fase 2
 
 ## Seguridad

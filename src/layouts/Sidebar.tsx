@@ -4,6 +4,7 @@ import { CorsaLogo } from '../components/ui/CorsaLogo'
 import { useAuth } from '../hooks/useAuth'
 import { useTheme } from '../contexts/ThemeContext'
 import { screensOfSection, type ScreenDef } from '../lib/screens'
+import { CentroNotificaciones } from '../components/CentroNotificaciones'
 import type { Branch } from '../types'
 
 // ─── Icons ─────────────────────────────────────────────────
@@ -287,6 +288,12 @@ export function Sidebar() {
       )}
 
       <div style={{ flex: 1 }}/>
+
+      {/* La campana, arriba del selector de sucursal: es lo que se mira al
+          volver a la computadora después de un rato, y el pie del riel es lo
+          único que está siempre a la vista sin importar en qué pantalla se
+          esté. El panel se abre hacia arriba por eso mismo. */}
+      <CentroNotificaciones/>
 
       {/* Branch selector */}
       <BranchSelector/>

@@ -6,6 +6,7 @@ import { ThemeProvider } from './contexts/ThemeContext'
 import { AppShell } from './layouts/AppShell'
 import { ScreenGuard, HomeRedirect } from './components/ScreenGuard'
 import { adaptativa } from './mobile/registro'
+import { PuenteNotificaciones } from './components/PuenteNotificaciones'
 
 // Lazy-loaded pages
 const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })))
@@ -22,6 +23,9 @@ const CouponsPage = lazy(() => import('./pages/CouponsPage').then(m => ({ defaul
 const SoftwarePage = lazy(() => import('./pages/SoftwarePage').then(m => ({ default: m.SoftwarePage })))
 const SegurosPage = lazy(() => import('./pages/SegurosPage').then(m => ({ default: m.SegurosPage })))
 const AnalisisMaquinasPage = lazy(() => import('./pages/AnalisisMaquinasPage').then(m => ({ default: m.AnalisisMaquinasPage })))
+const ConfiguracionPage = lazy(() => import('./pages/ConfiguracionPage').then(m => ({ default: m.ConfiguracionPage })))
+const NotificacionesPage = lazy(() => import('./pages/NotificacionesPage').then(m => ({ default: m.NotificacionesPage })))
+const CierreDiarioPage = lazy(() => import('./pages/CierreDiarioPage').then(m => ({ default: m.CierreDiarioPage })))
 // Banco de pruebas del ticket térmico. Sólo en desarrollo: no es una pantalla
 // del sistema, así que no pasa por ScreenGuard ni aparece en el sidebar.
 const TicketPreviewPage = lazy(() => import('./pages/TicketPreviewPage').then(m => ({ default: m.TicketPreviewPage })))
@@ -39,6 +43,12 @@ export default function App() {
     <BrowserRouter>
       <ThemeProvider>
         <AuthProvider>
+          {/* Sin interfaz: sincroniza la suscripción push y atiende la
+              navegación que pide el Service Worker al tocar una notificación.
+              Va adentro del router y del AuthProvider porque necesita las dos
+              cosas. */}
+          <PuenteNotificaciones/>
+
           {/* Global toasts — CORSA brand colors */}
           <Toaster
             position="top-right"
@@ -98,7 +108,15 @@ export default function App() {
                 <Route path="/payables"    element={<ScreenGuard permission="screens.payables"><PlaceholderPage/></ScreenGuard>}/>
                 <Route path="/fleets"      element={<ScreenGuard permission="screens.fleets"><FlotillasPage/></ScreenGuard>}/>
                 <Route path="/memberships" element={<ScreenGuard permission="screens.memberships"><PlaceholderPage/></ScreenGuard>}/>
-                <Route path="/settings"    element={<ScreenGuard permission="screens.settings"><PlaceholderPage/></ScreenGuard>}/>
+                <Route path="/settings"    element={<ScreenGuard permission="screens.settings"><ConfiguracionPage/></ScreenGuard>}/>
+                {/* Notificaciones cuelga de Configuración pero NO pide
+                    screens.settings: es donde cada quien administra SUS
+                    dispositivos, y un Operador que recibe avisos de las
+                    máquinas tiene que poder apagarlos. El permiso de la
+                    pantalla es el mismo con el que ve las máquinas. */}
+                <Route path="/settings/notificaciones" element={<ScreenGuard permission="plc.read"><NotificacionesPage/></ScreenGuard>}/>
+                {/* La ruta exacta a la que lleva el push de cierre. */}
+                <Route path="/dashboard/cierre-diario" element={<ScreenGuard permission="plc.read"><CierreDiarioPage/></ScreenGuard>}/>
                 <Route path="/users"       element={<ScreenGuard permission="users.manage"><UsersPage/></ScreenGuard>}/>
                 <Route path="/software"    element={<ScreenGuard permission="screens.software"><SoftwarePage/></ScreenGuard>}/>
 

@@ -19,8 +19,25 @@
          tamaños. El color de tema tiñe la barra del navegador en móvil, que
          sin él queda blanca y corta la cabecera de la app por la mitad. -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" href="/favicon.svg" />
     <meta name="theme-color" content="#06322A" />
+
+    <!-- PWA — instalable en teléfono y computadora.
+         El manifiesto es lo que hace que Chrome ofrezca instalarla y lo que
+         le da a Android el icono y el color de la app.
+
+         En iPhone el icono NO sale del manifiesto: Safari usa apple-touch-icon
+         y sólo entiende PNG, así que el SVG de la pestaña no sirve acá. Ese
+         mismo PNG es el que después aparece en cada notificación del iPhone.
+
+         apple-mobile-web-app-capable sigue haciendo falta: sin él, iOS abre la
+         app en Safari con la barra de direcciones, y en ese modo el Web Push
+         de iOS no funciona — sólo funciona instalada. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="CORSA" />
+    <meta name="mobile-web-app-capable" content="yes" />
 
     <!-- Google Fonts — Inter (preconnect for performance) -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />

@@ -50,6 +50,12 @@ export const PANTALLAS_RESPONSIVAS: readonly string[] = [
   'rain',
   // Tabla en computadora, día por día en tarjetas en el teléfono.
   'machines',
+  // Nacen responsivas: tarjetas apiladas y controles de 44 px. La de
+  // notificaciones es, además, la que más se va a usar desde el teléfono —es
+  // donde se activa el push, que sólo tiene sentido ahí.
+  'settings',
+  'notificaciones',
+  'cierre_diario',
 ]
 
 /** ¿Tiene una pantalla hecha para el teléfono? Lo consulta el ruteo. */

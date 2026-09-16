@@ -969,3 +969,145 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 .mt-6 { margin-top: 6px; }
 .mt-8 { margin-top: 8px; }
 .mt-16 { margin-top: 16px; }
+
+/* ─── CENTRO DE NOTIFICACIONES (🔔) ───
+   Vive en el riel lateral en computadora y en la cabecera del teléfono. Los
+   colores salen de los tokens y no de valores fijos: el riel es oscuro en los
+   dos temas, pero la cabecera del teléfono no, y el panel tiene que leerse en
+   los dos. */
+.corsa-notif { position: relative; }
+
+.corsa-notif__boton {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 9px 12px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: var(--radius-pill);
+  color: var(--rail-fg); font: inherit; font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: background 0.12s, color 0.12s;
+}
+.corsa-notif__boton:hover { background: rgba(255,255,255,0.12); color: var(--rail-fg-active); }
+
+/* La variante del teléfono: sólo el icono, sobre fondo claro. */
+.corsa-notif__boton.compacto {
+  position: relative;
+  width: 38px; height: 38px; padding: 0;
+  justify-content: center;
+  background: var(--subtle-bg); border: 1px solid var(--border);
+  color: var(--text-primary); border-radius: 50%;
+}
+.corsa-notif__boton.compacto:hover { background: var(--border); color: var(--text-primary); }
+
+.corsa-notif__contador {
+  margin-left: auto;
+  min-width: 20px; height: 20px; padding: 0 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--corsa-orange); color: var(--on-accent);
+  border-radius: var(--radius-pill);
+  font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+/* En el botón redondo del teléfono el contador no cabe adentro: va encima. */
+.corsa-notif__boton.compacto .corsa-notif__contador {
+  position: absolute; top: -3px; right: -3px; margin: 0;
+  border: 2px solid var(--page-bg);
+}
+
+.corsa-notif__panel {
+  position: absolute; z-index: 60;
+  bottom: calc(100% + 8px); left: 0;
+  width: min(340px, calc(100vw - 32px));
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+}
+/* En el teléfono el botón está arriba, así que el panel cae hacia abajo y se
+   alinea a la derecha para no salirse de la pantalla. */
+.corsa-notif__boton.compacto + .corsa-notif__panel {
+  bottom: auto; left: auto; top: calc(100% + 8px); right: 0;
+}
+
+.corsa-notif__cabecera {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-heading); font-weight: 600; font-size: 14px;
+  color: var(--text-primary);
+}
+.corsa-notif__marcar {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-secondary); font: inherit; font-size: 12px; font-weight: 600;
+}
+.corsa-notif__marcar:hover { color: var(--text-primary); }
+
+.corsa-notif__lista { max-height: min(420px, 60vh); overflow-y: auto; }
+
+.corsa-notif__fila {
+  display: flex; align-items: flex-start; gap: 10px;
+  width: 100%; padding: 11px 14px;
+  background: none; border: none; border-bottom: 1px solid var(--border);
+  cursor: pointer; font: inherit; text-align: left;
+}
+.corsa-notif__fila:last-child { border-bottom: none; }
+.corsa-notif__fila:hover { background: var(--subtle-bg); }
+
+.corsa-notif__icono { font-size: 16px; line-height: 1.3; flex-shrink: 0; }
+.corsa-notif__titulo {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13.5px; font-weight: 600; color: var(--text-primary);
+}
+.corsa-notif__punto {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--corsa-orange); flex-shrink: 0;
+}
+.corsa-notif__cuerpo {
+  display: block; margin-top: 2px;
+  font-size: 12.5px; color: var(--text-secondary); line-height: 1.4;
+}
+.corsa-notif__hora {
+  flex-shrink: 0; font-size: 11.5px; color: var(--text-secondary);
+  white-space: nowrap; padding-top: 2px;
+}
+
+.corsa-notif__vacio {
+  padding: 28px 20px; text-align: center;
+  font-size: 12.5px; color: var(--text-secondary); line-height: 1.6;
+}
+
+.corsa-notif__pie {
+  padding: 11px 14px;
+  background: var(--subtle-bg); border: none; border-top: 1px solid var(--border);
+  cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 600;
+  color: var(--text-secondary);
+}
+.corsa-notif__pie:hover { color: var(--text-primary); }
+
+/* ─── PANTALLA DE NOTIFICACIONES ─── */
+.corsa-disp {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.corsa-disp__nombre { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.corsa-disp__meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+
+/* Interruptor. No se usa un checkbox nativo porque a 13 px de alto en un
+   teléfono nadie le acierta; éste tiene 44 px de área táctil. */
+.corsa-switch {
+  position: relative; flex-shrink: 0;
+  width: 42px; height: 24px; padding: 0;
+  border: none; border-radius: var(--radius-pill);
+  background: var(--border); cursor: pointer;
+  transition: background 0.15s;
+}
+.corsa-switch[data-on="true"] { background: var(--corsa-green); }
+.corsa-switch::after {
+  content: ''; position: absolute; top: 3px; left: 3px;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--surface); transition: transform 0.15s;
+}
+.corsa-switch[data-on="true"]::after { transform: translateX(18px); }
+.corsa-switch:disabled { opacity: 0.45; cursor: not-allowed; }

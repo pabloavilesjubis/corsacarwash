@@ -16,6 +16,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { SCREENS, firstAccessibleScreen, type ScreenDef } from '../lib/screens'
 import { estaAdaptada } from './registro'
+import { CentroNotificaciones } from '../components/CentroNotificaciones'
 import type { Branch } from '../types'
 import './movil.css'
 import './responsivo.css'
@@ -128,7 +129,13 @@ export function MovilShell() {
     .slice(0, 4)
   const enHoja = accesibles.filter(s => !principales.includes(s))
 
-  const actual = accesibles.find(s => s.path === location.pathname)
+  // Se busca en SCREENS y no sólo en `accesibles`: las pantallas ocultas
+  // —notificaciones, cierre del día— tienen ruta y se llega a ellas desde la
+  // campana o desde un push, pero no están en el menú. Sin esto la cabecera
+  // mostraría el nombre de otra pantalla y la cáscara avisaría, falsamente,
+  // que no está adaptada al teléfono.
+  const actual = SCREENS.find(s => s.path === location.pathname && hasPermission(s.permission))
+    ?? accesibles.find(s => s.path === location.pathname)
     ?? firstAccessibleScreen(hasPermission)
   // `??` no alcanza: un first_name vacío no es null, y dejaba la cabecera
   // diciendo «Sucursal Escalón ·» con nada después.
@@ -144,9 +151,15 @@ export function MovilShell() {
             {sucursal ? `${sucursal} · ${nombre}` : nombre}
           </div>
         </div>
-        <button className="corsa-movil__avatar" onClick={() => setHoja(true)} aria-label="Menú">
-          {iniciales(nombre)}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* La campana va en la cabecera y no en la barra de abajo: las
+              cuatro de abajo son para el turno y esta se consulta, no se
+              trabaja desde ella. */}
+          <CentroNotificaciones compacto/>
+          <button className="corsa-movil__avatar" onClick={() => setHoja(true)} aria-label="Menú">
+            {iniciales(nombre)}
+          </button>
+        </div>
       </header>
 
       <main className="corsa-movil__contenido">

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <title>CORSA — sin conexión</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0; min-height: 100dvh;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 14px; padding: 24px;
+      background: #EFF2EC; color: #16191A;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif; text-align: center;
+    }
+    @media (prefers-color-scheme: dark) { body { background: #15181A; color: #F1F4EF; } }
+    img { width: 72px; height: 72px; border-radius: 20px; }
+    h1 { font-size: 19px; margin: 0; font-weight: 700; letter-spacing: -0.02em; }
+    p { margin: 0; font-size: 14px; opacity: 0.7; max-width: 32ch; line-height: 1.5; }
+    button {
+      margin-top: 6px; padding: 11px 22px; border: none; border-radius: 999px;
+      background: #16191A; color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+    }
+    @media (prefers-color-scheme: dark) { button { background: #DFF56B; color: #16191A; } }
+  </style>
+</head>
+<body>
+  <img src="/icons/corsa-192.png" alt=""/>
+  <h1>Sin conexión</h1>
+  <!-- El dato que importa acá no es «no hay Internet» sino que las máquinas
+       siguen trabajando igual: el gateway guarda todo y lo sube después. -->
+  <p>CORSA necesita conexión para mostrar la operación. Las máquinas siguen
+     funcionando y el gateway guarda lo que pase hasta que vuelva la red.</p>
+  <button onclick="location.reload()">Reintentar</button>
+</body>
+</html>

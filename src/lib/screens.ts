@@ -58,6 +58,12 @@ export const SCREENS: readonly ScreenDef[] = [
   { key: 'fleets',      path: '/fleets',      label: 'Flotillas corporativas',   permission: 'screens.fleets',      section: 'administracion' },
   { key: 'memberships', path: '/memberships', label: 'Membresías',               permission: 'screens.memberships', section: 'administracion' },
   { key: 'settings',    path: '/settings',    label: 'Configuración',            permission: 'screens.settings',    section: 'administracion' },
+  // Las dos que siguen no van en el menú: se llega a ellas desde
+  // Configuración, desde la campana y desde una notificación. Están acá igual
+  // porque la cáscara del teléfono saca de este registro el título de la
+  // cabecera, y sin su entrada mostraría el nombre de otra pantalla.
+  { key: 'notificaciones', path: '/settings/notificaciones', label: 'Notificaciones',   permission: 'plc.read',            section: 'administracion', hidden: true },
+  { key: 'cierre_diario',  path: '/dashboard/cierre-diario', label: 'Cierre del día',   permission: 'plc.read',            section: 'administracion', hidden: true },
   { key: 'users',       path: '/users',       label: 'Usuarios y roles',         permission: 'users.manage',        section: 'administracion' },
   { key: 'software',    path: '/software',    label: 'Software',                 permission: 'screens.software',    section: 'administracion' },
 ] as const

@@ -92,7 +92,24 @@ Inventory     → products, inventory_stock (ledger-based)
 Fiscal        → invoices, fiscal_documents (DTE placeholder)
 Analytics     → views, KPI RPCs
 Audit         → audit_logs (auto-triggered)
+PLC           → plc_gateways, plc_machine_events, plc_wash_cycles, plc_machine_status
+Notificaciones→ notification_events, push_subscriptions, notification_deliveries,
+                machine_error_incidents, daily_closes  (ver NOTIFICACIONES_PUSH.md)
 ```
+
+### Notificaciones
+
+El módulo de notificaciones **no detecta hechos: los observa**. Cuelga de
+triggers sobre `plc_wash_cycles`, `plc_machine_events` y
+`plc_gateway_heartbeats`, que ya son la fuente de verdad, en lugar de repetir la
+lógica de detección de lavados. Eso también lo hace independiente de cuál de las
+dos rutas de ingesta esté activa.
+
+La forma es `evento → regla → destinatario → canal → entrega`, con el canal en
+una tabla: agregar SMS o WhatsApp no toca nada de lo que detecta eventos. La
+protección contra duplicados no es código sino restricciones —
+`notification_events.idempotency_key` UNIQUE, un índice único parcial por
+incidente abierto, y la PK de `daily_closes`.
 
 ## Key Design Decisions
 
