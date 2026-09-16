@@ -18,7 +18,11 @@
  * se muestra cuando se navega sin red.
  */
 
-const VERSION = 'corsa-v1'
+// Subir esta versión borra las cachés anteriores al activarse. Se subió al
+// regenerar los iconos desde el brandmark real: no porque el Service Worker
+// los cachee —no lo hace— sino para que no quede nada de la versión anterior
+// dando vueltas.
+const VERSION = 'corsa-v2'
 const CACHE_OFFLINE = `${VERSION}-offline`
 const PAGINA_OFFLINE = '/offline.html'
 
