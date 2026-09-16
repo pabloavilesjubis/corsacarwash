@@ -1,6 +1,6 @@
 import React from 'react'
 import { NavLink } from 'react-router-dom'
-import { CorsaLogo } from '../components/ui/CorsaLogo'
+import { CorsaLogoCompleto } from '../components/ui/CorsaLogoCompleto'
 import { useAuth } from '../hooks/useAuth'
 import { useTheme } from '../contexts/ThemeContext'
 import { screensOfSection, type ScreenDef } from '../lib/screens'
@@ -259,10 +259,12 @@ export function Sidebar() {
 
   return (
     <aside className="sidebar">
-      {/* Logo */}
+      {/* El logo completo, la misma pieza que en la pantalla de ingreso.
+          Antes era el símbolo con la palabra en HTML al lado: el bloqueo entre
+          símbolo, CORSA y CARWASH es parte del logo, y rearmarlo con CSS da un
+          parecido. */}
       <div className="sidebar-logo">
-        <CorsaLogo size={34}/>
-        <span className="sidebar-logo-text">CORSA</span>
+        <CorsaLogoCompleto width={160}/>
       </div>
 
       {/* Navegación — derivada de src/lib/screens.ts y filtrada por permisos.

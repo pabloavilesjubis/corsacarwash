@@ -144,9 +144,10 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 
 .sidebar-logo {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 4px 8px;
+  justify-content: center;
+  padding: 8px 4px 12px;
+  /* El logo hereda este color; el riel es oscuro. */
+  color: #fff;
 }
 .sidebar-logo-text {
   font-family: var(--font-heading);
