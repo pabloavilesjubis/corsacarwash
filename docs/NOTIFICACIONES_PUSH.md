@@ -253,6 +253,22 @@ update public.corsa_notification_config
 
 ## 5. Despliegue
 
+> **Atajo.** Los pasos 5.2 a 5.4, más el `pg_net` y el
+> `corsa_configurar_despacho()` del 5.5, los hace `./scripts/desplegar-push.sh`
+> de una vez: genera el par VAPID **sólo si todavía no hay uno**, carga los
+> secretos sin que la privada pase por la terminal ni por el disco, despliega la
+> función y comprueba que `/vapid-public-key` responda 200. Se puede correr las
+> veces que haga falta: si las claves ya están, no las toca.
+>
+> El `PUSH_DISPATCH_SECRET` sí lo rota cuando hace falta, y es a propósito:
+> tiene que estar en la función **y** en la base, `secrets list` sólo muestra un
+> digest, y un secreto ya cargado ya no se puede volver a leer. Rotarlo no
+> cuesta nada —no está atado a ningún dispositivo, al revés que VAPID—.
+>
+> Antes hay que hacer `supabase login` a mano — abre el navegador y no se puede
+> automatizar. El paso 5.1 (la migración) sigue siendo manual; el script avisa
+> si la base se quedó atrás.
+
 ### 5.1 Correr la migración
 
 `supabase/migrations/0042_notificaciones_push.sql` en el SQL Editor.

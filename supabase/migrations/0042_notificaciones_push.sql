@@ -104,6 +104,15 @@ create table if not exists public.corsa_notification_config (
 comment on table public.corsa_notification_config is
   'Parámetros de operación del módulo de notificaciones. Una fila por organización.';
 
+-- `create table if not exists` no agrega columnas a una tabla que ya existe:
+-- si una versión anterior de esta migración ya creó la tabla, el bloque de
+-- arriba no hace absolutamente nada y la columna nueva nunca aparece. No falla
+-- —que es lo peor— y el error sale mucho después, en la primera función que la
+-- nombra. Cada columna agregada después de la primera versión necesita su
+-- `alter` explícito acá abajo.
+alter table public.corsa_notification_config
+  add column if not exists ultima_evaluacion_cierre_at timestamptz;
+
 alter table public.corsa_notification_config enable row level security;
 
 drop policy if exists "corsa_notification_config_select" on public.corsa_notification_config;
@@ -127,17 +136,45 @@ on conflict (organization_id) do nothing;
 -- Devuelve SIEMPRE una fila, con los valores de arranque si nadie configuró
 -- nada. Quien la llama nunca se queda sin parámetros — que sería la forma de
 -- que el módulo dejara de funcionar en silencio.
+-- Los valores de arranque se asignan POR NOMBRE y no con un `row(...)` posicional.
+-- Un literal posicional casteado al tipo de la tabla obliga a que la lista de
+-- valores tenga exactamente las mismas columnas, en el mismo orden, para
+-- siempre: agregar una columna lo rompe con «cannot cast type record … Input
+-- has too many columns», y el error no aparece acá sino en la primera consulta
+-- que llame a esta función. Por nombre, una columna nueva simplemente queda
+-- null hasta que alguien decida qué valor de arranque tiene.
 create or replace function public.corsa_config_notificaciones(p_org uuid)
 returns public.corsa_notification_config
-language sql
+language plpgsql
 stable
 security definer
 set search_path = public
 as $$
-  select coalesce(c, row(p_org, true, 45, '14:00'::time, '23:30'::time, 90, 5, 30, false, null, now())::public.corsa_notification_config)
-    from (select 1) _
-    left join public.corsa_notification_config c on c.organization_id = p_org
-$$;
+declare
+  v public.corsa_notification_config;
+begin
+  select * into v
+    from public.corsa_notification_config
+   where organization_id = p_org;
+
+  if found then
+    return v;
+  end if;
+
+  v.organization_id             := p_org;
+  v.enabled                     := true;
+  v.cierre_ventana_minutos      := 45;
+  v.cierre_hora_minima          := '14:00'::time;
+  v.cierre_hora_tope            := '23:30'::time;
+  v.cierre_inactividad_minutos  := 90;
+  v.gateway_offline_minutos     := 5;
+  v.ventana_frescura_minutos    := 30;
+  v.simulacion_habilitada       := false;
+  v.ultima_evaluacion_cierre_at := null;
+  v.updated_at                  := now();
+
+  return v;
+end $$;
 
 grant execute on function public.corsa_config_notificaciones(uuid) to authenticated, service_role;
 
@@ -1937,7 +1974,16 @@ grant execute on function public.corsa_push_resultado(jsonb) to service_role;
 --     otro usuario —la RLS, correctamente, no lo dejaría— y en el mismo
 --     movimiento verifica que el llamante tenga sesión y le pone SU id, no el
 --     que venga en el pedido.
+--     El `drop` de abajo es por una versión anterior de esta misma función que
+--     quedó viva en la base: no tenía `p_reactivar`. `create or replace` no la
+--     reemplaza —una firma distinta es una función distinta— sino que deja las
+--     dos, y ahí `corsa_registrar_dispositivo` deja de ser un nombre único.
+--     Una llamada por nombre de parámetro que no mencione `p_reactivar` encaja
+--     en las dos y Postgres la rechaza por ambigua, así que hay que sacarla.
 -- ─────────────────────────────────────────────
+drop function if exists public.corsa_registrar_dispositivo(
+  text, text, text, text, text, text, boolean);
+
 create or replace function public.corsa_registrar_dispositivo(
   p_endpoint    text,
   p_p256dh      text,
