@@ -106,6 +106,70 @@ export function urlDelDespachador(ruta = ''): string {
   return `${base}/functions/v1/push-dispatch${ruta}`
 }
 
+// ─── Rastro ──────────────────────────────────────────────────
+
+/**
+ * Las etapas de la activación, en orden. Un fallo sin etapa es imposible de
+ * diagnosticar: «Failed to fetch» puede venir de la clave VAPID o del registro
+ * en el backend, y son dos problemas que no se parecen en nada.
+ */
+export type EtapaPush =
+  | 'capacidades'
+  | 'permission'
+  | 'service worker ready'
+  | 'vapid key'
+  | 'subscription created'
+  | 'sending subscription to backend'
+  | 'backend response'
+  | 'subscription saved'
+
+/**
+ * El detalle completo de un fallo. `name`, `message` y `stack` del error real,
+ * más la URL y el código HTTP cuando los hay.
+ *
+ * `Failed to fetch` solo no dice nada: es el mensaje que tira el navegador para
+ * TODO lo que no llegó a ser una respuesta —DNS, TLS, CORS, un preflight que no
+ * devolvió 2xx—. Sin la URL al lado, no hay forma de saber cuál de esas cosas
+ * pasó ni contra qué servidor.
+ */
+export interface ErrorPush {
+  etapa: EtapaPush
+  name: string
+  message: string
+  stack?: string
+  url?: string
+  status?: number
+  /** Qué hacer, cuando se puede deducir. */
+  sugerencia?: string
+}
+
+/**
+ * El rastro se imprime SIEMPRE, no sólo en desarrollo.
+ *
+ * Es deliberado: el fallo que hay que diagnosticar ocurre en el teléfono contra
+ * el CORSA desplegado, donde `import.meta.env.DEV` es false y un log de
+ * desarrollo no existiría. Son seis líneas por clic en «Activar»; el ruido es
+ * nada al lado de tener que conectar el teléfono por USB para ver por qué no
+ * funciona.
+ */
+function paso(etapa: EtapaPush, extra?: unknown): void {
+  if (extra === undefined) console.info(`[PUSH] ${etapa}`)
+  else console.info(`[PUSH] ${etapa}`, extra)
+}
+
+function fallo(etapa: EtapaPush, err: unknown, extra: Partial<ErrorPush> = {}): ErrorPush {
+  const e = err instanceof Error ? err : new Error(String(err))
+  const detalle: ErrorPush = {
+    etapa,
+    name: e.name,
+    message: e.message,
+    stack: e.stack,
+    ...extra,
+  }
+  console.error(`[PUSH] ✗ ${etapa}`, detalle)
+  return detalle
+}
+
 /**
  * La clave pública VAPID.
  *
@@ -117,26 +181,72 @@ export function urlDelDespachador(ruta = ''): string {
  */
 let claveEnCache: string | null = null
 
+/** De dónde salió la clave: sirve para el diagnóstico en pantalla. */
+export let origenDeLaClave: 'build' | 'funcion' | null = null
+
 export async function claveVapid(): Promise<string> {
   if (claveEnCache) return claveEnCache
 
   const deBuild = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined
   if (deBuild) {
     claveEnCache = deBuild
+    origenDeLaClave = 'build'
+    paso('vapid key', { origen: 'VITE_VAPID_PUBLIC_KEY', largo: deBuild.length })
     return deBuild
   }
 
-  // La anon key va aunque la función no exija sesión: es lo que la pasarela de
-  // Supabase espera, y sin ella algunos proyectos responden 401 antes de que la
-  // función llegue a ejecutarse.
-  const res = await fetch(urlDelDespachador('/vapid-public-key'), {
-    headers: { apikey: import.meta.env.VITE_SUPABASE_ANON_KEY as string },
-  })
-  if (!res.ok) throw new Error('El servidor no tiene configuradas las claves VAPID')
+  const url = urlDelDespachador('/vapid-public-key')
+
+  // SIN cabeceras. `apikey` no está en la lista blanca de CORS, así que basta
+  // con mandarla para que el navegador haga un preflight OPTIONS antes del GET.
+  //
+  // Y ahí está el problema que esto arregla: si la función no está desplegada,
+  // la pasarela de Supabase responde el preflight con 404. Un preflight que no
+  // devuelve 2xx es, para el navegador, un error de red: `fetch` rechaza con
+  // «TypeError: Failed to fetch» y NUNCA se llega a ver el 404. El síntoma
+  // oculta la causa.
+  //
+  // Sin cabeceras el GET es una petición simple, no hay preflight, y un 404
+  // llega como lo que es: un 404 que se puede leer y explicar.
+  let res: Response
+  try {
+    res = await fetch(url, { method: 'GET' })
+
+    // Cinturón: si algún día la pasarela exigiera la anon key, el GET simple
+    // daría 401. Se reintenta CON la cabecera, aceptando el preflight — que en
+    // ese escenario sí va a responder 2xx, porque la función existe.
+    if (res.status === 401 || res.status === 403) {
+      res = await fetch(url, {
+        headers: { apikey: import.meta.env.VITE_SUPABASE_ANON_KEY as string },
+      })
+    }
+  } catch (err) {
+    const e = err instanceof Error ? err : new Error(String(err))
+    throw Object.assign(
+      new Error(`No se pudo contactar a ${url} (${e.name}: ${e.message})`),
+      {
+        url,
+        sugerencia: 'Puede ser que la Edge Function push-dispatch no esté desplegada, '
+                  + 'que la respuesta no traiga CORS, o que no haya red.',
+      })
+  }
+
+  if (!res.ok) {
+    const pista = res.status === 404
+      ? 'La Edge Function push-dispatch no está desplegada. Corré: supabase functions deploy push-dispatch'
+      : 'El servidor no tiene configuradas las claves VAPID (VAPID_PUBLIC_KEY).'
+    throw Object.assign(new Error(pista), { url, status: res.status })
+  }
+
   const { publicKey } = await res.json()
-  if (!publicKey) throw new Error('El servidor no devolvió la clave pública')
+  if (!publicKey) {
+    throw Object.assign(new Error('El servidor no devolvió la clave pública'),
+      { url, status: res.status })
+  }
 
   claveEnCache = publicKey
+  origenDeLaClave = 'funcion'
+  paso('vapid key', { origen: url, largo: publicKey.length })
   return publicKey
 }
 
@@ -188,7 +298,10 @@ async function registroListo(): Promise<ServiceWorkerRegistration | null> {
 export interface ResultadoActivacion {
   ok: boolean
   permiso: NotificationPermission | 'no-disponible'
+  /** Código corto para decidir qué mensaje mostrar. */
   error?: string
+  /** El detalle completo, para la pantalla de diagnóstico y la consola. */
+  detalle?: ErrorPush
 }
 
 /**
@@ -196,21 +309,34 @@ export interface ResultadoActivacion {
  */
 export async function activar(): Promise<ResultadoActivacion> {
   const cap = capacidades()
+  paso('capacidades', cap)
   if (!cap.soportado) {
     return { ok: false, permiso: cap.permiso, error: cap.motivo ?? 'sin-soporte' }
   }
 
   const permiso = await Notification.requestPermission()
+  paso('permission', permiso)
   if (permiso !== 'granted') {
     return { ok: false, permiso, error: 'permiso-denegado' }
   }
 
-  const registro = await registroListo()
-  if (!registro) return { ok: false, permiso, error: 'sin-service-worker' }
-
+  let etapa: EtapaPush = 'service worker ready'
   try {
+    const registro = await registroListo()
+    if (!registro) {
+      return {
+        ok: false, permiso, error: 'sin-service-worker',
+        detalle: fallo(etapa, new Error('No se pudo registrar /sw.js'),
+          { url: new URL('/sw.js', location.origin).href,
+            sugerencia: 'Verificá que /sw.js se sirva desde la raíz del dominio.' }),
+      }
+    }
+    paso('service worker ready', { scope: registro.scope, activo: Boolean(registro.active) })
+
+    etapa = 'vapid key'
     const clave = await claveVapid()
 
+    etapa = 'subscription created'
     // Puede haber una suscripción previa creada con OTRA clave VAPID —si se
     // rotaron— y en ese caso subscribe() falla con InvalidStateError. Se da de
     // baja la vieja antes de pedir la nueva.
@@ -228,14 +354,24 @@ export async function activar(): Promise<ResultadoActivacion> {
         userVisibleOnly: true,
         applicationServerKey: claveABytes(clave) as BufferSource,
       })
+    paso('subscription created', { endpoint: suscripcion.endpoint.slice(0, 60) + '…' })
 
+    etapa = 'sending subscription to backend'
     await guardarSuscripcion(suscripcion)
+
+    paso('subscription saved')
     return { ok: true, permiso }
   } catch (err) {
+    const extra = err as { url?: string; status?: number; sugerencia?: string }
     return {
       ok: false,
       permiso,
       error: err instanceof Error ? err.message : 'no-se-pudo-suscribir',
+      detalle: fallo(etapa, err, {
+        url: extra?.url,
+        status: extra?.status,
+        sugerencia: extra?.sugerencia,
+      }),
     }
   }
 }
@@ -251,7 +387,10 @@ export async function activar(): Promise<ResultadoActivacion> {
  */
 export async function guardarSuscripcion(s: PushSubscription, reactivar = true): Promise<void> {
   const json = s.toJSON()
-  const { error } = await (supabase.rpc as any)('corsa_registrar_dispositivo', {
+  const urlRpc = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/rpc/corsa_registrar_dispositivo`
+  paso('sending subscription to backend', { url: urlRpc, reactivar })
+
+  const { data, error } = await (supabase.rpc as any)('corsa_registrar_dispositivo', {
     p_endpoint: s.endpoint,
     p_p256dh: json.keys?.p256dh ?? '',
     p_auth: json.keys?.auth ?? '',
@@ -261,7 +400,27 @@ export async function guardarSuscripcion(s: PushSubscription, reactivar = true):
     p_standalone: estaInstalada(),
     p_reactivar: reactivar,
   })
-  if (error) throw new Error(error.message)
+
+  // supabase-js NO lanza: devuelve { data, error }. Un `error` acá puede ser
+  // tanto un rechazo del servidor (RLS, permiso, sesión vencida) como un fallo
+  // de red, y hay que poder distinguirlos: el `code` viene sólo en el primer
+  // caso.
+  paso('backend response', error
+    ? { ok: false, code: (error as any).code, message: error.message, details: (error as any).details }
+    : { ok: true, id: data })
+
+  if (error) {
+    const e = error as { message: string; code?: string; details?: string; hint?: string }
+    throw Object.assign(new Error(e.message), {
+      url: urlRpc,
+      name: e.code ? `PostgrestError ${e.code}` : 'PostgrestError',
+      sugerencia: e.code === 'PGRST202'
+        ? 'El RPC corsa_registrar_dispositivo no existe: falta correr la migración 0042.'
+        : e.message.includes('sesión')
+          ? 'La sesión de Supabase no llegó al servidor. Volvé a iniciar sesión.'
+          : undefined,
+    })
+  }
 }
 
 /**
@@ -361,4 +520,149 @@ export async function enviarPrueba(
   const cuerpo = await res.json().catch(() => ({}))
   if (!res.ok) return { ok: false, error: cuerpo.error ?? `Error ${res.status}` }
   return { ok: true }
+}
+
+// ─── Diagnóstico ─────────────────────────────────────────────
+
+export interface Chequeo {
+  clave: string
+  titulo: string
+  /** true = bien · false = mal · null = no aplica en este dispositivo. */
+  ok: boolean | null
+  detalle: string
+  sugerencia?: string
+}
+
+/**
+ * Revisa el camino completo, paso por paso, sin activar nada.
+ *
+ * POR QUÉ ESTO VIVE EN LA PANTALLA Y NO EN LA CONSOLA
+ * El fallo que hay que diagnosticar pasa en un teléfono contra el CORSA
+ * desplegado. Leer la consola de un Android exige un cable USB y
+ * chrome://inspect desde una computadora; en un iPhone, macOS con Safari.
+ * Un diagnóstico que sólo se ve en la consola es un diagnóstico que, en la
+ * práctica, nadie va a mirar.
+ *
+ * Todo lo que hace son lecturas: no pide permisos, no suscribe y no escribe.
+ */
+export async function diagnosticar(): Promise<Chequeo[]> {
+  const out: Chequeo[] = []
+  const cap = capacidades()
+
+  // 1 · Contexto seguro
+  out.push({
+    clave: 'contexto',
+    titulo: 'Conexión segura (HTTPS)',
+    ok: window.isSecureContext,
+    detalle: `${location.protocol}//${location.host}`,
+    sugerencia: window.isSecureContext ? undefined
+      : 'Las notificaciones necesitan https:// o localhost. Por IP de la red no funcionan.',
+  })
+
+  // 2 · Service Worker
+  let registro: ServiceWorkerRegistration | null = null
+  if ('serviceWorker' in navigator) {
+    registro = (await navigator.serviceWorker.getRegistration('/')) ?? null
+  }
+  out.push({
+    clave: 'sw',
+    titulo: 'Service Worker',
+    ok: Boolean(registro?.active),
+    detalle: registro
+      ? `scope ${registro.scope} · ${registro.active ? 'activo' : 'instalándose'}`
+      : 'no registrado',
+    sugerencia: registro ? undefined
+      : 'Recargá la página. Si sigue, verificá que /sw.js se sirva desde la raíz.',
+  })
+
+  // 3 · Soporte de Push y permiso
+  out.push({
+    clave: 'push',
+    titulo: 'API de Push',
+    ok: cap.soportado,
+    detalle: cap.soportado
+      ? `disponible · permiso: ${cap.permiso}`
+      : `no disponible (${cap.motivo}) · ${cap.esIOS ? 'iOS' : plataforma()}${cap.instalada ? ' · instalada' : ' · en el navegador'}`,
+    sugerencia: cap.motivo === 'ios-sin-instalar'
+      ? 'En iPhone hay que agregar CORSA a la pantalla de inicio y abrirla desde ahí.'
+      : undefined,
+  })
+
+  // 4 · Clave VAPID. Es la etapa donde más falla, porque depende de que la
+  //     Edge Function esté desplegada.
+  const urlVapid = urlDelDespachador('/vapid-public-key')
+  const deBuild = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined
+  if (deBuild) {
+    out.push({
+      clave: 'vapid',
+      titulo: 'Clave pública VAPID',
+      ok: true,
+      detalle: `de VITE_VAPID_PUBLIC_KEY · ${deBuild.length} caracteres`,
+    })
+  } else {
+    try {
+      const res = await fetch(urlVapid, { method: 'GET' })
+      const cuerpo = await res.json().catch(() => ({}))
+      out.push({
+        clave: 'vapid',
+        titulo: 'Clave pública VAPID',
+        ok: res.ok && Boolean(cuerpo.publicKey),
+        detalle: res.ok
+          ? `de push-dispatch · ${String(cuerpo.publicKey ?? '').length} caracteres`
+          : `HTTP ${res.status} en ${urlVapid}`,
+        sugerencia: res.status === 404
+          ? 'La Edge Function push-dispatch no está desplegada: supabase functions deploy push-dispatch'
+          : res.ok ? undefined
+            : 'Faltan los secretos VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY en la función.',
+      })
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error(String(err))
+      out.push({
+        clave: 'vapid',
+        titulo: 'Clave pública VAPID',
+        ok: false,
+        detalle: `${e.name}: ${e.message} · ${urlVapid}`,
+        sugerencia: 'No se llegó al servidor: función sin desplegar, CORS o falta de red.',
+      })
+    }
+  }
+
+  // 5 · Sesión
+  const { data: { session } } = await supabase.auth.getSession()
+  out.push({
+    clave: 'sesion',
+    titulo: 'Sesión de CORSA',
+    ok: Boolean(session),
+    detalle: session
+      ? `${session.user.email ?? session.user.id} · expira ${new Date((session.expires_at ?? 0) * 1000).toLocaleTimeString('es-SV')}`
+      : 'sin sesión',
+    sugerencia: session ? undefined : 'Volvé a iniciar sesión.',
+  })
+
+  // 6 · El backend, con la sesión puesta. Una lectura que pasa por la misma
+  //     autenticación y la misma RLS que el registro del dispositivo.
+  try {
+    const { error } = await (supabase.rpc as any)('corsa_notificaciones_recientes', { p_limite: 1 })
+    out.push({
+      clave: 'backend',
+      titulo: 'Base de datos (autenticación y RLS)',
+      ok: !error,
+      detalle: error
+        ? `${(error as any).code ?? 'error'}: ${error.message}`
+        : 'responde correctamente',
+      sugerencia: (error as any)?.code === 'PGRST202'
+        ? 'Falta correr la migración 0042 en Supabase.' : undefined,
+    })
+  } catch (err) {
+    const e = err instanceof Error ? err : new Error(String(err))
+    out.push({
+      clave: 'backend',
+      titulo: 'Base de datos (autenticación y RLS)',
+      ok: false,
+      detalle: `${e.name}: ${e.message}`,
+    })
+  }
+
+  console.info('[PUSH] diagnóstico', out)
+  return out
 }

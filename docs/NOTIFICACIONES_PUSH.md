@@ -632,6 +632,59 @@ corta **no** cierra el día.
 
 ---
 
+### «Failed to fetch» al tocar Activar
+
+Es el fallo número uno, y el mensaje **miente sobre dónde está el problema**:
+suena a que falla el teléfono y en realidad falta desplegar la Edge Function.
+
+El mecanismo, que conviene tener escrito porque no es evidente:
+
+1. Para obtener la clave VAPID, la app le pregunta a `push-dispatch`.
+2. Si esa petición lleva la cabecera `apikey` —que no está en la lista blanca
+   de CORS— el navegador manda primero un **preflight OPTIONS**.
+3. Con la función sin desplegar, la pasarela de Supabase responde el preflight
+   con **404**.
+4. Un preflight que no devuelve 2xx es, para el navegador, un error de red:
+   `fetch` rechaza con `TypeError: Failed to fetch` y **el 404 nunca se ve**.
+
+Por eso esa petición va sin cabeceras: así es una petición simple, no hay
+preflight, y el 404 llega como lo que es. La app ahora muestra la etapa, la URL
+y el código HTTP en lugar del mensaje genérico.
+
+**Comprobarlo desde la terminal, en un segundo:**
+
+```bash
+curl -i https://<ref>.supabase.co/functions/v1/push-dispatch/vapid-public-key
+```
+
+- `{"code":"NOT_FOUND"}` → falta desplegar:
+  `supabase functions deploy push-dispatch`
+- `{"error":"VAPID no está configurado"}` → faltan los secretos (paso 5.3).
+- `{"publicKey":"B..."}` → esta etapa está bien.
+
+**Desde el teléfono, sin cable:** Configuración → Notificaciones →
+**Diagnóstico → Revisar este dispositivo**. Revisa las seis cosas de las que
+depende una notificación —conexión segura, Service Worker, API de Push, clave
+VAPID, sesión y base de datos— y dice cuál falla y qué hacer. No activa ni
+escribe nada.
+
+En la consola, cada intento deja el rastro completo:
+
+```
+[PUSH] capacidades {soportado: true, …}
+[PUSH] permission granted
+[PUSH] service worker ready {scope: "https://…/", activo: true}
+[PUSH] vapid key {origen: "…", largo: 87}
+[PUSH] subscription created {endpoint: "https://fcm.googleapis.com/…"}
+[PUSH] sending subscription to backend {url: "…/rpc/corsa_registrar_dispositivo"}
+[PUSH] backend response {ok: true, id: "…"}
+[PUSH] subscription saved
+```
+
+La línea donde se corta es la etapa que falla. Si aparece
+`subscription created` y el error viene después, el problema **no** es el
+teléfono ni Web Push: es la API.
+
 ### Si no llega nada
 
 En este orden:

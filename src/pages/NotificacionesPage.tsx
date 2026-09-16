@@ -18,7 +18,7 @@ import { useAuth } from '../hooks/useAuth'
 import { formatearFechaHora } from '../utils/fecha'
 import {
   capacidades, activar, desactivar, suscripcionActual, idDeEsteDispositivo,
-  enviarPrueba, type Capacidades,
+  enviarPrueba, diagnosticar, type Capacidades, type Chequeo, type ErrorPush,
 } from '../lib/push'
 import {
   fetchDispositivos, actualizarDispositivo, eliminarDispositivo,
@@ -126,6 +126,9 @@ export function NotificacionesPage() {
   const [dispositivos, setDispositivos] = useState<Dispositivo[]>([])
   const [config, setConfig] = useState<ConfigNotificaciones | null>(null)
   const [trabajando, setTrabajando] = useState(false)
+  const [chequeos, setChequeos] = useState<Chequeo[] | null>(null)
+  const [revisando, setRevisando] = useState(false)
+  const [ultimoError, setUltimoError] = useState<ErrorPush | null>(null)
   const [cargando, setCargando] = useState(true)
 
   const puedeSimular = import.meta.env.DEV
@@ -157,20 +160,37 @@ export function NotificacionesPage() {
 
   const alActivar = async () => {
     setTrabajando(true)
+    setUltimoError(null)
     const r = await activar()
     setTrabajando(false)
 
     if (r.ok) {
       toast.success('Notificaciones activadas en este dispositivo')
+      setUltimoError(null)
       await cargar()
       return
     }
+
     if (r.error === 'permiso-denegado') {
       toast.error('El navegador bloqueó las notificaciones')
     } else {
-      toast.error('No se pudo activar: ' + (r.error ?? 'error desconocido'))
+      // El toast dice la etapa, no sólo el mensaje. «Failed to fetch» a secas
+      // manda a revisar el teléfono cuando el problema está en el servidor.
+      toast.error(r.detalle
+        ? `Falló en «${r.detalle.etapa}»`
+        : 'No se pudo activar: ' + (r.error ?? 'error desconocido'))
+      setUltimoError(r.detalle ?? null)
+      // El diagnóstico se corre solo: quien acaba de ver un error no debería
+      // tener que descubrir que existe un botón para averiguar por qué.
+      await revisar()
     }
     setCap(capacidades())
+  }
+
+  const revisar = async () => {
+    setRevisando(true)
+    setChequeos(await diagnosticar())
+    setRevisando(false)
   }
 
   const alDesactivar = async () => {
@@ -278,6 +298,76 @@ export function NotificacionesPage() {
             iOS entrega los pushes con la app cerrada, pero puede demorarlos si el teléfono está
             en modo de bajo consumo o si hace días que no se abre CORSA. No se pierden: llegan
             cuando el sistema decide despertar la app.
+          </div>
+        )}
+      </div>
+
+      {/* ── Diagnóstico ──
+          No es una pantalla de desarrollo: se ve en producción a propósito.
+          El fallo que hay que diagnosticar ocurre en un teléfono contra el
+          CORSA desplegado, y leer su consola exige un cable USB. */}
+      <div className="card">
+        <div className="card-header">
+          <span className="card-title">Diagnóstico</span>
+          <button className="btn btn-ghost" style={{ fontSize: 12.5, padding: '7px 14px' }}
+            onClick={revisar} disabled={revisando}>
+            {revisando ? 'Revisando…' : 'Revisar este dispositivo'}
+          </button>
+        </div>
+
+        {ultimoError && (
+          <div style={{
+            padding: '12px 14px', marginBottom: 12, borderRadius: 'var(--radius-sm)',
+            background: 'var(--color-danger-tint)', color: 'var(--color-danger-text)',
+          }}>
+            <div style={{ fontWeight: 600, fontSize: 13.5 }}>
+              Último fallo — etapa «{ultimoError.etapa}»
+            </div>
+            <div style={{ fontSize: 12.5, marginTop: 4, lineHeight: 1.6, wordBreak: 'break-word' }}>
+              <strong>{ultimoError.name}</strong>: {ultimoError.message}
+              {ultimoError.url && <><br/>URL: <code>{ultimoError.url}</code></>}
+              {ultimoError.status !== undefined && <><br/>HTTP {ultimoError.status}</>}
+              {ultimoError.sugerencia && <><br/>→ {ultimoError.sugerencia}</>}
+            </div>
+          </div>
+        )}
+
+        {!chequeos && !revisando && (
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+            Revisa, sin activar ni escribir nada, las seis cosas de las que depende una
+            notificación: conexión segura, Service Worker, API de Push, clave VAPID, sesión
+            y base de datos.
+          </div>
+        )}
+
+        {chequeos && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {chequeos.map(c => (
+              <div key={c.clave} style={{
+                display: 'flex', gap: 10, alignItems: 'flex-start',
+                padding: '9px 12px', borderRadius: 12,
+                background: c.ok === false ? 'var(--color-danger-tint)' : 'var(--subtle-bg)',
+              }}>
+                <span style={{ fontSize: 14, lineHeight: 1.4 }}>
+                  {c.ok === null ? '—' : c.ok ? '✅' : '❌'}
+                </span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{
+                    fontSize: 13.5, fontWeight: 600,
+                    color: c.ok === false ? 'var(--color-danger-text)' : 'var(--text-primary)',
+                  }}>
+                    {c.titulo}
+                  </div>
+                  <div style={{
+                    fontSize: 12, marginTop: 2, lineHeight: 1.5, wordBreak: 'break-word',
+                    color: c.ok === false ? 'var(--color-danger-text)' : 'var(--text-secondary)',
+                  }}>
+                    {c.detalle}
+                    {c.sugerencia && <><br/>→ {c.sugerencia}</>}
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
