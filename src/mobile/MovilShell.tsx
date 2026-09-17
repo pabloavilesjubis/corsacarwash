@@ -19,7 +19,8 @@ import { estaAdaptada } from './registro'
 import { CentroNotificaciones } from '../components/CentroNotificaciones'
 import type { Branch } from '../types'
 import './movil.css'
-import './responsivo.css'
+// responsivo.css se importa en main.tsx: tiene que existir también en la
+// pantalla de ingreso, que no monta este armazón.
 
 // ─── Iconos ──────────────────────────────────────────────────
 // Propios, y no importados del sidebar, para que el modelo móvil no dependa de

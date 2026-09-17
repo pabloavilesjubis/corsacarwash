@@ -71,19 +71,30 @@
 
   /* 16 px exactos en todo lo que se escribe: con menos, iOS hace zoom al
      enfocar el campo y deja la pantalla corrida. No es una preferencia
-     tipográfica, es la única forma de evitar ese salto. */
+     tipográfica, es la única forma de evitar ese salto.
+     
+     Y el salto no se deshace: iOS acerca al enfocar y NO vuelve a alejar al
+     salir del campo. Como la app no recarga entre pantallas, ese acercamiento
+     se queda puesto el resto de la sesión —todo se ve agrandado y, al correr
+     la vista, aparece lienzo vacío por debajo del armazón, que mide el alto de
+     la pantalla sin zoom—. Un solo campo de 13 px deja así toda la app.
+
+     POR QUÉ !important: los campos del POS y el selector de sucursal traen su
+     tamaño en estilo en línea, que gana por especificidad contra cualquier
+     selector. Este es el caso donde no puede ganar: acá el tamaño no es una
+     decisión de diseño sino el requisito para que la pantalla no se mueva.
+     Vale para el que ya existe y para el que alguien agregue mañana sin
+     acordarse de esta regla. Sigue encerrado en la media query: arriba de
+     820 px el navegador ni lo lee.
+
+     El selector cubre `input` sin type —que por omisión es texto— y también
+     los que no declaran ninguno. */
   .search-bar input,
   .corsa-input,
-  input[type="text"],
-  input[type="number"],
-  input[type="search"],
-  input[type="email"],
-  input[type="tel"],
-  input[type="date"],
-  input[type="password"],
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="submit"]):not([type="button"]),
   select,
   textarea {
-    font-size: 16px;
+    font-size: 16px !important;
   }
 
   .corsa-input,
