@@ -752,6 +752,33 @@ export function DashboardPage() {
     setLavadosPorHora(porHora)
   }, [hasPermission])
 
+  /**
+   * Mapa de calor — uso real de las máquinas, no facturación.
+   *
+   * Va con las máquinas y no con loadKPIs, que es donde estaba: loadKPIs sólo
+   * se vuelve a correr cuando cambia algo en work_orders, y un lavado del PLC
+   * no toca work_orders. O sea que el mapa quedaba congelado en la foto del
+   * momento en que se abrió la pantalla mientras las tarjetas de arriba
+   * seguían subiendo — el mapa decía 4 y las máquinas 5, y la diferencia no
+   * era un dato sino la pantalla vieja.
+   *
+   * El `or` con branch_id nulo no es un descuido: la sucursal del lavado sale
+   * del gateway que lo reportó, y un gateway al que nadie le asignó sucursal
+   * igual está adentro de este local. Dejar sus lavados afuera mostraría un
+   * mapa vacío con las máquinas trabajando.
+   */
+  const loadHeatmap = useCallback(async () => {
+    if (!branchId) return
+    const { data, error } = await (supabase as any)
+      .from('v_plc_heatmap')
+      .select('day_of_week, hour_of_day, washes')
+      .or(`branch_id.eq.${branchId},branch_id.is.null`)
+    // Un fallo acá no borra el mapa que ya está dibujado: se queda el último
+    // bueno hasta el siguiente refresco.
+    if (error) return
+    setHeatmapRows(buildHeatmapFrom(data ?? []))
+  }, [branchId])
+
   const loadKPIs = useCallback(async () => {
     if (!branchId) return
     setLoading(true)
@@ -827,18 +854,6 @@ export function DashboardPage() {
           .sort((a, b) => b.revenue - a.revenue))
       }
 
-      // Mapa de calor — uso real de las máquinas, no facturación.
-      //
-      // El `or` con branch_id nulo no es un descuido: la sucursal del lavado
-      // sale del gateway que lo reportó, y un gateway al que nadie le asignó
-      // sucursal igual está adentro de este local. Dejar sus lavados afuera
-      // mostraría un mapa vacío con las máquinas trabajando.
-      const { data: heatData } = await (supabase as any)
-        .from('v_plc_heatmap')
-        .select('day_of_week, hour_of_day, washes')
-        .or(`branch_id.eq.${branchId},branch_id.is.null`)
-      setHeatmapRows(buildHeatmapFrom(heatData ?? []))
-
       // 7-day summary
       const weekStart = sumarDias(today, -6)
 
@@ -887,15 +902,21 @@ export function DashboardPage() {
 
   useEffect(() => { loadKPIs() }, [loadKPIs])
 
-  // Las máquinas se refrescan solas: el operador deja este tablero abierto
+  // Lo que mide el PLC se refresca solo: el operador deja este tablero abierto
   // durante el turno y un número congelado desde que abrió la pantalla no
   // sirve de nada. Treinta segundos es la cadencia del heartbeat del gateway;
   // pedir más seguido no traería datos nuevos.
+  //
+  // Las tarjetas y el mapa de calor se piden juntos, en el mismo tick. Cuando
+  // iban por caminos distintos terminaban contando cosas distintas del mismo
+  // día, y quien mira el tablero no tiene cómo saber cuál de los dos está
+  // viejo.
   useEffect(() => {
-    loadMachines()
-    const t = setInterval(loadMachines, 30_000)
+    const refrescar = () => { loadMachines(); loadHeatmap() }
+    refrescar()
+    const t = setInterval(refrescar, 30_000)
     return () => clearInterval(t)
-  }, [loadMachines])
+  }, [loadMachines, loadHeatmap])
 
   // Realtime
   useEffect(() => {
