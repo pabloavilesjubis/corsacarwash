@@ -24,24 +24,30 @@
 --   estado compartido: hay miles de isolates y ninguno puede coordinar con
 --   otro. La única serialización real es la fila bloqueada de Postgres.
 --
--- SIN HUECOS: CÓMO, Y EN QUÉ SE APARTA DE ERP-PAAJ
---   La decisión tomada para CORSA es que un correlativo rechazado se
---   reutiliza, para que la numeración quede continua.
+-- UN CORRELATIVO RESERVADO NO SE RECICLA NUNCA
+--   Si Hacienda rechaza el 126, ese número queda quemado: el documento
+--   conserva su correlativo, su numeroControl, su codigoGeneracion, el motivo
+--   del rechazo y la respuesta del MH, y la venta siguiente toma el 127.
 --
---   ERP-PAAJ *parece* hacer eso, pero no lo garantiza. Su reserva calcula
---   `max(ultimo_consumido, max(reservados)) + 1`, así que sólo recupera el
---   número devuelto si era el más alto. Con dos cajas emitiendo a la vez:
+--   POR QUÉ, Y NO RECICLARLO PARA NO DEJAR HUECOS
+--   Reciclar abre una clase de fallo que de otro modo no existe: si alguna vez
+--   clasificamos como RECHAZADO algo que el MH sí recibió, entregar ese número
+--   a otra venta produce un duplicado real ante Hacienda. Nunca reciclar hace
+--   ese error imposible, y a cambio sólo cuesta un hueco en la numeración.
 --
---       caja A reserva 126 · caja B reserva 127
---       MH rechaza A (devuelve 126) · MH acepta B (consume 127)
---       siguiente venta -> 128,  y el 126 queda como HUECO
+--   El schema del MH no exige continuidad: `numeroControl` sólo tiene formato
+--   y largo fijo, sin `minimum` ni regla de secuencia. Y `recepciondte` recibe
+--   un documento a la vez, sin el anterior, así que el MH no verifica
+--   contigüidad al recibir.
 --
---   Acá se lleva una lista explícita de números liberados y la reserva toma
---   primero el menor de esa lista. Un número entregado termina consumido o
---   vuelve a la bolsa; no se pierde. Eso sí cumple «sin huecos», al costo de
---   que los documentos pueden emitirse en distinto orden que su numeración
---   —el 126 puede salir después del 130— lo cual queda registrado con sus
---   marcas de tiempo en fiscal_documents.
+--   ERP-PAAJ documenta esta misma postura —«devolver libera la reservación,
+--   queda como gap, MH tolera»— aunque su implementación no la cumple: como
+--   calcula desde `ultimo_consumido`, termina reciclando cuando el número
+--   devuelto es el más alto. Acá el comportamiento es uno solo y siempre el
+--   mismo.
+--
+--   Consecuencia agradable: la reserva es UNA sentencia `update ... returning`
+--   y no necesita bolsa de liberados, arrays ni `for update`.
 --
 -- ALCANCE DE LA SECUENCIA
 --   Por (organización, tipo de DTE, establecimiento, punto de venta). La
@@ -135,13 +141,12 @@ create table if not exists public.fiscal_correlatives (
   seeded_at           timestamptz,
   seeded_by           text,
 
-  -- El número más alto entregado alguna vez. NUNCA decrece.
+  -- El número más alto entregado alguna vez. Sólo sube.
+  --
+  -- No hay columna de «en vuelo» ni de «liberados»: qué documentos están en
+  -- camino a Hacienda lo dice fiscal_documents.status, que es la única fuente
+  -- de verdad. Duplicarlo acá daría dos lugares que pueden discrepar.
   last_minted         bigint      not null default 0,
-  -- Entregados y todavía en vuelo hacia Hacienda.
-  reserved            bigint[]    not null default '{}',
-  -- Entregados, rechazados y disponibles para reusar. La reserva toma de acá
-  -- primero, y por eso la numeración no deja huecos.
-  released            bigint[]    not null default '{}',
 
   updated_at          timestamptz not null default now(),
 
@@ -150,8 +155,8 @@ create table if not exists public.fiscal_correlatives (
 
 comment on table public.fiscal_correlatives is
   'Secuencia fiscal por organización, tipo de DTE, establecimiento y punto de venta. La reserva ocurre entera en Postgres: ver fiscal_open_document.';
-comment on column public.fiscal_correlatives.released is
-  'Números entregados y rechazados, disponibles para reusar. La reserva toma el menor de acá antes de acuñar uno nuevo — así la numeración no deja huecos.';
+comment on column public.fiscal_correlatives.last_minted is
+  'El número más alto entregado. Sólo sube: un correlativo rechazado queda quemado y no vuelve a entregarse.';
 
 alter table public.fiscal_correlatives
   drop constraint if exists fiscal_correlatives_tipo_valido,
@@ -241,27 +246,15 @@ create unique index if not exists fiscal_documents_idempotency_key_uidx
   on public.fiscal_documents (idempotency_key);
 create unique index if not exists fiscal_documents_codigo_generacion_uidx
   on public.fiscal_documents (codigo_generacion) where codigo_generacion is not null;
--- El numeroControl es único entre los documentos VIVOS, y por eso el índice
--- excluye los rechazados.
+-- El numeroControl es único, sin excepciones.
 --
--- No es una concesión: es la consecuencia directa de haber elegido reutilizar
--- los correlativos rechazados. Si el 126 se rechaza y vuelve a la bolsa, el
--- siguiente documento lo toma y arma el MISMO numeroControl — un índice único
--- sin excepción lo bloquearía y la promesa de «sin huecos» sería imposible de
--- cumplir.
---
--- Fiscalmente es correcto: un documento rechazado nunca existió para Hacienda,
--- nunca recibió sello, y su numeroControl jamás fue emitido. Los que SÍ
--- existieron —incluidos los invalidados, que fueron sellados y después
--- anulados, y los que están en vuelo o esperando reintento— siguen bajo la
--- restricción, que es donde un duplicado sí sería un problema real ante el MH.
---
--- El rechazado conserva su numero_control en la fila: así
--- v_fiscal_correlative_ledger muestra que el 126 se intentó, se rechazó y se
--- reutilizó, en vez de que el número reaparezca sin explicación.
+-- Puede serlo porque los correlativos no se reciclan: un número entregado
+-- pertenece a un solo documento para siempre, incluso si fue rechazado. Si en
+-- algún momento se decidiera reciclar los rechazados, este índice tendría que
+-- excluirlos y esa excepción sería la señal de que el invariante se debilitó.
 create unique index if not exists fiscal_documents_numero_control_uidx
   on public.fiscal_documents (numero_control)
-  where numero_control is not null and status <> 'REJECTED';
+  where numero_control is not null;
 
 create index if not exists fiscal_documents_pendientes_idx
   on public.fiscal_documents (status, updated_at)
@@ -301,7 +294,7 @@ alter table public.fiscal_audit_events
     check (event_type in (
       'DTE_CREATED', 'DTE_VALIDATED', 'DTE_SIGNED', 'MH_AUTHENTICATED',
       'DTE_SUBMITTED', 'DTE_ACCEPTED', 'DTE_REJECTED', 'DTE_RETRY',
-      'CORRELATIVE_RESERVED', 'CORRELATIVE_CONSUMED', 'CORRELATIVE_RELEASED',
+      'CORRELATIVE_RESERVED', 'CORRELATIVE_CONSUMED',
       'CORRELATIVE_SEEDED', 'DTE_INVALIDATED'
     ));
 
@@ -401,9 +394,7 @@ as $$
 declare
   v_doc          public.fiscal_documents;
   v_emisor       public.fiscal_issuer_config;
-  v_corr         public.fiscal_correlatives;
   v_numero       bigint;
-  v_reusado      boolean := false;
 begin
   if p_idempotency_key is null or length(p_idempotency_key) = 0 then
     raise exception 'fiscal_open_document necesita una llave de idempotencia'
@@ -440,40 +431,31 @@ begin
       using errcode = 'foreign_key_violation';
   end if;
 
-  -- FOR UPDATE: acá se serializan las emisiones concurrentes. Es el único
-  -- punto del sistema donde eso puede ocurrir de verdad.
-  select * into v_corr
-    from public.fiscal_correlatives
+  -- LA RESERVA, ENTERA, EN UNA SENTENCIA.
+  --
+  -- El `update` bloquea la fila y la incrementa en el mismo paso: dos
+  -- transacciones concurrentes se serializan solas, sin `select ... for update`
+  -- previo y sin ventana entre leer y escribir. Es la forma más difícil de
+  -- romper que tiene esta operación, y es posible justamente porque los
+  -- números no se reciclan: siempre es el siguiente, nunca hay que elegir.
+  update public.fiscal_correlatives
+     set last_minted = last_minted + 1,
+         updated_at  = now()
    where organization_id    = p_organization_id
      and dte_type           = p_dte_type
      and establishment_code = v_emisor.cod_estable
      and pos_code           = v_emisor.cod_punto_venta
-   for update;
+     and seeded
+  returning last_minted into v_numero;
 
-  if v_corr.id is null or not v_corr.seeded then
+  if v_numero is null then
+    -- O no existe la fila, o no está sembrada. Las dos se resuelven igual, y
+    -- emitir desde un contador en cero cuando el contribuyente ya emitió miles
+    -- duplicaría numeración ante Hacienda.
     raise exception
-      'La secuencia % / % / % no está sembrada. Correr fiscal_seed_correlative antes de emitir.',
+      'La secuencia % / % / % no existe o no está sembrada. Correr fiscal_seed_correlative antes de emitir.',
       p_dte_type, v_emisor.cod_estable, v_emisor.cod_punto_venta
       using errcode = 'check_violation';
-  end if;
-
-  -- Primero se reusa un número devuelto; recién si no hay, se acuña uno nuevo.
-  -- Esto es lo que hace que la numeración no deje huecos.
-  if array_length(v_corr.released, 1) is not null then
-    select min(n) into v_numero from unnest(v_corr.released) as n;
-    v_reusado := true;
-    update public.fiscal_correlatives
-       set released   = array_remove(released, v_numero),
-           reserved   = array_append(reserved, v_numero),
-           updated_at = now()
-     where id = v_corr.id;
-  else
-    v_numero := v_corr.last_minted + 1;
-    update public.fiscal_correlatives
-       set last_minted = v_numero,
-           reserved    = array_append(reserved, v_numero),
-           updated_at  = now()
-     where id = v_corr.id;
   end if;
 
   update public.fiscal_documents
@@ -495,7 +477,7 @@ begin
   values
     (p_organization_id, v_doc.id, 'CORRELATIVE_RESERVED',
      jsonb_build_object('dte_type', p_dte_type, 'correlative', v_numero,
-                        'numero_control', v_doc.numero_control, 'reusado', v_reusado),
+                        'numero_control', v_doc.numero_control),
      p_actor),
     (p_organization_id, v_doc.id, 'DTE_CREATED',
      jsonb_build_object('idempotency_key', p_idempotency_key), p_actor);
@@ -549,15 +531,9 @@ begin
     raise exception 'No existe el documento fiscal %', p_document_id;
   end if;
 
-  -- Consumir: sale de «en vuelo» y no vuelve a la bolsa.
-  update public.fiscal_correlatives
-     set reserved   = array_remove(reserved, v_doc.correlative),
-         updated_at = now()
-   where organization_id    = v_doc.organization_id
-     and dte_type           = v_doc.dte_type
-     and establishment_code = v_doc.establishment_code
-     and pos_code           = v_doc.pos_code;
-
+  -- No hay contador que tocar: el número ya se había entregado al reservar y
+  -- pertenece a este documento pase lo que pase. El estado del documento es
+  -- todo el registro que hace falta.
   insert into public.fiscal_audit_events
     (organization_id, fiscal_document_id, event_type, payload)
   values
@@ -596,24 +572,17 @@ begin
     raise exception 'No existe el documento fiscal %', p_document_id;
   end if;
 
-  -- El número vuelve a la bolsa. La próxima emisión lo toma antes de acuñar
-  -- uno nuevo, y por eso la numeración queda continua.
-  update public.fiscal_correlatives
-     set reserved   = array_remove(reserved, v_doc.correlative),
-         released   = array_append(array_remove(released, v_doc.correlative), v_doc.correlative),
-         updated_at = now()
-   where organization_id    = v_doc.organization_id
-     and dte_type           = v_doc.dte_type
-     and establishment_code = v_doc.establishment_code
-     and pos_code           = v_doc.pos_code;
-
+  -- El número queda QUEMADO. No vuelve a entregarse: la venta siguiente toma
+  -- el que sigue y acá queda el hueco, con el documento entero —correlativo,
+  -- numeroControl, codigoGeneracion, motivo y respuesta del MH— para
+  -- explicarlo. Es la contrapartida de que reciclar podría duplicar numeración
+  -- si alguna vez confundimos un rechazo con una respuesta perdida.
   insert into public.fiscal_audit_events
     (organization_id, fiscal_document_id, event_type, payload)
   values
     (v_doc.organization_id, v_doc.id, 'DTE_REJECTED',
-     jsonb_build_object('correlative', v_doc.correlative, 'error', p_error)),
-    (v_doc.organization_id, v_doc.id, 'CORRELATIVE_RELEASED',
-     jsonb_build_object('correlative', v_doc.correlative));
+     jsonb_build_object('correlative', v_doc.correlative, 'error', p_error,
+                        'numero_control', v_doc.numero_control));
 
   return v_doc;
 end;
@@ -771,6 +740,11 @@ select
   d.sello_recepcion,
   d.invoice_id,
   d.attempt_count,
+  -- El motivo va en la vista y no sólo en la tabla: sin reciclaje, un hueco en
+  -- la numeración es normal, y quien audite tiene que poder ver POR QUÉ ese
+  -- número no llegó a existir sin abrir otra consulta.
+  d.last_error,
+  (d.mh_response is not null) as tiene_respuesta_mh,
   d.created_at,
   d.accepted_at,
   d.rejected_at

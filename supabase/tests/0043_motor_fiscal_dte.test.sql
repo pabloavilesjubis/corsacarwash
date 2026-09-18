@@ -23,7 +23,7 @@
 -- ── Punto de partida conocido ────────────────────────────────
 delete from public.fiscal_audit_events;
 delete from public.fiscal_documents;
-update public.fiscal_correlatives set last_minted = 125, reserved = '{}', released = '{}';
+update public.fiscal_correlatives set last_minted = 125;
 
 -- ── Idempotencia: la misma llave no crea un segundo documento ─
 do $$
@@ -40,23 +40,37 @@ begin
   assert n = 1,  format('El doble clic creó %s documentos', n);
 end $$;
 
--- ── Sin huecos: un rechazado vuelve a la bolsa y se reutiliza ─
--- Es el escenario exacto donde ERP-PAAJ deja hueco: se devuelve un número que
--- NO es el más alto en vuelo.
+-- ── Un correlativo rechazado queda QUEMADO ──────────────────
+-- Es la decisión explícita de CORSA: reciclar abriría la puerta a duplicar
+-- numeración ante Hacienda si alguna vez confundimos un rechazo con una
+-- respuesta perdida. El hueco es el precio, y el documento rechazado queda
+-- entero para explicarlo.
 do $$
-declare a bigint; b bigint; c bigint;
+declare a bigint; b bigint; c bigint; nc_a text; estado_a text;
 begin
   delete from public.fiscal_audit_events; delete from public.fiscal_documents;
-  update public.fiscal_correlatives set last_minted = 125, reserved = '{}', released = '{}';
+  update public.fiscal_correlatives set last_minted = 125;
 
   select correlative into a from public.fiscal_open_document('T:A','11111111-1111-1111-1111-111111111111','22222222-2222-2222-2222-222222222222','01');
   select correlative into b from public.fiscal_open_document('T:B','11111111-1111-1111-1111-111111111111','22222222-2222-2222-2222-222222222222','01');
-  perform public.fiscal_mark_rejected((select id from public.fiscal_documents where idempotency_key='T:A'), '{}'::jsonb, 'prueba');
+  perform public.fiscal_mark_rejected((select id from public.fiscal_documents where idempotency_key='T:A'), '{"msg":"prueba"}'::jsonb, 'motivo de prueba');
   perform public.fiscal_mark_accepted((select id from public.fiscal_documents where idempotency_key='T:B'), 'SELLO', '{}'::jsonb);
   select correlative into c from public.fiscal_open_document('T:C','11111111-1111-1111-1111-111111111111','22222222-2222-2222-2222-222222222222','01');
 
   assert a = 126 and b = 127, format('Reserva inesperada: a=%s b=%s', a, b);
-  assert c = a, format('Quedó hueco: se rechazó el %s y la siguiente venta tomó el %s', a, c);
+  assert c = 128, format('El %s se recicló: la venta siguiente tomó %s en vez de 128', a, c);
+
+  -- El rechazado conserva TODA su trazabilidad.
+  select numero_control, status into nc_a, estado_a
+    from public.fiscal_documents where idempotency_key = 'T:A';
+  assert nc_a = 'DTE-01-M001P001-000000000000126', 'El rechazado perdió su numeroControl';
+  assert estado_a = 'REJECTED', 'El rechazado no quedó en REJECTED';
+  assert (select codigo_generacion is not null from public.fiscal_documents where idempotency_key='T:A'),
+    'El rechazado perdió su codigoGeneracion';
+  assert (select last_error is not null from public.fiscal_documents where idempotency_key='T:A'),
+    'El rechazado no guardó el motivo';
+  assert (select mh_response is not null from public.fiscal_documents where idempotency_key='T:A'),
+    'El rechazado no guardó la respuesta del MH';
 end $$;
 
 -- ── Un reintento NO devuelve el correlativo ──────────────────
@@ -64,17 +78,15 @@ end $$;
 -- Liberar el número permitiría que otra venta lo usara y terminaríamos con dos
 -- documentos con el mismo numeroControl ante el MH.
 do $$
-declare d bigint; e bigint; libres bigint[];
+declare d bigint; e bigint;
 begin
   delete from public.fiscal_audit_events; delete from public.fiscal_documents;
-  update public.fiscal_correlatives set last_minted = 200, reserved = '{}', released = '{}';
+  update public.fiscal_correlatives set last_minted = 200;
 
   select correlative into d from public.fiscal_open_document('T:D','11111111-1111-1111-1111-111111111111','22222222-2222-2222-2222-222222222222','01');
   perform public.fiscal_mark_retry((select id from public.fiscal_documents where idempotency_key='T:D'), 'timeout');
-  select released into libres from public.fiscal_correlatives where dte_type = '01';
   select correlative into e from public.fiscal_open_document('T:E','11111111-1111-1111-1111-111111111111','22222222-2222-2222-2222-222222222222','01');
 
-  assert coalesce(array_length(libres,1),0) = 0, 'El reintento devolvió el correlativo a la bolsa';
   assert e = d + 1, format('Tras el reintento la siguiente venta tomó %s en vez de %s', e, d+1);
   assert (select attempt_count from public.fiscal_documents where idempotency_key='T:D') = 1,
     'No se contó el intento';
@@ -107,30 +119,26 @@ begin
   assert fallo, 'Se pudo emitir contra una secuencia sin sembrar';
 end $$;
 
--- ── El numeroControl sigue siendo único entre los vivos ───────
--- Reutilizar los rechazados NO puede abrir la puerta a que dos documentos
--- VIVOS compartan numeroControl: eso sí sería un duplicado real ante el MH.
+-- ── El numeroControl es único, sin excepciones ───────────────
+-- Sin reciclaje el índice puede ser total: un número pertenece a un solo
+-- documento para siempre, rechazado incluido.
 do $$
-declare choque boolean := false; id_rechazado uuid;
+declare choque boolean := false; nc text;
 begin
   delete from public.fiscal_audit_events; delete from public.fiscal_documents;
-  update public.fiscal_correlatives set last_minted = 300, reserved = '{}', released = '{}';
+  update public.fiscal_correlatives set last_minted = 300;
 
   perform public.fiscal_open_document('T:U1','11111111-1111-1111-1111-111111111111','22222222-2222-2222-2222-222222222222','01');
-  select id into id_rechazado from public.fiscal_documents where idempotency_key = 'T:U1';
-  perform public.fiscal_mark_rejected(id_rechazado, '{}'::jsonb, 'prueba');
+  select numero_control into nc from public.fiscal_documents where idempotency_key = 'T:U1';
+  perform public.fiscal_mark_rejected((select id from public.fiscal_documents where idempotency_key='T:U1'), '{}'::jsonb, 'prueba');
 
-  -- La siguiente venta reutiliza el número del rechazado.
-  perform public.fiscal_open_document('T:U2','11111111-1111-1111-1111-111111111111','22222222-2222-2222-2222-222222222222','01');
-  assert (select correlative from public.fiscal_documents where idempotency_key='T:U2') = 301,
-    'No se reutilizó el correlativo rechazado';
-
-  -- Revivir el rechazado dejaría DOS vivos con el mismo numeroControl.
+  -- Aunque esté rechazado, su numeroControl sigue tomado.
   begin
-    update public.fiscal_documents set status = 'ACCEPTED' where id = id_rechazado;
+    insert into public.fiscal_documents (idempotency_key, organization_id, dte_type, numero_control, status)
+    values ('T:U2', '11111111-1111-1111-1111-111111111111', '01', nc, 'CREATED');
   exception when unique_violation then choque := true;
   end;
-  assert choque, 'Dos documentos vivos pudieron compartir numeroControl';
+  assert choque, 'Un numeroControl ya usado se pudo repetir';
 end $$;
 
 \echo '  Todas las pruebas de 0043 pasaron.'
