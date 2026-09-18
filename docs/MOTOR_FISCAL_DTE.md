@@ -95,9 +95,10 @@ campos nullable *presentes*, no ausentes.
 
 ## 2. Discrepancias entre la especificación y lo que ERP-PAAJ hace de verdad
 
-Cinco. Las tres primeras requieren una decisión antes de escribir código fiscal.
+Cinco. Las decisiones que abrieron están resueltas en la sección 9; acá queda
+el porqué de cada una.
 
-### 2.1 — ERP-PAAJ nunca ha emitido un CCF. Ni uno. · DECISIÓN PENDIENTE
+### 2.1 — ERP-PAAJ nunca ha emitido un CCF. Ni uno. · **el CCF es código sin validar**
 
 ```
 DTE emitidos por tipo : {"01": 113}
@@ -112,7 +113,7 @@ Para CORSA el FCF es referencia probada (113 aceptaciones). El CCF es código
 sin validar: hay que tratarlo como desarrollo nuevo y probarlo contra sandbox
 antes de confiar en él.
 
-### 2.2 — Reciclar correlativos: la especificación y ERP-PAAJ dicen lo contrario · DECISIÓN PENDIENTE
+### 2.2 — Reciclar correlativos: la especificación y ERP-PAAJ dicen lo contrario · **RESUELTO: se reutiliza**
 
 ERP-PAAJ, en `src/tenants/correlativo.repo.ts`:
 
@@ -134,9 +135,22 @@ al pool. Las dos posturas son defendibles y **mutuamente excluyentes**:
 | Auditoría | un número pudo pertenecer a dos intentos | un número, un intento, para siempre |
 | RPC | dos fases: reservar + consumir/devolver | una sola sentencia `UPDATE … RETURNING` |
 
-**Recomendación: no reutilizar.** El MH tolera huecos, y una RPC de una sola
-sentencia tiene muchísima menos superficie para fallar bajo concurrencia que
-una máquina de dos fases con un array de reservas.
+**Decisión tomada (2026-09-18): se reutiliza**, como hace ERP-PAAJ hoy. Gana la
+numeración continua. La recomendación técnica había sido la contraria —dejar
+huecos permite una RPC de una sola sentencia, con mucha menos superficie para
+fallar bajo concurrencia— y queda anotada acá por si algún día hay que revisar
+por qué la RPC es de dos fases.
+
+Lo que eso obliga a construir:
+
+- `reservar` y `consumir` son operaciones separadas, no una sola.
+- La reserva tiene que quedar registrada para que otra emisión concurrente no
+  tome el mismo número mientras la primera está en vuelo hacia Hacienda.
+- `devolver` libera la reserva en un rechazo, y el siguiente documento toma ese
+  mismo número.
+- Las pruebas de concurrencia (50 simultáneas) pasan a ser obligatorias, no
+  recomendables: con dos fases el error de carrera es posible y hay que
+  descartarlo con evidencia.
 
 ### 2.3 — ERP-PAAJ indexa correlativos sólo por tipo de DTE · NO COPIAR
 
@@ -414,16 +428,20 @@ el POS.
 
 ---
 
-## 9. Decisiones pendientes
+## 9. Decisiones tomadas — 2026-09-18
 
-Tres cosas bloquean el arranque:
+Las tres que bloqueaban el arranque, resueltas:
 
-1. **¿Reciclamos correlativos en rechazo, o dejamos huecos?** (sección 2.2).
-   La recomendación es dejar huecos.
-2. **¿CORSA ya tiene NIT, NRC y certificado propios tramitados en el MH?** Sin
-   eso no se puede correr el paso 4 del plan de prueba.
-3. **¿Worker fiscal separado**, o dentro de `corsa-cloud-api`? La recomendación
-   es separado.
+| # | Decisión | Nota |
+|---|---|---|
+| 1 | **Los correlativos se reutilizan**, sin huecos | Modelo de ERP-PAAJ. Obliga a la máquina de dos fases (sección 2.2). Se decidió contra la recomendación técnica, que era dejar huecos. |
+| 2 | **CORSA ya tiene certificado y credenciales propias del MH** | Producción NO se activa hasta que todo el lado de CORSA esté al 100%. Hasta entonces se trabaja contra el sandbox. |
+| 3 | **Worker fiscal separado**: repositorio `corsa-fiscal-api` | Ahí está la llave con la que CORSA firma. `corsa-cloud-api` sigue con lo suyo, que es autenticar gateways del PLC. |
+
+De la decisión 2 sale un candado que está escrito en el código y no en la
+disciplina de nadie: mientras `MH_ENV=production`, las rutas `/v1/prueba/*` del
+Worker responden 403. Emitir sin correlativos atómicos ni idempotencia dejaría
+un documento fiscal sin respaldo en la base, y eso no se arregla después.
 
 ---
 
