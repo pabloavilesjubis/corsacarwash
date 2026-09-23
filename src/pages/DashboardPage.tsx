@@ -701,6 +701,13 @@ export function DashboardPage() {
   // guardaron con su fecha, así que cualquier semana vieja se dibuja bien. Sin
   // esta navegación esa corrección no se podría mirar, sólo suponer.
   const [semanaOffset, setSemanaOffset] = useState(0)
+  // Por qué el mapa no se pudo cargar, si es que no se pudo.
+  //
+  // Antes el fallo se tragaba con un `return` y la grilla quedaba vacía, que se
+  // lee como «no hubo lavados». Son cosas distintas y la diferencia importa: si
+  // falta la migración 0044, la columna wash_date no existe y el mapa se vería
+  // vacío un día entero antes de que alguien sospeche.
+  const [heatmapError, setHeatmapError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [cashAlert, setCashAlert] = useState<{ difference: number } | null>(null)
   const [voucherStats, setVoucherStats] = useState({ revenue: 0, sold: 0, redeemed: 0 })
@@ -811,9 +818,18 @@ export function DashboardPage() {
       .gte('wash_date', lunes)
       .lt('wash_date', lunesSiguiente)
       .or(`branch_id.eq.${branchId},branch_id.is.null`)
-    // Un fallo acá no borra el mapa que ya está dibujado: se queda el último
-    // bueno hasta el siguiente refresco.
-    if (error) return
+    if (error) {
+      // El mapa dibujado no se borra —se queda el último bueno— pero el motivo
+      // sube a la pantalla en vez de perderse.
+      const detalle = String(error.message ?? error)
+      setHeatmapError(
+        /wash_date/.test(detalle)
+          ? 'Falta correr la migración 0044 en Supabase: la vista todavía no tiene la columna wash_date.'
+          : `No se pudo cargar el mapa: ${detalle}`,
+      )
+      return
+    }
+    setHeatmapError(null)
     setHeatmapRows(buildHeatmapFrom(data ?? []))
   }, [branchId, semanaOffset])
 
@@ -1219,6 +1235,15 @@ export function DashboardPage() {
             <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
               {rangoSemana}
             </div>
+            {heatmapError && (
+              <div style={{
+                fontSize: 11.5, marginTop: 6, padding: '6px 9px', borderRadius: 8,
+                background: 'var(--color-warning-tint)', color: 'var(--color-warning-text)',
+                lineHeight: 1.4,
+              }}>
+                {heatmapError}
+              </div>
+            )}
           </div>
 
           {/* Navegación de semanas.
