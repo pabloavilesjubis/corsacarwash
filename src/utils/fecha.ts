@@ -73,24 +73,6 @@ export function sumarDias(fecha: string, dias: number): string {
 }
 
 /**
- * El lunes de la semana en la que cae esa fecha, como YYYY-MM-DD.
- *
- * La semana del carwash arranca en lunes porque así la lee el equipo de piso, y
- * porque es también donde `date_trunc('week', …)` corta en Postgres — los dos
- * lados coinciden sin tener que acordarse.
- *
- * La cuenta va en UTC, igual que `sumarDias`: sobre una fecha sin hora no hay
- * saltos de horario de verano que puedan comerse un día. `getUTCDay()` devuelve
- * 0 para domingo, así que el domingo retrocede seis días y no uno — si no, el
- * domingo abriría una semana nueva él solo.
- */
-export function inicioDeSemanaLocal(fecha: string = hoyLocal()): string {
-  const [a, m, d] = fecha.split('-').map(Number)
-  const dia = new Date(Date.UTC(a!, m! - 1, d!)).getUTCDay()
-  return sumarDias(fecha, -(dia === 0 ? 6 : dia - 1))
-}
-
-/**
  * El instante exacto en que empieza ese día en el carwash, en ISO.
  *
  * Es lo que hay que comparar contra una columna `timestamptz` (created_at,

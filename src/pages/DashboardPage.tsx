@@ -7,7 +7,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import { useTheme } from '../contexts/ThemeContext'
-import { formatearFecha, hoyLocal, inicioDeSemanaLocal, inicioDelDiaISO, sumarDias } from '../utils/fecha'
+import { formatearFecha, hoyLocal, inicioDelDiaISO, sumarDias } from '../utils/fecha'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -99,10 +99,10 @@ function heatColor(intensity: number): string {
  * carro entró. Para decidir turnos y mantenimiento lo que importa es cuándo
  * corrió la máquina, y eso lo sabe el PLC al segundo (v_plc_heatmap, 0041).
  *
- * Muestra la SEMANA EN CURSO, de lunes a domingo. Cada día se limpia cuando
- * le vuelve a tocar: el lunes arranca vacío el lunes y se va llenando. Antes
- * agregaba sin ventana de tiempo y la fila «Lunes» era la suma de todos los
- * lunes de la historia, un número que sólo crecía.
+ * Muestra una VENTANA RODANTE de siete días que termina hoy. Cada día se
+ * limpia a su medianoche y se va llenando hora por hora; los otros seis siguen
+ * mostrando su última vez hasta que les toque. Antes agregaba sin ventana de
+ * tiempo y la fila «Lunes» era la suma de todos los lunes de la historia.
  *
  * Sin lavados registrados la grilla queda vacía: no se dibuja un patrón
  * plausible, que es lo que hacía la primera versión con pesos inventados.
@@ -137,18 +137,49 @@ function heatInk(intensidad: number, esOscuro: boolean): string {
   return intensa ? '#FFFFFF' : '#000000'
 }
 
-function buildHeatmapFrom(rows: any[]): { label: string; cells: HourCell[] }[] {
+/**
+ * Las siete fechas de la ventana, de la más vieja a hoy.
+ *
+ * Es una ventana RODANTE, no la semana del calendario. Hoy se limpia a la
+ * medianoche y se va llenando hora por hora; los otros seis días siguen
+ * mostrando su última vez hasta que les toque. Así la grilla nunca tiene
+ * huecos y cada día se renueva solo cuando llega.
+ *
+ * Con la semana calendario —lunes a domingo— los días que todavía no habían
+ * llegado salían vacíos, y un miércoles se veía media grilla en blanco.
+ */
+function ventanaDeSieteDias(hasta: string): string[] {
+  return Array.from({ length: 7 }, (_, i) => sumarDias(hasta, i - 6))
+}
+
+/** «Jue 17». El número va porque en una ventana rodante «Jue» es ambiguo. */
+function etiquetaDeDia(fecha: string, esHoy: boolean): string {
+  const [, mes, dia] = fecha.split('-').map(Number)
+  const d = new Date(Date.UTC(Number(fecha.slice(0, 4)), (mes as number) - 1, dia))
+  const nombre = DIAS_ES[d.getUTCDay()]
+  return esHoy ? `${nombre}\u00a0${dia}\u00a0·\u00a0hoy` : `${nombre}\u00a0${dia}`
+}
+
+/**
+ * Arma la grilla a partir de las filas de la vista y de las fechas de la
+ * ventana.
+ *
+ * Las filas se indexan por FECHA y no por día de la semana. Con día de la
+ * semana, dos lunes distintos caían en la misma celda y se sumaban — que es
+ * exactamente el bug que tenía el mapa: la fila «Lun» era todos los lunes de
+ * la historia apilados.
+ */
+function buildHeatmapFrom(rows: any[], fechas: string[], hoy: string): { label: string; cells: HourCell[] }[] {
   // La vista trae UNA FILA POR MÁQUINA para cada día y hora, así que hay que
   // sumarlas. Antes acá se hacía rows.find(), que devuelve la primera: con dos
   // máquinas lavando a la misma hora, la segunda desaparecía sin dejar rastro
-  // y el mapa mostraba menos trabajo del que hubo. El error crece justo cuando
-  // el local está más ocupado, que es cuando las dos máquinas coinciden.
+  // y el mapa mostraba menos trabajo del que hubo.
   const porCelda = new Map<string, number>()
   for (const r of rows) {
-    const dia = Number(r.day_of_week)
+    const fecha = String(r.wash_date ?? '')
     const hora = Number(r.hour_of_day)
-    if (!Number.isFinite(dia) || !Number.isFinite(hora)) continue
-    const clave = `${dia}:${hora}`
+    if (!fecha || !Number.isFinite(hora)) continue
+    const clave = `${fecha}:${hora}`
     porCelda.set(clave, (porCelda.get(clave) ?? 0) + (Number(r.washes) || 0))
   }
 
@@ -157,24 +188,18 @@ function buildHeatmapFrom(rows: any[]): { label: string; cells: HourCell[] }[] {
   // del tope y saturar la escala de color.
   const max = Math.max(1, ...porCelda.values())
 
-  // La vista devuelve el dow de Postgres (0 = domingo); la grilla arranca en
-  // lunes porque así lee la semana el equipo de piso.
-  const dows = [1, 2, 3, 4, 5, 6, 0]
-  const nombres = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
-
   // La franja sigue a los datos en lugar de estar fija de 7 a 19. Con horario
   // fijo, un lavado de las 6 de la mañana o de las 8 de la noche simplemente
-  // no aparecía — y el mapa mostraba menos trabajo del que hubo, que es
-  // justamente lo que se viene a mirar acá.
+  // no aparecía.
   const horas = rows.map(r => Number(r.hour_of_day)).filter(h => Number.isFinite(h))
   const desde = horas.length ? Math.min(HORA_DESDE, ...horas) : HORA_DESDE
   const hasta = horas.length ? Math.max(HORA_HASTA, ...horas) : HORA_HASTA
 
-  return dows.map((dow, i) => ({
-    label: nombres[i],
+  return fechas.map(fecha => ({
+    label: etiquetaDeDia(fecha, fecha === hoy),
     cells: Array.from({ length: hasta - desde + 1 }, (_, hi) => {
       const hora = desde + hi
-      const count = porCelda.get(`${dow}:${hora}`) ?? 0
+      const count = porCelda.get(`${fecha}:${hora}`) ?? 0
       return { hour: etiquetaHora(hora), count, intensity: count / max }
     }),
   }))
@@ -807,16 +832,22 @@ export function DashboardPage() {
     // el lunes, el martes el martes, y la grilla se llena a medida que avanza
     // la semana. Los días que todavía no llegaron se ven vacíos porque lo
     // están, no porque falte el dato.
-    // Ventana CERRADA de siete días. El tope superior no es adorno: sin él,
-    // mirar una semana vieja arrastraría todo lo posterior a su lunes y el mapa
-    // volvería a apilar, que es justo lo que se vino a arreglar.
-    const lunes = sumarDias(inicioDeSemanaLocal(), semanaOffset * 7)
-    const lunesSiguiente = sumarDias(lunes, 7)
+    // Ventana RODANTE de siete días que termina HOY, no la semana del
+    // calendario. Cada día se limpia a su medianoche y se va llenando hora por
+    // hora; los otros seis siguen mostrando su última vez hasta que les toque.
+    //
+    // Con lunes-a-domingo los días que todavía no habían llegado salían
+    // vacíos, y un miércoles dejaba media grilla en blanco. Acá siempre hay
+    // siete días con datos y ninguno se apila con el de la semana pasada,
+    // porque la ventana tiene exactamente siete fechas distintas.
+    const hoy = hoyLocal()
+    const finVentana = sumarDias(hoy, semanaOffset * 7)
+    const fechas = ventanaDeSieteDias(finVentana)
     const { data, error } = await (supabase as any)
       .from('v_plc_heatmap')
-      .select('day_of_week, hour_of_day, washes')
-      .gte('wash_date', lunes)
-      .lt('wash_date', lunesSiguiente)
+      .select('wash_date, hour_of_day, washes')
+      .gte('wash_date', fechas[0])
+      .lte('wash_date', finVentana)
       .or(`branch_id.eq.${branchId},branch_id.is.null`)
     if (error) {
       // El mapa dibujado no se borra —se queda el último bueno— pero el motivo
@@ -830,7 +861,7 @@ export function DashboardPage() {
       return
     }
     setHeatmapError(null)
-    setHeatmapRows(buildHeatmapFrom(data ?? []))
+    setHeatmapRows(buildHeatmapFrom(data ?? [], fechas, hoy))
   }, [branchId, semanaOffset])
 
   const loadKPIs = useCallback(async () => {
@@ -1030,13 +1061,12 @@ export function DashboardPage() {
   // Cómo se llama la semana que se está mirando. Se escribe el rango completo
   // y no sólo «hace 2 semanas»: al conciliar contra otra fuente hace falta
   // saber qué días entran, y contarlos hacia atrás a mano invita al error.
-  const lunesVisible = sumarDias(inicioDeSemanaLocal(), semanaOffset * 7)
-  const domingoVisible = sumarDias(lunesVisible, 6)
-  const rangoSemana = `${formatearFecha(new Date(lunesVisible + 'T12:00:00'), { day: 'numeric', month: 'short' })} — ${formatearFecha(new Date(domingoVisible + 'T12:00:00'), { day: 'numeric', month: 'short' })}`
+  const finVisible = sumarDias(hoyLocal(), semanaOffset * 7)
+  const inicioVisible = sumarDias(finVisible, -6)
+  const rangoSemana = `${formatearFecha(new Date(inicioVisible + 'T12:00:00'), { day: 'numeric', month: 'short' })} — ${formatearFecha(new Date(finVisible + 'T12:00:00'), { day: 'numeric', month: 'short' })}`
   const etiquetaSemana =
-    semanaOffset === 0 ? 'esta semana'
-    : semanaOffset === -1 ? 'la semana pasada'
-    : `hace ${Math.abs(semanaOffset)} semanas`
+    semanaOffset === 0 ? 'en los últimos 7 días'
+    : `en los 7 días que terminan el ${formatearFecha(new Date(finVisible + 'T12:00:00'), { day: 'numeric', month: 'short' })}`
 
   return (
     <div className="page-inner">
