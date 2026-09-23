@@ -7,7 +7,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import { useTheme } from '../contexts/ThemeContext'
-import { hoyLocal, inicioDelDiaISO, sumarDias, formatearFecha } from '../utils/fecha'
+import { formatearFecha, hoyLocal, inicioDeSemanaLocal, inicioDelDiaISO, sumarDias } from '../utils/fecha'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -98,6 +98,11 @@ function heatColor(intensity: number): string {
  * cuando el cajero llega a marcarla, a veces media hora después de que el
  * carro entró. Para decidir turnos y mantenimiento lo que importa es cuándo
  * corrió la máquina, y eso lo sabe el PLC al segundo (v_plc_heatmap, 0041).
+ *
+ * Muestra la SEMANA EN CURSO, de lunes a domingo. Cada día se limpia cuando
+ * le vuelve a tocar: el lunes arranca vacío el lunes y se va llenando. Antes
+ * agregaba sin ventana de tiempo y la fila «Lunes» era la suma de todos los
+ * lunes de la historia, un número que sólo crecía.
  *
  * Sin lavados registrados la grilla queda vacía: no se dibuja un patrón
  * plausible, que es lo que hacía la primera versión con pesos inventados.
@@ -769,9 +774,22 @@ export function DashboardPage() {
    */
   const loadHeatmap = useCallback(async () => {
     if (!branchId) return
+    // ACOTADO A LA SEMANA EN CURSO, y esto es la mitad del sentido del mapa.
+    //
+    // Sin el filtro la vista suma TODOS los lunes desde que el carwash existe
+    // sobre la misma celda. El número deja de significar algo y la escala de
+    // color se satura: los días viejos acumulan tanto que el día que se está
+    // mirando siempre sale pálido.
+    //
+    // Con el filtro, cada día arranca vacío cuando le toca: el lunes se limpia
+    // el lunes, el martes el martes, y la grilla se llena a medida que avanza
+    // la semana. Los días que todavía no llegaron se ven vacíos porque lo
+    // están, no porque falte el dato.
+    const desdeElLunes = inicioDeSemanaLocal()
     const { data, error } = await (supabase as any)
       .from('v_plc_heatmap')
       .select('day_of_week, hour_of_day, washes')
+      .gte('wash_date', desdeElLunes)
       .or(`branch_id.eq.${branchId},branch_id.is.null`)
     // Un fallo acá no borra el mapa que ya está dibujado: se queda el último
     // bueno hasta el siguiente refresco.
@@ -1162,9 +1180,9 @@ export function DashboardPage() {
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
             {totalMapa > 0
-              ? `${totalMapa} ${totalMapa === 1 ? 'lavado' : 'lavados'} en total${
+              ? `${totalMapa} ${totalMapa === 1 ? 'lavado' : 'lavados'} esta semana${
                   picoLabel ? ' · ' + picoLabel.toLowerCase() : ''}`
-              : 'Sin lavados registrados todavía'}
+              : 'Sin lavados esta semana todavía'}
           </div>
         </div>
         <Heatmap rows={heatmapRows} />
