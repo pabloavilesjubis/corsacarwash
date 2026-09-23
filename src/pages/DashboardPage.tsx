@@ -121,6 +121,15 @@ function heatColor(intensity: number): string {
  * y «casi» negro en vez de puras, el peor punto caía a 3.97 — de ahí que acá
  * vayan puras y no los grises del tema.
  */
+/** Las flechas para moverse de semana en el mapa de calor. */
+const flechaSemana: React.CSSProperties = {
+  width: 28, height: 28, borderRadius: 8,
+  border: '1px solid var(--border)', background: 'var(--surface)',
+  color: 'var(--text-primary)', fontSize: 15, lineHeight: 1,
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  cursor: 'pointer', fontFamily: 'var(--font-body)',
+}
+
 function heatInk(intensidad: number, esOscuro: boolean): string {
   const corte = esOscuro ? 0.42 : 0.62
   const intensa = intensidad > corte
@@ -686,6 +695,12 @@ export function DashboardPage() {
   const [serviceKpis, setServiceKpis] = useState<ServiceKPI[]>([])
   const [dailySales, setDailySales] = useState<DailySummary[]>([])
   const [heatmapRows, setHeatmapRows] = useState<{ label: string; cells: HourCell[] }[]>([])
+  // Qué semana se está mirando: 0 es la actual, −1 la pasada, y así.
+  //
+  // Existe porque el arreglo del mapa es retroactivo: los lavados siempre se
+  // guardaron con su fecha, así que cualquier semana vieja se dibuja bien. Sin
+  // esta navegación esa corrección no se podría mirar, sólo suponer.
+  const [semanaOffset, setSemanaOffset] = useState(0)
   const [loading, setLoading] = useState(false)
   const [cashAlert, setCashAlert] = useState<{ difference: number } | null>(null)
   const [voucherStats, setVoucherStats] = useState({ revenue: 0, sold: 0, redeemed: 0 })
@@ -785,17 +800,22 @@ export function DashboardPage() {
     // el lunes, el martes el martes, y la grilla se llena a medida que avanza
     // la semana. Los días que todavía no llegaron se ven vacíos porque lo
     // están, no porque falte el dato.
-    const desdeElLunes = inicioDeSemanaLocal()
+    // Ventana CERRADA de siete días. El tope superior no es adorno: sin él,
+    // mirar una semana vieja arrastraría todo lo posterior a su lunes y el mapa
+    // volvería a apilar, que es justo lo que se vino a arreglar.
+    const lunes = sumarDias(inicioDeSemanaLocal(), semanaOffset * 7)
+    const lunesSiguiente = sumarDias(lunes, 7)
     const { data, error } = await (supabase as any)
       .from('v_plc_heatmap')
       .select('day_of_week, hour_of_day, washes')
-      .gte('wash_date', desdeElLunes)
+      .gte('wash_date', lunes)
+      .lt('wash_date', lunesSiguiente)
       .or(`branch_id.eq.${branchId},branch_id.is.null`)
     // Un fallo acá no borra el mapa que ya está dibujado: se queda el último
     // bueno hasta el siguiente refresco.
     if (error) return
     setHeatmapRows(buildHeatmapFrom(data ?? []))
-  }, [branchId])
+  }, [branchId, semanaOffset])
 
   const loadKPIs = useCallback(async () => {
     if (!branchId) return
@@ -991,6 +1011,17 @@ export function DashboardPage() {
   const totalMapa = heatmapRows.reduce(
     (suma, fila) => suma + fila.cells.reduce((s, c) => s + c.count, 0), 0)
 
+  // Cómo se llama la semana que se está mirando. Se escribe el rango completo
+  // y no sólo «hace 2 semanas»: al conciliar contra otra fuente hace falta
+  // saber qué días entran, y contarlos hacia atrás a mano invita al error.
+  const lunesVisible = sumarDias(inicioDeSemanaLocal(), semanaOffset * 7)
+  const domingoVisible = sumarDias(lunesVisible, 6)
+  const rangoSemana = `${formatearFecha(new Date(lunesVisible + 'T12:00:00'), { day: 'numeric', month: 'short' })} — ${formatearFecha(new Date(domingoVisible + 'T12:00:00'), { day: 'numeric', month: 'short' })}`
+  const etiquetaSemana =
+    semanaOffset === 0 ? 'esta semana'
+    : semanaOffset === -1 ? 'la semana pasada'
+    : `hace ${Math.abs(semanaOffset)} semanas`
+
   return (
     <div className="page-inner">
 
@@ -1174,15 +1205,44 @@ export function DashboardPage() {
         background: 'var(--surface)', border: '1px solid var(--border)',
         borderRadius: 12, padding: '16px 18px', maxWidth: 560,
       }}>
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, color: 'var(--text-primary)' }}>
-            Mapa de calor · lavados por hora
+        <div style={{ marginBottom: 12, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, color: 'var(--text-primary)' }}>
+              Mapa de calor · lavados por hora
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+              {totalMapa > 0
+                ? `${totalMapa} ${totalMapa === 1 ? 'lavado' : 'lavados'} ${etiquetaSemana}${
+                    picoLabel ? ' · ' + picoLabel.toLowerCase() : ''}`
+                : `Sin lavados ${etiquetaSemana}`}
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
+              {rangoSemana}
+            </div>
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-            {totalMapa > 0
-              ? `${totalMapa} ${totalMapa === 1 ? 'lavado' : 'lavados'} esta semana${
-                  picoLabel ? ' · ' + picoLabel.toLowerCase() : ''}`
-              : 'Sin lavados esta semana todavía'}
+
+          {/* Navegación de semanas.
+              Hacia adelante se corta en la semana actual: no hay datos del
+              futuro, y un botón que no hace nada se prueba una vez y confunde
+              cada vez. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+            <button
+              onClick={() => setSemanaOffset(n => n - 1)}
+              aria-label="Semana anterior"
+              style={flechaSemana}
+            >‹</button>
+            {semanaOffset !== 0 && (
+              <button
+                onClick={() => setSemanaOffset(0)}
+                style={{ ...flechaSemana, width: 'auto', padding: '0 10px', fontSize: 11.5 }}
+              >Hoy</button>
+            )}
+            <button
+              onClick={() => setSemanaOffset(n => Math.min(0, n + 1))}
+              disabled={semanaOffset >= 0}
+              aria-label="Semana siguiente"
+              style={{ ...flechaSemana, opacity: semanaOffset >= 0 ? 0.35 : 1, cursor: semanaOffset >= 0 ? 'default' : 'pointer' }}
+            >›</button>
           </div>
         </div>
         <Heatmap rows={heatmapRows} />
