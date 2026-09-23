@@ -7,7 +7,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import { useTheme } from '../contexts/ThemeContext'
-import { formatearFecha, hoyLocal, inicioDelDiaISO, sumarDias } from '../utils/fecha'
+import { formatearFecha, hoyLocal, inicioDeSemanaLocal, inicioDelDiaISO, sumarDias } from '../utils/fecha'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -137,43 +137,62 @@ function heatInk(intensidad: number, esOscuro: boolean): string {
   return intensa ? '#FFFFFF' : '#000000'
 }
 
-/**
- * Las siete fechas de la ventana, de la más vieja a hoy.
- *
- * Es una ventana RODANTE, no la semana del calendario. Hoy se limpia a la
- * medianoche y se va llenando hora por hora; los otros seis días siguen
- * mostrando su última vez hasta que les toque. Así la grilla nunca tiene
- * huecos y cada día se renueva solo cuando llega.
- *
- * Con la semana calendario —lunes a domingo— los días que todavía no habían
- * llegado salían vacíos, y un miércoles se veía media grilla en blanco.
- */
-function ventanaDeSieteDias(hasta: string): string[] {
-  return Array.from({ length: 7 }, (_, i) => sumarDias(hasta, i - 6))
-}
+/** Cada fila de la grilla: con qué clave buscar sus celdas y cómo se rotula. */
+interface FilaDeMapa { clave: string; label: string }
 
-/** «Jue 17». El número va porque en una ventana rodante «Jue» es ambiguo. */
-function etiquetaDeDia(fecha: string, esHoy: boolean): string {
-  const [, mes, dia] = fecha.split('-').map(Number)
-  const d = new Date(Date.UTC(Number(fecha.slice(0, 4)), (mes as number) - 1, dia))
-  const nombre = DIAS_ES[d.getUTCDay()]
-  return esHoy ? `${nombre}\u00a0${dia}\u00a0·\u00a0hoy` : `${nombre}\u00a0${dia}`
-}
+/** Las filas de una semana: lunes a domingo, en ese orden. */
+const DOWS_LUNES_PRIMERO = [1, 2, 3, 4, 5, 6, 0]
+const NOMBRES_DIA = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 
 /**
- * Arma la grilla a partir de las filas de la vista y de las fechas de la
- * ventana.
+ * Arma la grilla a partir de un índice ya sumado.
  *
- * Las filas se indexan por FECHA y no por día de la semana. Con día de la
- * semana, dos lunes distintos caían en la misma celda y se sumaban — que es
- * exactamente el bug que tenía el mapa: la fila «Lun» era todos los lunes de
- * la historia apilados.
+ * Es común a los dos mapas. Lo único que cambia entre ellos es CON QUÉ se
+ * indexa: la semana usa la fecha concreta —para que dos lunes distintos no
+ * caigan en la misma celda— y el histórico usa el día de la semana, porque ahí
+ * apilar los lunes es justamente lo que se quiere ver.
  */
-function buildHeatmapFrom(rows: any[], fechas: string[], hoy: string): { label: string; cells: HourCell[] }[] {
-  // La vista trae UNA FILA POR MÁQUINA para cada día y hora, así que hay que
-  // sumarlas. Antes acá se hacía rows.find(), que devuelve la primera: con dos
-  // máquinas lavando a la misma hora, la segunda desaparecía sin dejar rastro
-  // y el mapa mostraba menos trabajo del que hubo.
+function construirGrilla(
+  porCelda: Map<string, number>,
+  filas: readonly FilaDeMapa[],
+  horasPresentes: readonly number[],
+): { label: string; cells: HourCell[] }[] {
+  // El máximo sale de los totales ya sumados, no de las filas sueltas de la
+  // vista. Con el máximo por máquina, una celda con las dos máquinas
+  // trabajando podía pasar del tope y saturar la escala de color.
+  const max = Math.max(1, ...porCelda.values())
+
+  // La franja sigue a los datos en lugar de estar fija de 7 a 19. Con horario
+  // fijo, un lavado de las 6 de la mañana o de las 8 de la noche simplemente
+  // no aparecía.
+  const desde = horasPresentes.length ? Math.min(HORA_DESDE, ...horasPresentes) : HORA_DESDE
+  const hasta = horasPresentes.length ? Math.max(HORA_HASTA, ...horasPresentes) : HORA_HASTA
+
+  return filas.map(fila => ({
+    label: fila.label,
+    cells: Array.from({ length: hasta - desde + 1 }, (_, hi) => {
+      const hora = desde + hi
+      const count = porCelda.get(`${fila.clave}:${hora}`) ?? 0
+      return { hour: etiquetaHora(hora), count, intensity: count / max }
+    }),
+  }))
+}
+
+/** Las horas que aparecen en las filas de la vista. */
+function horasDe(rows: any[]): number[] {
+  return rows.map(r => Number(r.hour_of_day)).filter(h => Number.isFinite(h))
+}
+
+/**
+ * El mapa de LA SEMANA: lunes a domingo de la semana pedida.
+ *
+ * Se indexa por FECHA y no por día de la semana. Con día de la semana, dos
+ * lunes distintos caen en la misma celda y se suman — que es exactamente el
+ * bug que tenía este mapa cuando agregaba sin ventana de tiempo.
+ *
+ * Los días que todavía no llegaron salen vacíos porque lo están.
+ */
+function buildHeatmapSemana(rows: any[], lunes: string): { label: string; cells: HourCell[] }[] {
   const porCelda = new Map<string, number>()
   for (const r of rows) {
     const fecha = String(r.wash_date ?? '')
@@ -182,27 +201,35 @@ function buildHeatmapFrom(rows: any[], fechas: string[], hoy: string): { label: 
     const clave = `${fecha}:${hora}`
     porCelda.set(clave, (porCelda.get(clave) ?? 0) + (Number(r.washes) || 0))
   }
-
-  // El máximo sale de los totales ya sumados, no de las filas sueltas. Con el
-  // máximo por máquina, una celda con las dos máquinas trabajando podía pasar
-  // del tope y saturar la escala de color.
-  const max = Math.max(1, ...porCelda.values())
-
-  // La franja sigue a los datos en lugar de estar fija de 7 a 19. Con horario
-  // fijo, un lavado de las 6 de la mañana o de las 8 de la noche simplemente
-  // no aparecía.
-  const horas = rows.map(r => Number(r.hour_of_day)).filter(h => Number.isFinite(h))
-  const desde = horas.length ? Math.min(HORA_DESDE, ...horas) : HORA_DESDE
-  const hasta = horas.length ? Math.max(HORA_HASTA, ...horas) : HORA_HASTA
-
-  return fechas.map(fecha => ({
-    label: etiquetaDeDia(fecha, fecha === hoy),
-    cells: Array.from({ length: hasta - desde + 1 }, (_, hi) => {
-      const hora = desde + hi
-      const count = porCelda.get(`${fecha}:${hora}`) ?? 0
-      return { hour: etiquetaHora(hora), count, intensity: count / max }
-    }),
+  const filas: FilaDeMapa[] = NOMBRES_DIA.map((label, i) => ({
+    clave: sumarDias(lunes, i), label,
   }))
+  return construirGrilla(porCelda, filas, horasDe(rows))
+}
+
+/**
+ * El mapa HISTÓRICO: treinta días apilados por día de la semana.
+ *
+ * Acá sí se suma un lunes con otro, y es el punto: la pregunta que contesta no
+ * es «cuánto se trabajó el lunes 21» sino «cómo se comporta un lunes». Con un
+ * mes de datos el patrón de la semana se ve; con una sola semana, no.
+ *
+ * Por eso este mapa no lleva números en las celdas —el total de treinta días
+ * no significa nada operativo— y se lee sólo por color.
+ */
+function buildHeatmapHistorico(rows: any[]): { label: string; cells: HourCell[] }[] {
+  const porCelda = new Map<string, number>()
+  for (const r of rows) {
+    const dia = Number(r.day_of_week)
+    const hora = Number(r.hour_of_day)
+    if (!Number.isFinite(dia) || !Number.isFinite(hora)) continue
+    const clave = `${dia}:${hora}`
+    porCelda.set(clave, (porCelda.get(clave) ?? 0) + (Number(r.washes) || 0))
+  }
+  const filas: FilaDeMapa[] = DOWS_LUNES_PRIMERO.map((dow, i) => ({
+    clave: String(dow), label: NOMBRES_DIA[i] as string,
+  }))
+  return construirGrilla(porCelda, filas, horasDe(rows))
 }
 
 /** Cómo se muestra cada estado que reporta el PLC. */
@@ -586,7 +613,15 @@ function BarChart7Days({ items }: { items: DailySummary[] }) {
   )
 }
 
-function Heatmap({ rows }: { rows: { label: string; cells: HourCell[] }[] }) {
+function Heatmap({ rows, mostrarNumeros = true }: {
+  rows: { label: string; cells: HourCell[] }[]
+  /**
+   * El histórico va sin números: un total de treinta días no dice nada
+   * operativo y ensuciaría la lectura del patrón, que es lo único que ese mapa
+   * viene a mostrar. El dato exacto sigue estando en el tooltip.
+   */
+  mostrarNumeros?: boolean
+}) {
   const [tooltip, setTooltip] = useState<{ label: string; hour: string; count: number } | null>(null)
   const { isDark } = useTheme()
   return (
@@ -629,7 +664,7 @@ function Heatmap({ rows }: { rows: { label: string; cells: HourCell[] }[] }) {
                       ceros es ruido: la celda pálida ya dice «acá no pasó
                       nada», y el cero compite por la mirada con los números
                       que sí importan. */}
-                  {cell.count > 0 ? cell.count : ''}
+                  {mostrarNumeros && cell.count > 0 ? cell.count : ''}
                 </div>
               ))}
             </div>
@@ -733,6 +768,9 @@ export function DashboardPage() {
   // falta la migración 0044, la columna wash_date no existe y el mapa se vería
   // vacío un día entero antes de que alguien sospeche.
   const [heatmapError, setHeatmapError] = useState<string | null>(null)
+  // El segundo mapa: treinta días apilados por día de la semana.
+  const [historicoRows, setHistoricoRows] = useState<{ label: string; cells: HourCell[] }[]>([])
+  const [historicoTotal, setHistoricoTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [cashAlert, setCashAlert] = useState<{ difference: number } | null>(null)
   const [voucherStats, setVoucherStats] = useState({ revenue: 0, sold: 0, redeemed: 0 })
@@ -832,22 +870,16 @@ export function DashboardPage() {
     // el lunes, el martes el martes, y la grilla se llena a medida que avanza
     // la semana. Los días que todavía no llegaron se ven vacíos porque lo
     // están, no porque falte el dato.
-    // Ventana RODANTE de siete días que termina HOY, no la semana del
-    // calendario. Cada día se limpia a su medianoche y se va llenando hora por
-    // hora; los otros seis siguen mostrando su última vez hasta que les toque.
-    //
-    // Con lunes-a-domingo los días que todavía no habían llegado salían
-    // vacíos, y un miércoles dejaba media grilla en blanco. Acá siempre hay
-    // siete días con datos y ninguno se apila con el de la semana pasada,
-    // porque la ventana tiene exactamente siete fechas distintas.
-    const hoy = hoyLocal()
-    const finVentana = sumarDias(hoy, semanaOffset * 7)
-    const fechas = ventanaDeSieteDias(finVentana)
+    // La semana del calendario, de lunes a domingo. Ventana CERRADA: el tope
+    // superior no es adorno — sin él, mirar una semana vieja arrastraría todo
+    // lo posterior a su lunes y el mapa volvería a apilar.
+    const lunes = sumarDias(inicioDeSemanaLocal(), semanaOffset * 7)
+    const lunesSiguiente = sumarDias(lunes, 7)
     const { data, error } = await (supabase as any)
       .from('v_plc_heatmap')
       .select('wash_date, hour_of_day, washes')
-      .gte('wash_date', fechas[0])
-      .lte('wash_date', finVentana)
+      .gte('wash_date', lunes)
+      .lt('wash_date', lunesSiguiente)
       .or(`branch_id.eq.${branchId},branch_id.is.null`)
     if (error) {
       // El mapa dibujado no se borra —se queda el último bueno— pero el motivo
@@ -861,8 +893,33 @@ export function DashboardPage() {
       return
     }
     setHeatmapError(null)
-    setHeatmapRows(buildHeatmapFrom(data ?? [], fechas, hoy))
+    setHeatmapRows(buildHeatmapSemana(data ?? [], lunes))
   }, [branchId, semanaOffset])
+
+  /**
+   * El mapa histórico: treinta días, apilados por día de la semana.
+   *
+   * No depende de `semanaOffset` — siempre son los últimos treinta días. Es
+   * una pregunta distinta de la del otro mapa: aquél dice qué pasó esta
+   * semana, éste dice cómo se comporta un lunes cualquiera. Para eso hace
+   * falta más de una semana de datos, y por eso acá SÍ se suman los lunes
+   * entre sí.
+   */
+  const loadHistorico = useCallback(async () => {
+    if (!branchId) return
+    const desde = sumarDias(hoyLocal(), -29)
+    const { data, error } = await (supabase as any)
+      .from('v_plc_heatmap')
+      .select('day_of_week, hour_of_day, washes')
+      .gte('wash_date', desde)
+      .or(`branch_id.eq.${branchId},branch_id.is.null`)
+    // Un fallo acá no toca el mapa semanal, que es el operativo: el histórico
+    // se queda con lo último bueno y el otro sigue andando.
+    if (error) return
+    const filas = data ?? []
+    setHistoricoRows(buildHeatmapHistorico(filas))
+    setHistoricoTotal(filas.reduce((n: number, r: any) => n + (Number(r.washes) || 0), 0))
+  }, [branchId])
 
   const loadKPIs = useCallback(async () => {
     if (!branchId) return
@@ -997,11 +1054,11 @@ export function DashboardPage() {
   // día, y quien mira el tablero no tiene cómo saber cuál de los dos está
   // viejo.
   useEffect(() => {
-    const refrescar = () => { loadMachines(); loadHeatmap() }
+    const refrescar = () => { loadMachines(); loadHeatmap(); loadHistorico() }
     refrescar()
     const t = setInterval(refrescar, 30_000)
     return () => clearInterval(t)
-  }, [loadMachines, loadHeatmap])
+  }, [loadMachines, loadHeatmap, loadHistorico])
 
   // Realtime
   useEffect(() => {
@@ -1061,12 +1118,28 @@ export function DashboardPage() {
   // Cómo se llama la semana que se está mirando. Se escribe el rango completo
   // y no sólo «hace 2 semanas»: al conciliar contra otra fuente hace falta
   // saber qué días entran, y contarlos hacia atrás a mano invita al error.
-  const finVisible = sumarDias(hoyLocal(), semanaOffset * 7)
-  const inicioVisible = sumarDias(finVisible, -6)
-  const rangoSemana = `${formatearFecha(new Date(inicioVisible + 'T12:00:00'), { day: 'numeric', month: 'short' })} — ${formatearFecha(new Date(finVisible + 'T12:00:00'), { day: 'numeric', month: 'short' })}`
+  // El pico del histórico: la hora-día que más se repite en treinta días. Es
+  // la respuesta que este mapa existe para dar.
+  const picoHistorico = (() => {
+    let mejor: { dia: string; hora: string; count: number } | null = null
+    for (const row of historicoRows) {
+      for (const cell of row.cells) {
+        if (cell.count > 0 && (!mejor || cell.count > mejor.count)) {
+          mejor = { dia: row.label, hora: cell.hour, count: cell.count }
+        }
+      }
+    }
+    return mejor ? `Pico: ${mejor.hora} · ${mejor.dia}` : null
+  })()
+
+  const lunesVisible = sumarDias(inicioDeSemanaLocal(), semanaOffset * 7)
+  const domingoVisible = sumarDias(lunesVisible, 6)
+  const dia = (f: string) => formatearFecha(new Date(f + 'T12:00:00'), { day: 'numeric', month: 'short' })
+  const rangoSemana = `${dia(lunesVisible)} — ${dia(domingoVisible)}`
   const etiquetaSemana =
-    semanaOffset === 0 ? 'en los últimos 7 días'
-    : `en los 7 días que terminan el ${formatearFecha(new Date(finVisible + 'T12:00:00'), { day: 'numeric', month: 'short' })}`
+    semanaOffset === 0 ? 'esta semana'
+    : semanaOffset === -1 ? 'la semana pasada'
+    : `hace ${Math.abs(semanaOffset)} semanas`
 
   return (
     <div className="page-inner">
@@ -1243,13 +1316,23 @@ export function DashboardPage() {
         </div>
       )}
 
-      {/* ── Mapa de calor ──
-          Acotado a media pantalla: las celdas usan aspect-ratio 1, así que a
-          ancho completo 13 columnas × 7 filas ocupaban un bloque enorme sin
-          aportar más información. */}
+      {/* ── Los dos mapas de calor ──
+          Contestan preguntas distintas y por eso van separados en vez de un
+          selector: el de la izquierda dice qué pasó ESTA semana —se mira
+          durante el turno— y el de la derecha cómo se comporta un lunes
+          cualquiera, que es lo que sirve para decidir turnos y mantenimiento.
+          Teniéndolos al lado se comparan de un vistazo.
+
+          `minmax(0, 1fr)` y no `1fr`: las celdas usan aspect-ratio y sin el
+          mínimo en cero la grilla empuja la columna y desborda el contenedor. */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+        gap: 12, alignItems: 'start',
+      }}>
       <div style={{
         background: 'var(--surface)', border: '1px solid var(--border)',
-        borderRadius: 12, padding: '16px 18px', maxWidth: 560,
+        borderRadius: 12, padding: '16px 18px', minWidth: 0,
       }}>
         <div style={{ marginBottom: 12, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -1301,6 +1384,32 @@ export function DashboardPage() {
           </div>
         </div>
         <Heatmap rows={heatmapRows} />
+      </div>
+
+      {/* ── Mapa histórico · 30 días ── */}
+      <div style={{
+        background: 'var(--surface)', border: '1px solid var(--border)',
+        borderRadius: 12, padding: '16px 18px', minWidth: 0,
+      }}>
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, color: 'var(--text-primary)' }}>
+            Comportamiento · últimos 30 días
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+            {historicoTotal > 0
+              ? `${historicoTotal} ${historicoTotal === 1 ? 'lavado' : 'lavados'} acumulados${
+                  picoHistorico ? ' · ' + picoHistorico.toLowerCase() : ''}`
+              : 'Sin lavados en los últimos 30 días'}
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+            Cada lunes suma con los otros lunes: muestra el patrón, no el día.
+          </div>
+        </div>
+        {/* Sin números a propósito: el total de treinta días no dice nada
+            operativo y taparía el patrón, que es lo único que este mapa viene
+            a mostrar. El dato exacto sigue en el tooltip. */}
+        <Heatmap rows={historicoRows} mostrarNumeros={false} />
+      </div>
       </div>
 
       {/* ── KPIs adicionales de servicios ── */}
