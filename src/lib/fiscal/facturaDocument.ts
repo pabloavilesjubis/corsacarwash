@@ -148,9 +148,8 @@ export function buildFacturaHTML(sale: Sale, dte: DteDeVenta | null = null): str
           ${fila('NIT', EMISOR.nit, { mono: true, requerido: true })}
           ${fila('NRC', EMISOR.nrc, { mono: true, requerido: true })}
           ${fila('Actividad económica', actividadEmisor, { requerido: true })}
-          ${fila('Establecimiento', EMISOR.tipoEstablecimiento, { requerido: true })}
           ${fila('Dirección', EMISOR.direccion, { requerido: true })}
-          ${fila('Teléfono', EMISOR.telefono, { requerido: true })}
+          ${fila('Teléfono', EMISOR.telefono)}
           ${fila('Correo', EMISOR.correo, { requerido: true })}
         </div>
       </div>`

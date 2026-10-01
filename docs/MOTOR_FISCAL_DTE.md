@@ -431,6 +431,7 @@ src/
 |---|---|---|
 | `GET` | `/health` | Estado. Sin autenticación. |
 | `POST` | `/v1/dte/emit` | **La ruta real del POS.** Circuito completo. `FISCAL_API_KEY`. |
+| `POST` | `/v1/app/venta` | El cobro del POS: emite la FCF de una factura y espera el sello. JWT + `screens.pos`. |
 | `POST` | `/v1/app/fsee` | Sujeto Excluido desde Contabilidad. JWT del usuario + `fiscal.issue`. |
 | `POST` | `/v1/app/nota-credito` | Nota de Crédito desde Contabilidad. Ídem. |
 | `POST` | `/v1/app/invalidacion` | Invalida un documento aceptado. Ídem. |
@@ -624,6 +625,28 @@ formulario y reusa en cada reintento (`APP:<uuid>:DTE:<tipo>`).
 **Reintentar** retransmite **el mismo JWS** firmado la primera vez — no
 reconstruye, porque eso daría otra fecha de emisión con el mismo
 codigoGeneracion. Si el documento nunca se firmó, no hay nada que retransmitir.
+
+### El POS espera el sello (migración 0047)
+
+Con `fiscal_issuer_config.emitir_en_pos = true` en la sucursal, cada cobro de
+Consumidor Final llama a `/v1/app/venta` y **espera hasta 20 s** la respuesta
+de Hacienda antes de imprimir el ticket. Aceptado → el ticket sale con número
+de control, código de generación, sello y QR. Rechazado, pendiente o sin
+respuesta → el ticket sale igual, con el DTE como pendiente, y se reintenta
+desde Contabilidad: el cobro ya está hecho y el ticket es también la orden del
+equipo en piso.
+
+Del POS sólo viaja el id de la factura. Líneas, montos y sucursal los lee el
+Worker con `fiscal_sale_for_emission`, y si las líneas no suman el total de la
+factura no emite. La llave es `SALE:<invoice_id>:DTE:01`, la misma de
+`/v1/dte/emit`: repetir la llamada retoma el mismo documento.
+
+El CCF no se emite desde el POS hasta que exista su builder; esas ventas no
+esperan. El interruptor nace apagado:
+
+```sql
+update public.fiscal_issuer_config set emitir_en_pos = true where branch_id = '<sucursal>';
+```
 
 ### Permisos (migración 0046)
 

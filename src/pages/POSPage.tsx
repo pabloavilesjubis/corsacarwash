@@ -17,7 +17,9 @@ import {
   ccfReceptorStatus, fcfReceptorStatus, preferredDocType, type ReceptorStatus,
 } from '../lib/fiscal/receptor'
 import { FCF_IDENTIFICACION_OBLIGATORIA_DESDE } from '../lib/mh-catalogs'
-import { printCorsaTicket } from '../lib/ticket/corsaTicket'
+import { abrirVentanaTicket, avisoEnVentanaTicket, printCorsaTicket } from '../lib/ticket/corsaTicket'
+import { emitirDteDeVenta, posEmiteDte } from '../services/fiscal.service'
+import { fetchDteDeVenta, type DteDeVenta } from '../services/sales.service'
 import { buildTicketArgsFromPos, EMISOR, type PosSaleResult } from '../lib/ticket/fromSale'
 import { lookupVoucher, redeemVoucher, type VoucherLookup } from '../services/vouchers.service'
 import { fetchPolizaVigente, tiempoRestante, type RainPolicy } from '../services/rain.service'
@@ -28,6 +30,13 @@ import {
   ModalNuevoCliente, ModalNuevoVehiculo, SelectorVehiculos, type VehiculoPos,
 } from '../components/pos/AltaRapida'
 import { formatearFechaHora } from '../utils/fecha'
+
+/**
+ * Cuánto espera el POS el sello antes de imprimir sin él. Hacienda suele
+ * contestar en uno o dos segundos; pasado esto, tener al cliente parado en la
+ * caja cuesta más que imprimir el DTE como pendiente.
+ */
+const ESPERA_DTE_MS = 20_000
 
 // ─── Catálogo ────────────────────────────────────────────────
 
@@ -823,6 +832,19 @@ export function POSPage() {
   const [selectedPayment, setSelectedPayment] = useState('efectivo')
   const [keypadValue, setKeypadValue] = useState('')
   const [showBillingModal, setShowBillingModal] = useState(false)
+
+  /**
+   * Si esta sucursal emite el DTE con cada cobro. Se pregunta al cambiar de
+   * sucursal y no en cada venta: el interruptor cambia una vez, cuando el
+   * circuito con Hacienda queda listo.
+   */
+  const [emiteDte, setEmiteDte] = useState(false)
+  useEffect(() => {
+    if (!branchId) { setEmiteDte(false); return }
+    let vivo = true
+    posEmiteDte(branchId).then(v => { if (vivo) setEmiteDte(v) }).catch(() => { if (vivo) setEmiteDte(false) })
+    return () => { vivo = false }
+  }, [branchId])
   // Sólo en teléfono: el cobro vive en una hoja que se abre al final.
   const [cobroAbierto, setCobroAbierto] = useState(false)
   const [voucherCode, setVoucherCode] = useState('')
@@ -986,6 +1008,17 @@ export function POSPage() {
     setShowBillingModal(false)
     setCobroAbierto(false)
     setSubmitting(true)
+
+    // El CCF todavía no tiene builder en el Worker: esas ventas se imprimen
+    // como hasta ahora, sin esperar.
+    const esperarDte = emiteDte && billing.docType !== 'ccf'
+
+    // La ventana del ticket se abre YA, en el clic. Después de esperar el
+    // cobro y el sello —que pueden ser varios segundos— el navegador ya no lo
+    // cuenta como respuesta al clic y la bloquea.
+    const ventana = abrirVentanaTicket()
+    avisoEnVentanaTicket(ventana, 'Registrando la venta…')
+
     try {
       // pos_register_sale (0030) reemplaza a create_work_order: aquella se
       // llamaba con parámetros que no existían en ninguna migración, así que
@@ -1013,6 +1046,30 @@ export function POSPage() {
       const sale = data as PosSaleResult
       const receptor = billing.ccfCustomer ?? customer
 
+      // Con la sucursal emitiendo, el ticket espera el sello de Hacienda para
+      // imprimir número de control, código de generación, sello y QR. El
+      // cobro ya quedó registrado: si Hacienda no contesta o rechaza, el
+      // ticket sale igual —es la orden del equipo en piso y el cliente está
+      // esperando— con el DTE pendiente, y se reintenta desde Contabilidad.
+      let dte: DteDeVenta | null = null
+      if (esperarDte && sale.invoice_id) {
+        avisoEnVentanaTicket(ventana, 'Esperando el sello de Hacienda…')
+        const espera = toast.loading('Emitiendo el DTE con Hacienda…')
+        try {
+          const r = await emitirDteDeVenta(sale.invoice_id, ESPERA_DTE_MS)
+          if (r.estado === 'ACCEPTED') {
+            dte = await fetchDteDeVenta(sale.invoice_id)
+            toast.success('DTE sellado por Hacienda', { id: espera })
+          } else {
+            toast.error(`DTE ${r.estado === 'REJECTED' ? 'rechazado' : 'pendiente'}: ${r.mensaje ?? 'revisalo en Contabilidad'}. El ticket sale sin sello.`,
+              { id: espera, duration: 8000 })
+          }
+        } catch (e) {
+          toast.error(`${e instanceof Error ? e.message : 'No se pudo emitir el DTE'} El ticket sale sin sello.`,
+            { id: espera, duration: 8000 })
+        }
+      }
+
       // El ticket se abre solo: es el comprobante y a la vez la orden que lee
       // el equipo en piso. Si el navegador bloquea la ventana emergente el
       // cobro ya quedó registrado, así que sólo se avisa — no se revierte.
@@ -1029,7 +1086,7 @@ export function POSPage() {
           metodoPago: PAYMENT_METHODS.find(p => p.id === selectedPayment)?.label,
           aspiradoPrecio: aspiradoPrice,
           branchName: (currentBranch as any)?.name,
-        }))
+        }, dte), ventana)
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'La venta se guardó, pero no se pudo abrir el ticket')
       }
@@ -1039,10 +1096,11 @@ export function POSPage() {
       setMode('normal'); setSelectedService('elite'); setSelectedSize('M')
       setWithAspirado(false); setKeypadValue('')
     } catch (err: any) {
+      ventana?.close()
       toast.error(err?.message ?? 'Error al crear la orden')
     }
     setSubmitting(false)
-  }, [branchId, mode, fleetCompany, fleetVehicle, customer, svc, selectedSize, total, selectedPayment,
+  }, [branchId, emiteDte, mode, fleetCompany, fleetVehicle, customer, svc, selectedSize, total, selectedPayment,
       withAspirado, aspiradoPrice, currentBranch, seguroActivo, seguroPrice,
       canjeandoSeguro, polizaVigente, vehiculoElegido])
 

@@ -593,6 +593,21 @@ export function abrirVentanaTicket(id?: string): Window | null {
   return window.open('', `corsa_ticket_${id ?? Date.now()}`, 'width=420,height=760')
 }
 
+/**
+ * Un aviso en la ventana del ticket mientras se espera algo —el cobro, el
+ * sello de Hacienda—. Sin esto queda una ventana en blanco, y el cajero la
+ * cierra creyendo que falló.
+ */
+export function avisoEnVentanaTicket(w: Window | null, texto: string): void {
+  if (!w) return
+  w.document.open()
+  w.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><title>CORSA</title></head>
+    <body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;
+                 font-family:'Helvetica Neue',Arial,sans-serif;font-size:15px;font-weight:700;text-align:center;padding:24px">
+      ${esc(texto)}</body></html>`)
+  w.document.close()
+}
+
 export function printCorsaTicket(args: TicketArgs, ventana?: Window | null): void {
   const html = buildCorsaTicketHTML(args)
   const w = ventana ?? abrirVentanaTicket(args.venta.id)

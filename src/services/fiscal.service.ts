@@ -270,7 +270,7 @@ export class ErrorFiscal extends Error {
   }
 }
 
-async function llamarWorker(ruta: string, cuerpo: unknown): Promise<ResultadoFiscal> {
+async function llamarWorker(ruta: string, cuerpo: unknown, opts: { timeoutMs?: number } = {}): Promise<ResultadoFiscal> {
   if (!URL_FISCAL) {
     throw new ErrorFiscal('Falta VITE_FISCAL_API_URL en la configuración de la app.', 'SIN_CONFIGURAR')
   }
@@ -284,8 +284,14 @@ async function llamarWorker(ruta: string, cuerpo: unknown): Promise<ResultadoFis
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify(cuerpo),
+      ...(opts.timeoutMs ? { signal: AbortSignal.timeout(opts.timeoutMs) } : {}),
     })
-  } catch {
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'TimeoutError') {
+      throw new ErrorFiscal(
+        'Hacienda no respondió a tiempo. El documento queda pendiente y se puede ' +
+        'reintentar desde Contabilidad sin duplicarlo.', 'SIN_RESPUESTA')
+    }
     throw new ErrorFiscal(
       'No se pudo contactar al servicio fiscal. Revisá la conexión y volvé a intentar: ' +
       'el mismo formulario no genera un documento duplicado.', 'SIN_CONEXION')
@@ -355,6 +361,34 @@ export interface SolicitudInvalidacion {
 }
 
 export const invalidar = (s: SolicitudInvalidacion) => llamarWorker('/v1/app/invalidacion', s)
+
+/**
+ * Emite el DTE de una venta del POS y espera la respuesta de Hacienda.
+ *
+ * Sólo viaja el id de la factura: qué se vendió y a cuánto lo lee el Worker
+ * de la base. Repetir la llamada retoma el mismo documento —la llave sale de
+ * la factura—, así que un corte de red mientras se espera no duplica nada.
+ */
+export const emitirDteDeVenta = (invoiceId: string, timeoutMs: number) =>
+  llamarWorker('/v1/app/venta', { invoiceId }, { timeoutMs })
+
+/**
+ * Si el POS de la sucursal emite con cada cobro (0047, `emitir_en_pos`).
+ *
+ * Cualquier error responde false: sin la columna —migración sin aplicar—, sin
+ * configuración o sin red, el POS cobra e imprime como siempre, con el DTE
+ * pendiente. Lo que no puede pasar es que la caja se trabe por esto.
+ */
+export async function posEmiteDte(branchId: string): Promise<boolean> {
+  if (!URL_FISCAL) return false
+  const { data, error } = await (supabase as any)
+    .from('fiscal_issuer_config')
+    .select('emitir_en_pos, activo')
+    .eq('branch_id', branchId)
+    .maybeSingle()
+  if (error || !data) return false
+  return Boolean(data.emitir_en_pos && data.activo)
+}
 
 export const reintentarDocumento = (documentoId: string) =>
   llamarWorker('/v1/app/reintentar', { documentoId })

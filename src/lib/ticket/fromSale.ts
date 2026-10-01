@@ -16,13 +16,11 @@ import type { DteDeVenta, Sale } from '../../services/sales.service'
  * viajan dentro del DTE: si el papel dice un NIT y el documento sellado otro,
  * la representación impresa no corresponde al documento.
  *
- * Faltan el teléfono y el tipo de establecimiento: el MH los pide en el
- * emisor y no hay valores confirmados. Quedan vacíos a propósito —la factura
- * carta los marca como pendientes— en vez de inventarlos: un dato inventado
- * termina impreso en miles de documentos.
+ * Sin teléfono a propósito: no hay uno confirmado, y uno inventado termina
+ * impreso en miles de documentos.
  */
 export const EMISOR: TicketEmisor = {
-  nombreComercial: 'CORSA',
+  nombreComercial: 'CORSA CARWASH',
   razonSocial: 'GRUPO JUBIS S.A. DE C.V.',
   nit: '0623-190924-101-8',
   nrc: '349116-2',
@@ -111,6 +109,7 @@ export function buildTicketArgsFromSale(sale: Sale, branchName?: string, dte?: D
 /** Lo que devuelve pos_register_sale(). */
 export interface PosSaleResult {
   order_id: string
+  invoice_id: string
   order_number: string
   service_name: string
   machine_program: number | null
@@ -151,8 +150,10 @@ export function buildTicketArgsFromPos(
     atendio?: string
     aspiradoPrecio?: number
     branchName?: string
-  } = {}
+  } = {},
+  dte: DteDeVenta | null = null,
 ): TicketArgs {
+  const tipo = result.doc_type === 'ccf' ? '03' : '01'
   const total = Number(result.total || 0)
   const aspirado = extras.aspiradoPrecio ?? 0
   const seguro = Number(result.rain_policy?.price ?? 0)
@@ -165,8 +166,7 @@ export function buildTicketArgsFromPos(
     emisor: {
       ...EMISOR,
       direccion: extras.branchName ? `${extras.branchName} · ${EMISOR.direccion}` : EMISOR.direccion,
-      // El POS todavía no emite: el ticket del cobro sale sin DTE.
-      ambiente: rotuloAmbiente(null),
+      ambiente: rotuloAmbiente(dte),
     },
     operacion: {
       servicio: result.service_name,
@@ -205,7 +205,9 @@ export function buildTicketArgsFromPos(
       numeroDocumento: extras.clienteDoc?.numero,
       nrc: extras.clienteDoc?.nrc,
     },
-    dte: { tipoDte: result.doc_type === 'ccf' ? '03' : '01' },
+    // Con la sucursal emitiendo, el POS espera el sello y llega el DTE; si no,
+    // el ticket deja el bloque fiscal como pendiente.
+    dte: dte ? dteParaTicket(dte, tipo) : { tipoDte: tipo },
     atendio: extras.atendio,
     // La vigencia se imprime con lo que devolvió el servidor, no con una
     // cuenta hecha acá: el reloj que vale es el de la base, que es el mismo
