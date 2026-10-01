@@ -158,6 +158,41 @@ const screenIcons: Record<string, React.ReactNode> = {
       <circle cx="17" cy="12" r="1.4"/>
     </Icon>
   ),
+  // Contabilidad. Nota de crédito: un documento con un menos.
+  acc_nc: (
+    <Icon>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="9" y1="14" x2="15" y2="14"/>
+    </Icon>
+  ),
+  // Sujeto excluido: una compra a una persona.
+  acc_fsee: (
+    <Icon>
+      <circle cx="9" cy="7" r="4"/>
+      <path d="M2 21v-2a4 4 0 0 1 4-4h6"/>
+      <line x1="18" y1="14" x2="18" y2="22"/>
+      <line x1="14" y1="18" x2="22" y2="18"/>
+    </Icon>
+  ),
+  // Invalidación: un documento tachado.
+  acc_inv: (
+    <Icon>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="9" y1="12" x2="15" y2="18"/>
+      <line x1="15" y1="12" x2="9" y2="18"/>
+    </Icon>
+  ),
+  // Correlativos: la numeración.
+  acc_corr: (
+    <Icon>
+      <line x1="4" y1="9" x2="20" y2="9"/>
+      <line x1="4" y1="15" x2="20" y2="15"/>
+      <line x1="10" y1="3" x2="8" y2="21"/>
+      <line x1="16" y1="3" x2="14" y2="21"/>
+    </Icon>
+  ),
   // Paraguas: el seguro de lluvia.
   rain: (
     <Icon>
@@ -247,11 +282,12 @@ export function Sidebar() {
   const initials = getInitials(displayName)
   const branchName = (currentBranch as Branch | null)?.name ?? 'CORSA'
 
-  const visible = (section: 'caja' | 'administracion') =>
+  const visible = (section: 'caja' | 'administracion' | 'contabilidad') =>
     screensOfSection(section).filter(sc => hasPermission(sc.permission))
 
   const caja = visible('caja')
   const admin = visible('administracion')
+  const contabilidad = visible('contabilidad')
 
   const renderLink = (sc: ScreenDef) => (
     <SidebarLink key={sc.key} to={sc.path} icon={screenIcons[sc.key]} label={sc.label}/>
@@ -285,6 +321,18 @@ export function Sidebar() {
           <SectionActive icon={icons.dashboard} label="Administración"/>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingLeft: 4 }}>
             {admin.map(renderLink)}
+          </div>
+        </div>
+      )}
+
+      {/* Contabilidad: documentos fiscales que no nacen de una venta. */}
+      {contabilidad.length > 0 && (caja.length > 0 || admin.length > 0) && <div className="sidebar-divider"/>}
+
+      {contabilidad.length > 0 && (
+        <div className="sidebar-section">
+          <SectionActive icon={icons.receivable} label="Contabilidad"/>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingLeft: 4 }}>
+            {contabilidad.map(renderLink)}
           </div>
         </div>
       )}

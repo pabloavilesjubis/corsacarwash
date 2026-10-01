@@ -4,8 +4,9 @@ Documentación técnica del motor de facturación electrónica de CORSA: cómo e
 Documentos Tributarios Electrónicos contra el Ministerio de Hacienda de El
 Salvador **desde Cloudflare, sin ningún servidor físico**.
 
-**Alcance:** DTE `01` (Factura de Consumidor Final) y `03` (Comprobante de
-Crédito Fiscal).
+**Alcance:** DTE `01` (Factura de Consumidor Final), `05` (Nota de Crédito),
+`14` (Sujeto Excluido) y el evento de invalidación. El `03` (Comprobante de
+Crédito Fiscal) tiene schema pero todavía no builder.
 
 **El criterio que manda:** si mañana el Ubuntu de ERP-PAAJ se apaga, CORSA tiene
 que poder vender, firmar, transmitir y recibir sello sin enterarse. ERP-PAAJ fue
@@ -27,6 +28,9 @@ Esto va primero a propósito. Las pruebas automatizadas son buenas y numerosas,
 |---|---|---|
 | **Firmador RS512** | ✅ **Validado criptográficamente** | Header y firma contrastados contra 113 DTE reales sellados por el MH; ejecución verificada dentro de workerd |
 | **Builder FCF (01)** | ✅ **Validado contra schema** | El documento construido pasa `fe-fc-v1.json`, el schema oficial del MH |
+| **Builder NC (05)** | ✅ **Validado contra schema y contra una NC real** | Pasa `fe-nc-v3.json`; reproduce campo por campo una NC sellada en producción por otro contribuyente |
+| **Builder FSEE (14)** | ✅ **Validado contra schema y contra una FSEE real** | Pasa `fe-fse-v1.json`; reproduce campo por campo una FSEE sellada en producción |
+| **Evento de invalidación** | ✅ **Validado contra schema** | Pasa `anulacion-schema-v2.json` (con un parche documentado, §13) |
 | **Correlativos** | ✅ **Validados contra PostgreSQL** | 50 reservas simultáneas con pgbench, más idempotencia y concurrencia |
 | **Circuito interno** | ✅ **Validado con dobles** | 14 pruebas de punta a punta con Supabase y MH simulados |
 | **Integración con el MH** | ❌ **NO VALIDADA** | El cliente compila y tiene pruebas de forma, pero **nunca habló con Hacienda** |
@@ -234,7 +238,7 @@ hueco cuando no. Nadie eligió ese comportamiento; sale de la aritmética.
 
 ### Alcance de la secuencia
 
-`UNIQUE (organization_id, dte_type, establishment_code, pos_code)`.
+`UNIQUE (organization_id, ambiente, dte_type, establishment_code, pos_code)`.
 
 La organización entra porque los códigos de establecimiento los asigna Hacienda
 **por NIT**: dos organizaciones son dos contribuyentes y no pueden compartir
@@ -263,10 +267,25 @@ concurrentes leerían el mismo valor.
 
 ### Sembrado
 
-Antes de operar hay que decir en qué número va el contribuyente.
-`fiscal_seed_correlative` sube pero **nunca baja**, y cada llamada queda en
-`fiscal_audit_events`. Arrancar en 1 cuando CORSA ya emitió documentos por otro
-medio duplicaría numeración ante Hacienda, y eso no se arregla después.
+Antes de operar hay que decir en qué número va el contribuyente. Se hace en
+**Contabilidad → Correlativos** (RPC `fiscal_seed_correlative_app`, permiso
+`fiscal.seed`): se escribe el **último número emitido** —0 si nunca se emitió
+ese tipo— y el próximo documento sale con el siguiente. Los códigos de
+establecimiento y punto de venta salen de `fiscal_issuer_config`, no de la
+pantalla.
+
+Sube pero **nunca baja**: intentar bajarla es un error, no se ignora en
+silencio. Cada siembra queda en `fiscal_audit_events` con el valor anterior.
+Arrancar en 1 cuando CORSA ya emitió documentos por otro medio duplicaría
+numeración ante Hacienda, y eso no se arregla después.
+
+### Una secuencia por ambiente
+
+Desde la migración 0046 la secuencia incluye el **ambiente** (`00` pruebas,
+`01` producción), y el numeroControl es único dentro de su ambiente. Antes, lo
+que se gastaba probando contra el sandbox avanzaba la secuencia real, y como
+sólo sube, producción habría arrancado donde quedaron las pruebas. Ahora la
+semilla de producción es de verdad el punto de inicio.
 
 ---
 
@@ -411,7 +430,11 @@ src/
 | Método | Ruta | Qué hace |
 |---|---|---|
 | `GET` | `/health` | Estado. Sin autenticación. |
-| `POST` | `/v1/dte/emit` | **La ruta real.** Circuito completo. |
+| `POST` | `/v1/dte/emit` | **La ruta real del POS.** Circuito completo. `FISCAL_API_KEY`. |
+| `POST` | `/v1/app/fsee` | Sujeto Excluido desde Contabilidad. JWT del usuario + `fiscal.issue`. |
+| `POST` | `/v1/app/nota-credito` | Nota de Crédito desde Contabilidad. Ídem. |
+| `POST` | `/v1/app/invalidacion` | Invalida un documento aceptado. Ídem. |
+| `POST` | `/v1/app/reintentar` | Retransmite un documento o una invalidación pendientes. Ídem. |
 | `POST` | `/v1/prueba/firmar` | Firma un payload. No toca Hacienda. |
 | `POST` | `/v1/prueba/validar` | Valida contra el schema. No firma ni transmite. |
 | `POST` | `/v1/prueba/emitir` | Emisión sin base, para diagnóstico. |
@@ -507,16 +530,108 @@ el contenido —por eso pasó 113 veces— pero sale impreso en cada factura.
 
 ---
 
+## 12b. Nota de Crédito — DTE 05, versión 3
+
+Builder: `src/builders/nc.ts`. Se emite desde **Contabilidad → Notas de crédito**.
+
+- **Sólo acredita CCF (`03`) o Comprobantes de Retención (`07`).** Una FCF no
+  se acredita: se invalida.
+- Precios **sin IVA**; el IVA va sólo en `resumen.tributos`, código `'20'`,
+  calculado sobre el total gravado. No hay `ivaItem`.
+- Cada ítem lleva `numeroDocumento` = el documento del que sale, y ese
+  documento tiene que estar en `documentoRelacionado` (de 1 a 50). El schema no
+  lo cruza; el builder sí.
+- El **emisor no lleva** `codEstable`/`codPuntoVenta` ni sus versiones MH, y el
+  **resumen no lleva** `pagos`, `totalPagar`, `saldoFavor`, `totalIva` ni
+  `porcentajeDescuento`. Mandarlos es un rechazo seguro.
+- El teléfono del emisor es obligatorio (en la FCF no).
+- Si el CCF relacionado es nuestro, el Worker verifica **antes de reservar
+  número** que esté aceptado, no invalidado y que sea del mismo receptor. Un CCF
+  de antes de CORSA (otro sistema, o papel) se acepta sin esa verificación.
+- **Pendiente:** no se controla que la suma de notas no supere lo facturado en
+  el CCF, ni se modela la retención del 1 % de un gran contribuyente.
+
+---
+
+## 12c. Sujeto Excluido — DTE 14, versión 1
+
+Builder: `src/builders/fsee.ts`. Se emite desde **Contabilidad → Sujetos
+excluidos**. Es una **compra**: no tiene receptor sino `sujetoExcluido`, y el
+cuerpo lleva `compra`. Retención de renta configurable (10 % para honorarios a
+persona natural). Hacienda **no** cruza el tipo de documento con el número; la
+pantalla sí (un número de 9 dígitos declarado como pasaporte se frena).
+
+---
+
 ## 13. Invalidación y contingencia
 
-**Pendientes. No son mejoras, son obligaciones.**
+### Invalidación — hecha
 
-- **Invalidación** (`anulacion-schema-v2.json`, `POST /fesv/anulardte`). Una
-  factura mal emitida no se borra: se invalida ante el MH con un evento
-  firmado. Sin esto, un error de cajero no tiene arreglo.
-- **Contingencia** (`contingencia-schema-v3.json`). Cuando el MH está caído, la
-  ley permite emitir en contingencia y transmitir después. Los campos
-  `tipoContingencia` y `motivoContin` ya existen en el tipo, en `null`.
+Builder `src/builders/anulacion.ts`, servicio `src/services/invalidacion-service.ts`,
+tabla `fiscal_invalidations` (migración 0046). Se hace desde **Contabilidad →
+Invalidaciones** o desde el detalle de un documento aceptado.
+
+- **No es un DTE**: no tiene numeroControl ni consume correlativo. Tiene su
+  propio `codigoGeneracion` (lo asigna la base) y recibe su propio sello.
+- El bloque `documento` **sale del JSON que Hacienda selló**, nunca de la
+  pantalla: número de control, fecha, sello y `montoIva`.
+- Tipos: `1` error (exige reemplazo), `2` rescisión (sin reemplazo), `3` otro
+  (exige reemplazo **y** motivo). El reemplazo tiene que estar aceptado y ser
+  del mismo tipo y ambiente — lo verifica la base.
+- Una FCF de mostrador no identifica al receptor, pero el evento lo exige: el
+  formulario lo pide.
+- **Un rechazo no quema nada.** Se puede abrir otra invalidación del mismo
+  documento. Sólo una aceptada lo cierra, y en la misma transacción deja el
+  documento en `INVALIDATED`.
+- Transmisión: `POST /fesv/anulardte` con `{ambiente, idEnvio, version: 2, documento}`.
+
+**Parche al schema oficial.** El patrón de `documento.numeroControl` publicado
+por el MH es `^DTE-0[0-9]|1[0-2]-[A-Z0-9]{8}-[0-9]{15}$`: sin paréntesis, la
+alternancia lo parte en dos y un `DTE-14-…` no lo cumple, aunque el mismo schema
+admite `'14'` en `tipoDte`. Se corrige al compilar (`scripts/compilar-schemas.mjs`)
+sin tocar el JSON original. **Pendiente de confirmar en sandbox** que el MH
+acepta invalidar un 14, y que `montoIva: 0` es lo que espera para él.
+
+**Plazos.** No están verificados contra la normativa en estos repositorios
+(otra implementación documenta 3 meses para FCF y 1 día para CCF/NC). La
+pantalla avisa; no bloquea, porque un rechazo por plazo no cuesta nada.
+
+### Contingencia — pendiente
+
+`contingencia-schema-v3.json`. Cuando el MH está caído, la ley permite emitir
+en contingencia y transmitir después. Los campos `tipoContingencia` y
+`motivoContin` ya existen en los tipos, en `null`.
+
+---
+
+## 13b. La app y el Worker
+
+La pantalla de Contabilidad no puede guardar la `FISCAL_API_KEY`. Las rutas
+`/v1/app/*` del Worker autentican con el **JWT de Supabase del usuario**:
+
+```
+navegador ── Bearer <JWT de la sesión> ──► /v1/app/{fsee|nota-credito|invalidacion|reintentar}
+                                            │
+                                            └─► PostgREST rpc/fiscal_app_context (con ESE jwt)
+                                                  valida el token, dice la organización
+                                                  y si tiene fiscal.issue
+```
+
+La organización sale de la sesión, nunca del cuerpo. CORS sólo para los
+orígenes de `APP_ORIGINS`. La idempotencia la da un UUID que genera el
+formulario y reusa en cada reintento (`APP:<uuid>:DTE:<tipo>`).
+
+**Reintentar** retransmite **el mismo JWS** firmado la primera vez — no
+reconstruye, porque eso daría otra fecha de emisión con el mismo
+codigoGeneracion. Si el documento nunca se firmó, no hay nada que retransmitir.
+
+### Permisos (migración 0046)
+
+| Permiso | Para qué | Roles |
+|---|---|---|
+| `screens.accounting` | Ver Contabilidad | Super Admin, Administrador, Gerente |
+| `fiscal.issue` | Emitir NC y FSEE, invalidar, reintentar | Super Admin, Administrador, Gerente |
+| `fiscal.seed` | Sembrar correlativos | Super Admin, Administrador |
 
 ---
 
@@ -545,12 +660,16 @@ DTE se llenan con `numeroControl`, `codigoGeneracion`, sello y QR.
 | `CERT_PASSWORD` | `passwordPri` del certificado (portón SHA-512) |
 | `MH_NIT` | NIT del emisor, 14 dígitos sin guiones |
 | `MH_PASSWORD` | Contraseña del portal de Hacienda — distinta de la anterior |
-| `FISCAL_API_KEY` | Clave que habilita las rutas del Worker |
+| `FISCAL_API_KEY` | Clave que habilita las rutas del POS (`/v1/dte/emit`) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role. Vive únicamente en el Worker. |
+| `SUPABASE_ANON_KEY` | No es secreta, pero va como secret: valida el JWT del usuario en `/v1/app/*` |
 
 ### Variables (`wrangler.jsonc`, versionadas)
 
-`MH_ENV` (`sandbox` / `production`), `SUPABASE_URL`, `ENVIRONMENT`.
+`MH_ENV` (`sandbox` / `production`), `SUPABASE_URL`, `ENVIRONMENT`,
+`APP_ORIGINS` (orígenes de la app web que pueden llamar a `/v1/app/*`).
+
+En la app: `VITE_FISCAL_API_URL` (la URL del Worker).
 
 ### Preparar el certificado
 
@@ -575,7 +694,7 @@ importa con `extractable: false`.
 
 ## 16. Pruebas
 
-### Worker — 83 pruebas
+### Worker — 178 pruebas
 
 ```bash
 cd corsa-fiscal-api && npm test && npm run typecheck
@@ -589,6 +708,10 @@ cd corsa-fiscal-api && npm test && npm run typecheck
 | `fcf.test.ts` | Construcción, IVA extraído, nulls explícitos |
 | `validacion.test.ts` | Contra el schema oficial, umbral de $1,095, `multipleOf` |
 | `circuito.test.ts` | **Punta a punta**: idempotencia, rechazo, MH caído |
+| `fsee.test.ts` | Sujeto Excluido contra su schema, retenciones |
+| `nc.test.ts` | Nota de Crédito contra su schema y contra la forma de una NC real |
+| `anulacion.test.ts` | Evento de invalidación, sus tres tipos y el parche al patrón |
+| `app.test.ts` | `/v1/app/*`: JWT y permiso, CORS, ambiente, invalidación, reintento con el mismo JWS |
 
 Las pruebas generan su propio par de llaves. No hay ni debe haber un certificado
 real en el repositorio.
@@ -610,6 +733,17 @@ pgbench … -c 50 -j 8 -t 1 -n -f supabase/tests/0043_concurrencia.sql
 Resultado esperado: 50 simultáneas dan **exacto 101..150**, sin duplicados ni
 saltos.
 
+La 0046 tiene sus propias pruebas (ambiente, siembra desde la app, permisos,
+invalidaciones):
+
+```bash
+psql … -f supabase/tests/0043_prereq.sql
+psql … -f supabase/tests/0046_prereq.sql
+psql … -f supabase/migrations/0043_motor_fiscal_dte.sql
+psql … -f supabase/migrations/0046_contabilidad_fiscal.sql
+psql … -f supabase/tests/0046_contabilidad_fiscal.test.sql
+```
+
 ---
 
 ## 17. Plan de prueba contra el MH
@@ -617,14 +751,21 @@ saltos.
 El hito que falta. **No considerar terminado el motor hasta completarlo.**
 
 1. Cargar los secrets con los datos reales de CORSA.
-2. Cargar `fiscal_issuer_config` con los códigos del portal del MH.
-3. Sembrar la secuencia con `fiscal_seed_correlative`.
+2. Cargar `fiscal_issuer_config` con los códigos del portal del MH **y el
+   teléfono** (NC y FSEE lo exigen).
+3. Sembrar las secuencias del ambiente **de pruebas** en Contabilidad →
+   Correlativos (en 0 sirve).
 4. `MH_ENV=sandbox`. Login → token. *(Gate: `status:"OK"`)*
 5. FCF mínima por `/v1/dte/emit`. Comparar el header contra
    `eyJhbGciOiJSUzUxMiJ9`.
 6. **Gate real: `estado:"ACCEPTED"` con `selloRecepcion` guardado en
    `fiscal_documents`.**
-7. Recién entonces, el CCF.
+7. Desde Contabilidad: un Sujeto Excluido, una invalidación de ese Sujeto
+   Excluido (confirma el parche del §13 y el `montoIva: 0`) y una Nota de
+   Crédito contra un CCF de prueba.
+8. Antes de pasar a producción: sembrar las secuencias de **producción** con
+   el último número emitido por el sistema anterior, y recién ahí cambiar
+   `MH_ENV`.
 
 Cuando lleguen los secrets y los datos fiscales, **el desarrollo de features
 nuevas se detiene** hasta completar esta prueba.
@@ -636,8 +777,8 @@ nuevas se detiene** hasta completar esta prueba.
 Después del primer FCF aceptado:
 
 1. CCF (DTE 03)
-2. Cola y reintentos
-3. Invalidación
+2. Cola y reintentos automáticos (hoy el reintento es manual, desde Contabilidad)
+3. ~~Invalidación~~ — hecha
 4. Contingencia
 5. PDF + QR
 6. Envío por correo
@@ -662,3 +803,9 @@ Después del primer FCF aceptado:
 | 8 | Validar contra el schema antes de firmar | La comprobación más barata; el MH no dice qué campo falló |
 | 9 | Validadores precompilados | Los Workers prohíben `new Function()`, que es como AJV compila |
 | 10 | Los identificadores los asigna la base, no el builder | Si no, un reintento generaría un `codigoGeneracion` nuevo |
+| 11 | Una secuencia por ambiente | Las pruebas no pueden mover la numeración real |
+| 12 | Sembrar sólo sube, y bajar es un error explícito | Bajar duplicaría numeración; ignorarlo en silencio esconde el error a quien siembra |
+| 13 | La invalidación es una tabla aparte | No es un DTE: no consume correlativo y su rechazo no quema nada |
+| 14 | La app entra al Worker con el JWT del usuario | El navegador no puede guardar la `FISCAL_API_KEY`; el permiso lo decide la base |
+| 15 | Reintentar retransmite el JWS guardado | Reconstruir daría otra fecha de emisión con el mismo `codigoGeneracion` |
+| 16 | Los schemas del MH se parchean al compilar, no en el JSON | El original queda comparable con la fuente; el parche, a la vista y con su motivo |

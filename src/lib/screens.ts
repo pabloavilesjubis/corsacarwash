@@ -18,7 +18,7 @@
  *   un rol podría ver la pantalla y recibir 403 en todo lo que hiciera.
  */
 
-export type ScreenSection = 'caja' | 'administracion'
+export type ScreenSection = 'caja' | 'administracion' | 'contabilidad'
 
 export interface ScreenDef {
   /** Clave estable; también es la clave del icono en el sidebar. */
@@ -35,6 +35,12 @@ export interface ScreenDef {
    * Se vuelve a mostrar borrando esta línea.
    */
   hidden?: boolean
+  /**
+   * Nombre del submenú al que pertenece. Las pantallas de un submenú comparten
+   * un solo permiso, así que en el editor de roles van como UNA casilla con
+   * este nombre: cuatro casillas que se marcan juntas confundirían.
+   */
+  submenu?: string
 }
 
 export const SCREENS: readonly ScreenDef[] = [
@@ -64,20 +70,34 @@ export const SCREENS: readonly ScreenDef[] = [
   // cabecera, y sin su entrada mostraría el nombre de otra pantalla.
   { key: 'notificaciones', path: '/settings/notificaciones', label: 'Notificaciones',   permission: 'plc.read',            section: 'administracion', hidden: true },
   { key: 'cierre_diario',  path: '/dashboard/cierre-diario', label: 'Cierre del día',   permission: 'plc.read',            section: 'administracion', hidden: true },
+  // Contabilidad: documentos fiscales que no salen de una venta del POS. Las
+  // cuatro comparten screens.accounting; emitir pide además fiscal.issue y
+  // sembrar fiscal.seed, que se verifican en el servidor.
+  { key: 'acc_nc',      path: '/contabilidad/notas-credito',     label: 'Notas de crédito',     permission: 'screens.accounting', section: 'contabilidad', submenu: 'Contabilidad' },
+  { key: 'acc_fsee',    path: '/contabilidad/sujetos-excluidos', label: 'Sujetos excluidos',    permission: 'screens.accounting', section: 'contabilidad', submenu: 'Contabilidad' },
+  { key: 'acc_inv',     path: '/contabilidad/invalidaciones',    label: 'Invalidaciones',       permission: 'screens.accounting', section: 'contabilidad', submenu: 'Contabilidad' },
+  { key: 'acc_corr',    path: '/contabilidad/correlativos',      label: 'Correlativos',         permission: 'screens.accounting', section: 'contabilidad', submenu: 'Contabilidad' },
+
   { key: 'users',       path: '/users',       label: 'Usuarios y roles',         permission: 'users.manage',        section: 'administracion' },
   { key: 'software',    path: '/software',    label: 'Software',                 permission: 'screens.software',    section: 'administracion' },
 ] as const
 
 /** Permisos que la pantalla de roles ofrece como "acceso a pantallas". */
-export const SCREEN_PERMISSION_CODES: readonly string[] = SCREENS.map(s => s.permission)
+export const SCREEN_PERMISSION_CODES: readonly string[] = [...new Set(SCREENS.map(s => s.permission))]
 
 /** Pantallas visibles en el menú de una sección. */
 export function screensOfSection(section: ScreenSection): ScreenDef[] {
   return SCREENS.filter(s => s.section === section && !s.hidden)
 }
 
-/** Pantallas que se ofrecen al configurar un rol. */
-export const ASSIGNABLE_SCREENS: ScreenDef[] = SCREENS.filter(s => !s.hidden)
+/**
+ * Pantallas que se ofrecen al configurar un rol. Un submenú entra una sola
+ * vez, con el nombre del submenú: sus pantallas comparten el permiso.
+ */
+export const ASSIGNABLE_SCREENS: ScreenDef[] = SCREENS
+  .filter(s => !s.hidden)
+  .filter((s, i, todas) => !s.submenu || todas.findIndex(t => t.submenu === s.submenu) === i)
+  .map(s => (s.submenu ? { ...s, key: s.submenu, label: s.submenu } : s))
 
 /**
  * Orden de preferencia para la pantalla de entrada.

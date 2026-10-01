@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider } from './hooks/useAuth'
 import { ThemeProvider } from './contexts/ThemeContext'
@@ -26,6 +26,12 @@ const AnalisisMaquinasPage = lazy(() => import('./pages/AnalisisMaquinasPage').t
 const ConfiguracionPage = lazy(() => import('./pages/ConfiguracionPage').then(m => ({ default: m.ConfiguracionPage })))
 const NotificacionesPage = lazy(() => import('./pages/NotificacionesPage').then(m => ({ default: m.NotificacionesPage })))
 const CierreDiarioPage = lazy(() => import('./pages/CierreDiarioPage').then(m => ({ default: m.CierreDiarioPage })))
+// Contabilidad: un solo chunk para las cuatro pantallas del submenú.
+const contabilidad = () => import('./pages/contabilidad/ContabilidadPages')
+const NotasCreditoPage = lazy(() => contabilidad().then(m => ({ default: m.NotasCreditoPage })))
+const SujetosExcluidosPage = lazy(() => contabilidad().then(m => ({ default: m.SujetosExcluidosPage })))
+const InvalidacionesPage = lazy(() => contabilidad().then(m => ({ default: m.InvalidacionesPage })))
+const CorrelativosPage = lazy(() => contabilidad().then(m => ({ default: m.CorrelativosPage })))
 // Banco de pruebas del ticket térmico. Sólo en desarrollo: no es una pantalla
 // del sistema, así que no pasa por ScreenGuard ni aparece en el sidebar.
 const TicketPreviewPage = lazy(() => import('./pages/TicketPreviewPage').then(m => ({ default: m.TicketPreviewPage })))
@@ -124,6 +130,13 @@ export default function App() {
                 <Route path="/settings/notificaciones" element={<ScreenGuard permission="plc.read"><NotificacionesPage/></ScreenGuard>}/>
                 {/* La ruta exacta a la que lleva el push de cierre. */}
                 <Route path="/dashboard/cierre-diario" element={<ScreenGuard permission="plc.read"><CierreDiarioPage/></ScreenGuard>}/>
+                {/* Contabilidad. Emitir pide además fiscal.issue y sembrar
+                    fiscal.seed; los verifica el servidor, no esta ruta. */}
+                <Route path="/contabilidad" element={<Navigate to="/contabilidad/notas-credito" replace/>}/>
+                <Route path="/contabilidad/notas-credito"     element={<ScreenGuard permission="screens.accounting"><NotasCreditoPage/></ScreenGuard>}/>
+                <Route path="/contabilidad/sujetos-excluidos" element={<ScreenGuard permission="screens.accounting"><SujetosExcluidosPage/></ScreenGuard>}/>
+                <Route path="/contabilidad/invalidaciones"    element={<ScreenGuard permission="screens.accounting"><InvalidacionesPage/></ScreenGuard>}/>
+                <Route path="/contabilidad/correlativos"      element={<ScreenGuard permission="screens.accounting"><CorrelativosPage/></ScreenGuard>}/>
                 <Route path="/users"       element={<ScreenGuard permission="users.manage"><UsersPage/></ScreenGuard>}/>
                 <Route path="/software"    element={<ScreenGuard permission="screens.software"><SoftwarePage/></ScreenGuard>}/>
 
