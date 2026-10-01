@@ -28,6 +28,7 @@ Esto va primero a propósito. Las pruebas automatizadas son buenas y numerosas,
 |---|---|---|
 | **Firmador RS512** | ✅ **Validado criptográficamente** | Header y firma contrastados contra 113 DTE reales sellados por el MH; ejecución verificada dentro de workerd |
 | **Builder FCF (01)** | ✅ **Validado contra schema** | El documento construido pasa `fe-fc-v1.json`, el schema oficial del MH |
+| **Builder CCF (03)** | ✅ **Validado contra schema** | Pasa `fe-ccf-v3.json`. Sin un CCF real de referencia: ERP-PAAJ nunca emitió uno |
 | **Builder NC (05)** | ✅ **Validado contra schema y contra una NC real** | Pasa `fe-nc-v3.json`; reproduce campo por campo una NC sellada en producción por otro contribuyente |
 | **Builder FSEE (14)** | ✅ **Validado contra schema y contra una FSEE real** | Pasa `fe-fse-v1.json`; reproduce campo por campo una FSEE sellada en producción |
 | **Evento de invalidación** | ✅ **Validado contra schema** | Pasa `anulacion-schema-v2.json` (con un parche documentado, §13) |
@@ -431,7 +432,7 @@ src/
 |---|---|---|
 | `GET` | `/health` | Estado. Sin autenticación. |
 | `POST` | `/v1/dte/emit` | **La ruta real del POS.** Circuito completo. `FISCAL_API_KEY`. |
-| `POST` | `/v1/app/venta` | El cobro del POS: emite la FCF de una factura y espera el sello. JWT + `screens.pos`. |
+| `POST` | `/v1/app/venta` | El cobro del POS: emite la FCF o el CCF de una factura y espera el sello. JWT + `screens.pos`. |
 | `POST` | `/v1/app/fsee` | Sujeto Excluido desde Contabilidad. JWT del usuario + `fiscal.issue`. |
 | `POST` | `/v1/app/nota-credito` | Nota de Crédito desde Contabilidad. Ídem. |
 | `POST` | `/v1/app/invalidacion` | Invalida un documento aceptado. Ídem. |
@@ -514,20 +515,39 @@ el contenido —por eso pasó 113 veces— pero sale impreso en cada factura.
 
 ## 12. CCF — DTE 03, versión 3
 
-**Pendiente de construir.**
+Builder: [`src/builders/ccf.ts`](../../corsa-fiscal-api/src/builders/ccf.ts),
+validado contra `fe-ccf-v3.json`.
 
-- `precioUni` y `ventaGravada` van **sin IVA**
-- El IVA se lista en `resumen.tributos`, código `'20'`
-- Receptor **obligatorio y completo**: `nit`, `nrc`, `nombre`, `codActividad`,
-  `descActividad`, `direccion{departamento, municipio, complemento}`, `correo`
-- `montoTotalOperacion = subTotal + IVA + percepción − retenciones`
-- El sistema debe **impedir** emitir si falta cualquier campo del receptor
+- **Precios sin IVA.** El IVA se calcula sobre el total gravado —no ítem por
+  ítem— y va en `resumen.tributos`, código `20`. No hay `ivaItem` ni
+  `totalIva`.
+- **El emisor lleva teléfono obligatorio** (8 a 30 caracteres) y sus cuatro
+  códigos de establecimiento. Sin teléfono en `fiscal_issuer_config` el CCF
+  no se construye.
+- **El receptor sale de la ficha del cliente** (`fiscal_sale_for_emission`):
+  NIT y NRC sin guiones, actividad, dirección por códigos y correo, que el MH
+  exige. Teléfono y nombre comercial pueden ir en null.
+- **Retenciones y percepción en 0.** La retención del 1 % de un gran
+  contribuyente todavía no se modela.
+
+### Del cobro con IVA a la base sin IVA
+
+El POS cobra con IVA incluido. Para el CCF se fija primero la base del
+**total** —que base + 13 % redondeado dé lo cobrado— y después se reparte
+entre las líneas por mayor resto. Convertir línea por línea no cuadra:
+$15 + $3 darían 13.27 + 2.65 = 15.92, y 15.92 + 2.07 = 17.99.
+
+Alrededor de **uno de cada nueve totales no tiene base exacta** ($3.00: 2.65 +
+0.34 = 2.99; 2.66 + 0.35 = 3.01). En esos casos el CCF respalda **un centavo
+menos** de lo cobrado, nunca más, y la respuesta lo dice
+(`diferenciaRedondeo`). Si se prefiere otra regla —por ejemplo, fijar la lista
+de precios de CCF sin IVA— es una decisión contable.
 
 > **ERP-PAAJ nunca emitió un CCF.** Sus 113 documentos son todos tipo `01`, y su
-> correlativo del `03` está desactivado (`03.json.bak`). Su `buildCcf` existe y
-> se ve correcto pero **nunca pasó por Hacienda**. Para CORSA el CCF es
-> desarrollo nuevo, basado en el schema oficial y los catálogos, no en una
-> referencia probada. No es «una FCF con datos fiscales adicionales».
+> correlativo del `03` está desactivado (`03.json.bak`). Este builder se hizo
+> sobre el schema oficial, no sobre una referencia sellada: pasa
+> `fe-ccf-v3.json`, pero **no está validado contra Hacienda** hasta obtener el
+> primer CCF con sello.
 
 ---
 
@@ -628,8 +648,8 @@ codigoGeneracion. Si el documento nunca se firmó, no hay nada que retransmitir.
 
 ### El POS espera el sello (migración 0047)
 
-Con `fiscal_issuer_config.emitir_en_pos = true` en la sucursal, cada cobro de
-Consumidor Final llama a `/v1/app/venta` y **espera hasta 20 s** la respuesta
+Con `fiscal_issuer_config.emitir_en_pos = true` en la sucursal, cada cobro
+llama a `/v1/app/venta` y **espera hasta 20 s** la respuesta
 de Hacienda antes de imprimir el ticket. Aceptado → el ticket sale con número
 de control, código de generación, sello y QR. Rechazado, pendiente o sin
 respuesta → el ticket sale igual, con el DTE como pendiente, y se reintenta
@@ -638,11 +658,10 @@ equipo en piso.
 
 Del POS sólo viaja el id de la factura. Líneas, montos y sucursal los lee el
 Worker con `fiscal_sale_for_emission`, y si las líneas no suman el total de la
-factura no emite. La llave es `SALE:<invoice_id>:DTE:01`, la misma de
-`/v1/dte/emit`: repetir la llamada retoma el mismo documento.
-
-El CCF no se emite desde el POS hasta que exista su builder; esas ventas no
-esperan. El interruptor nace apagado:
+factura no emite. La llave es `SALE:<invoice_id>:DTE:<01|03>`, la misma de
+`/v1/dte/emit`: repetir la llamada retoma el mismo documento. Una venta de
+Crédito Fiscal sale como CCF con el receptor de la ficha del cliente (§12).
+El interruptor nace apagado:
 
 ```sql
 update public.fiscal_issuer_config set emitir_en_pos = true where branch_id = '<sucursal>';

@@ -30,3 +30,21 @@ create table if not exists public.work_order_items (
   sort_order           int           not null default 0,
   created_at           timestamptz   not null default now()
 );
+
+-- La ficha fiscal del cliente, como la dejan 0007 y 0029.
+alter table public.customers
+  add column if not exists customer_type       text default 'company',
+  add column if not exists legal_name          text,
+  add column if not exists trade_name          text,
+  add column if not exists first_name          text,
+  add column if not exists last_name           text,
+  add column if not exists normalized_nit      text,
+  add column if not exists normalized_nrc      text,
+  add column if not exists normalized_phone    text,
+  add column if not exists cod_actividad       text,
+  add column if not exists desc_actividad      text,
+  add column if not exists fiscal_departamento text,
+  add column if not exists fiscal_municipio    text,
+  add column if not exists fiscal_complemento  text,
+  add column if not exists billing_email       text,
+  add column if not exists email               text;

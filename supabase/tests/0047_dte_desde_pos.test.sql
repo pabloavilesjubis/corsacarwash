@@ -26,6 +26,16 @@ insert into public.work_orders (id) values
 insert into public.work_order_items (work_order_id, description_snapshot, quantity, unit_price, sort_order) values
   ('cccccccc-0000-0000-0000-000000000001', 'Aspirado de interiores', 1, 3.00, 2),
   ('cccccccc-0000-0000-0000-000000000001', 'ELITE M', 1, 15.00, 1);
+insert into public.customers (id, organization_id, customer_type, legal_name, trade_name,
+  normalized_nit, normalized_nrc, normalized_phone, cod_actividad, desc_actividad,
+  fiscal_departamento, fiscal_municipio, fiscal_complemento, billing_email, email) values
+  ('eeeeeeee-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'company',
+   'CLIENTE DE PRUEBA, S.A. DE C.V.', '', '06142402091999', '1234567', '70000000',
+   '32909', 'Fabricacion de productos', '06', '14', 'Colonia Layco', '', 'compras@cliente.test');
+insert into public.invoices (id, organization_id, branch_id, invoice_type, total, work_order_id, status, customer_id) values
+  ('dddddddd-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111',
+   '22222222-2222-2222-2222-222222222222', 'credito_fiscal', 18.00, 'cccccccc-0000-0000-0000-000000000001', 'issued',
+   'eeeeeeee-0000-0000-0000-000000000001');
 insert into public.invoices (id, organization_id, branch_id, invoice_type, total, work_order_id, status) values
   ('dddddddd-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111',
    '22222222-2222-2222-2222-222222222222', 'consumidor_final', 18.00, 'cccccccc-0000-0000-0000-000000000001', 'issued'),
@@ -53,6 +63,25 @@ begin
   assert v->'lineas'->0->>'descripcion' = 'ELITE M', 'el orden lo da sort_order';
   assert (v->'lineas'->0->>'precioUni')::numeric = 15, 'precio con IVA, como se cobró';
   assert (v->'lineas'->1->>'montoDescu')::numeric = 0, 'descuento';
+end $$;
+
+
+-- ── 2b. El receptor del CCF, con los formatos del MH ─────────
+do $$
+declare r jsonb;
+begin
+  r := public.fiscal_sale_for_emission('dddddddd-0000-0000-0000-000000000003',
+                                       '11111111-1111-1111-1111-111111111111')->'receptor';
+  assert r->>'nit' = '06142402091999', 'NIT sin guiones';
+  assert r->>'nrc' = '1234567', 'NRC sin guion';
+  assert r->>'nombre' = 'CLIENTE DE PRUEBA, S.A. DE C.V.', 'nombre de la empresa';
+  assert r->'nombreComercial' = 'null'::jsonb, 'un nombre comercial vacío viaja como null';
+  assert r->'direccion'->>'municipio' = '14', 'dirección por códigos';
+  assert r->>'correo' = 'compras@cliente.test', 'sin billing_email se cae al correo de contacto';
+
+  -- Sin cliente, sin receptor: la FCF de mostrador.
+  assert public.fiscal_sale_for_emission('dddddddd-0000-0000-0000-000000000001',
+           '11111111-1111-1111-1111-111111111111')->'receptor' = 'null'::jsonb, 'FCF anónima';
 end $$;
 
 

@@ -1009,9 +1009,9 @@ export function POSPage() {
     setCobroAbierto(false)
     setSubmitting(true)
 
-    // El CCF todavía no tiene builder en el Worker: esas ventas se imprimen
-    // como hasta ahora, sin esperar.
-    const esperarDte = emiteDte && billing.docType !== 'ccf'
+    // FCF y CCF esperan igual: el Worker emite el que corresponda según la
+    // factura que registró el cobro.
+    const esperarDte = emiteDte
 
     // La ventana del ticket se abre YA, en el clic. Después de esperar el
     // cobro y el sello —que pueden ser varios segundos— el navegador ya no lo
@@ -1059,6 +1059,9 @@ export function POSPage() {
           const r = await emitirDteDeVenta(sale.invoice_id, ESPERA_DTE_MS)
           if (r.estado === 'ACCEPTED') {
             dte = await fetchDteDeVenta(sale.invoice_id)
+            // Un CCF cuyo total no tiene base sin IVA exacta sale un centavo
+            // abajo de lo cobrado; el Worker lo explica en `mensaje`.
+            if (r.mensaje) toast(r.mensaje, { duration: 8000 })
             toast.success('DTE sellado por Hacienda', { id: espera })
           } else {
             toast.error(`DTE ${r.estado === 'REJECTED' ? 'rechazado' : 'pendiente'}: ${r.mensaje ?? 'revisalo en Contabilidad'}. El ticket sale sin sello.`,

@@ -3,7 +3,8 @@
 --
 --   1. fiscal_issuer_config.emitir_en_pos: el interruptor por sucursal.
 --   2. fiscal_sale_for_emission: lo que el Worker necesita de una venta
---      para construir su DTE, leído de la base.
+--      para construir su DTE —FCF o CCF—, leído de la base, receptor
+--      incluido.
 --
 -- POR QUÉ UN INTERRUPTOR Y NO «SI HAY CONFIGURACIÓN, EMITIR»
 --   Cargar la configuración fiscal y sembrar los correlativos es preparar;
@@ -36,7 +37,12 @@ comment on column public.fiscal_issuer_config.emitir_en_pos is
 -- ─────────────────────────────────────────────
 
 -- Precios CON IVA: es como los guarda pos_register_sale (unit_price incluye
--- el impuesto y tax_amount lo extrae) y como los espera el builder de FCF.
+-- el impuesto y tax_amount lo extrae). La FCF los usa así; para el CCF el
+-- Worker saca la base sin IVA del total.
+--
+-- El receptor va con la forma del CCF y los formatos del MH: NIT y NRC sin
+-- guiones, teléfono sólo dígitos. Es la ficha del cliente tal como está; si
+-- le falta algo, el Worker lo dice al validar contra el schema.
 create or replace function public.fiscal_sale_for_emission(
   p_invoice_id      uuid,
   p_organization_id uuid
@@ -47,8 +53,9 @@ security definer
 set search_path = public
 as $$
 declare
-  v_inv    public.invoices;
-  v_lineas jsonb;
+  v_inv      public.invoices;
+  v_lineas   jsonb;
+  v_receptor jsonb;
 begin
   -- Con la organización: el id llega del navegador, y el de otra empresa
   -- pondría su venta en un documento nuestro.
@@ -75,19 +82,41 @@ begin
     from public.work_order_items i
    where i.work_order_id = v_inv.work_order_id;
 
+  select jsonb_build_object(
+           'nit',             c.normalized_nit,
+           'nrc',             c.normalized_nrc,
+           'nombre',          case when c.customer_type = 'company'
+                                   then coalesce(nullif(c.legal_name, ''), c.trade_name)
+                                   else nullif(trim(coalesce(c.first_name, '') || ' ' || coalesce(c.last_name, '')), '')
+                              end,
+           'codActividad',    c.cod_actividad,
+           'descActividad',   c.desc_actividad,
+           'nombreComercial', nullif(c.trade_name, ''),
+           'direccion',       jsonb_build_object(
+                                'departamento', c.fiscal_departamento,
+                                'municipio',    c.fiscal_municipio,
+                                'complemento',  c.fiscal_complemento),
+           'telefono',        nullif(c.normalized_phone, ''),
+           'correo',          coalesce(nullif(c.billing_email, ''), nullif(c.email, ''))
+         )
+    into v_receptor
+    from public.customers c
+   where c.id = v_inv.customer_id;
+
   return jsonb_build_object(
     'invoice_id',   v_inv.id,
     'branch_id',    v_inv.branch_id,
     'customer_id',  v_inv.customer_id,
     'invoice_type', v_inv.invoice_type,
     'total',        v_inv.total,
-    'lineas',       v_lineas
+    'lineas',       v_lineas,
+    'receptor',     v_receptor
   );
 end;
 $$;
 
 comment on function public.fiscal_sale_for_emission(uuid, uuid) is
-  'Para el Worker fiscal: sucursal, tipo y líneas (precios con IVA) de una factura, para construir su DTE.';
+  'Para el Worker fiscal: sucursal, tipo, líneas (precios con IVA) y receptor de una factura, para construir su DTE.';
 
 -- Sólo el Worker, con el service role. El navegador ya lee sus ventas por
 -- v_sales_history; esto existe para que el Worker no tenga que confiar en él.
