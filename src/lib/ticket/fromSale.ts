@@ -16,8 +16,10 @@ import type { DteDeVenta, Sale } from '../../services/sales.service'
  * viajan dentro del DTE: si el papel dice un NIT y el documento sellado otro,
  * la representación impresa no corresponde al documento.
  *
- * Sin teléfono a propósito: no hay uno confirmado, y uno inventado termina
- * impreso en miles de tickets.
+ * Faltan el teléfono y el tipo de establecimiento: el MH los pide en el
+ * emisor y no hay valores confirmados. Quedan vacíos a propósito —la factura
+ * carta los marca como pendientes— en vez de inventarlos: un dato inventado
+ * termina impreso en miles de documentos.
  */
 export const EMISOR: TicketEmisor = {
   nombreComercial: 'CORSA',
@@ -25,6 +27,9 @@ export const EMISOR: TicketEmisor = {
   nit: '0623-190924-101-8',
   nrc: '349116-2',
   direccion: 'Redondel Olímpico, San Salvador Centro, San Salvador',
+  codActividad: '45208',
+  descActividad: 'Lavado y pasteado de vehículos (carwash)',
+  correo: 'corsacarwash@gmail.com',
 }
 
 /**

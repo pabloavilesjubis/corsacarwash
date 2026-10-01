@@ -52,17 +52,40 @@ function money(n: number): string {
 }
 
 /** Campo de identificación del DTE; sin valor se muestra como pendiente. */
-function campoDte(label: string, value?: string | null, ancho = false): string {
-  return `<div class="id-field${ancho ? ' wide' : ''}">
+function campoDte(label: string, value?: string | null, clase = ''): string {
+  return `<div class="id-field ${clase}">
     <div class="label">${esc(label)}</div>
     <div class="id-value ${value ? 'mono' : 'pending'}">${value ? esc(value) : 'Pendiente de transmisión'}</div>
   </div>`
+}
+
+/** Dato de la operación: no fiscal, siempre presente. */
+function campoOp(label: string, value?: string | null, clase = ''): string {
+  return `<div class="id-field ${clase}">
+    <div class="label">${esc(label)}</div>
+    <div class="id-value">${value ? esc(value) : '—'}</div>
+  </div>`
+}
+
+/**
+ * Una fila de la tarjeta de emisor o receptor.
+ *
+ * Un dato que el MH exige y no está se imprime como «No registrado», en rojo:
+ * dejarlo fuera haría parecer completo un CCF al que le falta algo, y eso se
+ * descubre cuando el contador del cliente lo rechaza. Un dato opcional vacío
+ * simplemente no se imprime.
+ */
+function fila(label: string, value: string | null | undefined, opts: { mono?: boolean; requerido?: boolean } = {}): string {
+  if (!value && !opts.requerido) return ''
+  return `<div class="k">${esc(label)}</div>
+    <div class="v${opts.mono && value ? ' mono' : ''}${value ? '' : ' missing'}">${value ? esc(value) : 'No registrado'}</div>`
 }
 
 export function buildFacturaHTML(sale: Sale, dte: DteDeVenta | null = null): string {
   const tipo = (dte && TIPO_DTE_LABEL[dte.tipoDte])
     ?? TIPO_LABEL[sale.invoice_type ?? '']
     ?? 'Documento de venta'
+  const esCcf = dte ? dte.tipoDte === '03' : sale.invoice_type === 'credito_fiscal'
   const emitido = Boolean(dte?.numeroControl)
   const pruebas = dte?.ambiente === '00'
   const invalidado = dte?.estado === 'INVALIDATED'
@@ -83,9 +106,9 @@ export function buildFacturaHTML(sale: Sale, dte: DteDeVenta | null = null): str
   // él, la de la venta, en hora de El Salvador: no puede depender del reloj de
   // la computadora que imprime.
   const fecha = dte?.fechaEmision
-    ? `${dte.fechaEmision.split('-').reverse().join('/')}${dte.horaEmision ? ` · ${dte.horaEmision}` : ''}`
+    ? `${dte.fechaEmision.split('-').reverse().join('/')}${dte.horaEmision ? ` ${dte.horaEmision}` : ''}`
     : formatearFechaHora(sale.created_at, {
-        day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
+        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
       })
 
   // Las líneas vienen de la venta. El fallback es para ventas viejas que se
@@ -95,9 +118,8 @@ export function buildFacturaHTML(sale: Sale, dte: DteDeVenta | null = null): str
     ? sale.items.map(i => ({ desc: i.descripcion, cantidad: i.cantidad, unitario: i.unitario, total: i.total }))
     : [{ desc: sale.service_name ?? 'Servicio de lavado', cantidad: 1, unitario: total, total }]
 
-  const logo = (color: string) =>
-    `<svg class="logo" viewBox="0 0 ${LOGO_VIEWBOX.ancho} ${LOGO_VIEWBOX.alto}" role="img" aria-label="CORSA Carwash">`
-    + `<path d="${LOGO_PATH}" fill="${color}" fill-rule="evenodd"/></svg>`
+  const logo = `<svg class="logo" viewBox="0 0 ${LOGO_VIEWBOX.ancho} ${LOGO_VIEWBOX.alto}" role="img" aria-label="CORSA Carwash">`
+    + `<path d="${LOGO_PATH}" fill="#FFFFFF" fill-rule="evenodd"/></svg>`
 
   const aviso = !emitido
     ? `<div class="notice notice-danger">
@@ -112,6 +134,53 @@ export function buildFacturaHTML(sale: Sale, dte: DteDeVenta | null = null): str
              Emitido contra el sandbox del MH; no tiene validez fiscal.</div>`
         : ''
 
+  // El emisor lleva lo mismo en una factura que en un CCF: el MH lo exige
+  // completo en los dos.
+  const actividadEmisor = EMISOR.descActividad
+    ? `${EMISOR.descActividad}${EMISOR.codActividad ? ` (${EMISOR.codActividad})` : ''}`
+    : undefined
+  const emisorCard = `
+      <div class="party">
+        <div class="party-head">Emisor</div>
+        <div class="party-name">${esc(EMISOR.razonSocial)}</div>
+        <div class="kv">
+          ${fila('Nombre comercial', EMISOR.nombreComercial, { requerido: true })}
+          ${fila('NIT', EMISOR.nit, { mono: true, requerido: true })}
+          ${fila('NRC', EMISOR.nrc, { mono: true, requerido: true })}
+          ${fila('Actividad económica', actividadEmisor, { requerido: true })}
+          ${fila('Establecimiento', EMISOR.tipoEstablecimiento, { requerido: true })}
+          ${fila('Dirección', EMISOR.direccion, { requerido: true })}
+          ${fila('Teléfono', EMISOR.telefono, { requerido: true })}
+          ${fila('Correo', EMISOR.correo, { requerido: true })}
+        </div>
+      </div>`
+
+  // El receptor de un CCF es un contribuyente y el MH pide todos sus datos.
+  // En una factura de consumidor final casi todo es opcional: se imprime lo
+  // que haya.
+  const actividadReceptor = sale.customer_desc_actividad
+    ? `${sale.customer_desc_actividad}${sale.customer_cod_actividad ? ` (${sale.customer_cod_actividad})` : ''}`
+    : undefined
+  const receptorCard = `
+      <div class="party">
+        <div class="party-head">Receptor</div>
+        <div class="party-name">${esc(sale.customer_name || 'Consumidor final')}</div>
+        <div class="kv">
+          ${sale.customer_trade_name && sale.customer_trade_name !== sale.customer_name
+            ? fila('Nombre comercial', sale.customer_trade_name) : ''}
+          ${esCcf
+            ? fila('NIT', sale.customer_nit, { mono: true, requerido: true })
+            : sale.customer_nit
+              ? fila('NIT', sale.customer_nit, { mono: true })
+              : fila('DUI', sale.customer_dui, { mono: true })}
+          ${fila('NRC', sale.customer_nrc, { mono: true, requerido: esCcf })}
+          ${fila('Actividad económica', actividadReceptor, { requerido: esCcf })}
+          ${fila('Dirección', direccionReceptor, { requerido: esCcf })}
+          ${fila('Teléfono', sale.customer_phone)}
+          ${fila('Correo', sale.customer_email)}
+        </div>
+      </div>`
+
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -119,120 +188,136 @@ export function buildFacturaHTML(sale: Sale, dte: DteDeVenta | null = null): str
 <title>${esc(dte?.numeroControl || sale.invoice_number || sale.order_number)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
   :root {
     --ink: #16191A;
     --lime: #DFF56B;
     --sage: #EFF2EC;
     --sage-strong: #E9EEE4;
-    --border: #E3E8DE;
-    --muted: #6C7671;
+    --border: #DCE2D6;
+    --muted: #5F6964;
     --danger: #B03A33;
     --danger-tint: #FBE9E7;
     --warning: #8A6414;
     --warning-tint: #FBF1DC;
   }
-  @page { size: letter; margin: 12mm; }
+  /* Márgenes de 10 mm: lo que casi toda impresora de oficina garantiza sin
+     recortar. Más que eso es papel en blanco. */
+  @page { size: letter; margin: 10mm; }
   * { box-sizing: border-box; }
   html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body {
     margin: 0; background: #fff; color: var(--ink);
     font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
-    font-size: 10.5px; line-height: 1.45;
+    font-size: 9.5px; line-height: 1.4;
   }
-  .sheet { max-width: 192mm; margin: 0 auto; }
+  .sheet { max-width: 196mm; margin: 0 auto; }
   .mono { font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
   .label {
-    font-size: 8px; font-weight: 700; letter-spacing: 0.1em;
-    text-transform: uppercase; color: var(--muted); margin-bottom: 2px;
+    font-size: 7px; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 1px;
   }
+  section, .party, .grand, tr { break-inside: avoid; page-break-inside: avoid; }
 
-  /* ── Cabecera: la franja de tinta es el riel lateral de la app ── */
+  /* ── Cabecera: sólo marca, razón social y tipo de documento ── */
   .masthead {
-    display: flex; justify-content: space-between; align-items: stretch; gap: 18px;
-    background: var(--ink); color: #fff; border-radius: 16px; padding: 18px 22px;
+    display: flex; justify-content: space-between; align-items: center; gap: 14px;
+    background: var(--ink); color: #fff; border-radius: 12px; padding: 10px 16px;
   }
-  .brand { display: flex; align-items: center; gap: 18px; }
-  .logo { width: 36mm; height: auto; display: block; flex-shrink: 0; }
-  .issuer { border-left: 1px solid rgba(255,255,255,0.18); padding-left: 18px; font-size: 9.5px; line-height: 1.55; color: rgba(255,255,255,0.78); }
-  .issuer-name { font-family: 'Outfit', sans-serif; font-size: 13px; font-weight: 700; color: #fff; letter-spacing: 0.01em; margin-bottom: 2px; }
-  .doc-head { text-align: right; display: flex; flex-direction: column; justify-content: center; align-items: flex-end; gap: 6px; }
-  .doc-kicker { font-size: 8px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255,255,255,0.6); }
+  .brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+  .logo { width: 24mm; height: auto; display: block; flex-shrink: 0; }
+  .issuer-name {
+    font-family: 'Outfit', sans-serif; font-size: 14px; font-weight: 700;
+    border-left: 1px solid rgba(255,255,255,0.22); padding-left: 14px;
+  }
+  .doc-head { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .doc-kicker { font-size: 7px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255,255,255,0.62); }
   .doc-type {
     background: var(--lime); color: var(--ink);
-    font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 13px;
-    padding: 6px 14px; border-radius: 999px; white-space: nowrap;
+    font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 12px;
+    padding: 4px 12px; border-radius: 999px; white-space: nowrap;
   }
 
-  .notice { margin-top: 10px; padding: 8px 12px; border-radius: 10px; font-size: 10px; }
+  .notice { margin-top: 6px; padding: 5px 10px; border-radius: 8px; font-size: 8.5px; }
   .notice strong { margin-right: 4px; }
   .notice-danger { background: var(--danger-tint); color: var(--danger); border: 1px solid var(--danger); }
   .notice-warning { background: var(--warning-tint); color: var(--warning); border: 1px solid var(--warning); }
 
-  /* ── Identificación del DTE + QR ── */
-  .ident { display: flex; gap: 10px; margin-top: 10px; }
+  /* ── Identificación del DTE y de la operación + QR ── */
+  .ident { display: flex; gap: 8px; margin-top: 8px; }
   .id-card {
-    flex: 1; background: var(--sage); border-radius: 14px; padding: 12px 16px;
-    display: grid; grid-template-columns: 1fr 1fr; gap: 9px 18px; align-content: start;
+    flex: 1; background: var(--sage); border-radius: 12px; padding: 9px 12px;
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 14px; align-content: start;
   }
-  .id-field.wide { grid-column: 1 / -1; }
-  .id-value { font-size: 10.5px; font-weight: 600; word-break: break-all; }
+  .id-field { min-width: 0; }
+  .id-field.c2 { grid-column: span 2; }
+  .id-field.c4 { grid-column: 1 / -1; }
+  .id-sep { grid-column: 1 / -1; border-top: 1px solid var(--border); }
+  .id-value { font-size: 9.5px; font-weight: 600; word-break: break-all; }
   .id-value.pending { color: var(--danger); font-style: italic; font-weight: 500; }
   .qr-card {
-    width: 44mm; flex-shrink: 0; border: 1px solid var(--border); border-radius: 14px;
-    padding: 10px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    width: 36mm; flex-shrink: 0; border: 1px solid var(--border); border-radius: 12px;
+    padding: 7px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center;
   }
-  .qr-card svg { width: 33mm; height: 33mm; display: block; }
-  .qr-note { font-size: 8.5px; color: var(--muted); margin-top: 6px; line-height: 1.4; }
+  .qr-card svg { width: 27mm; height: 27mm; display: block; }
+  .qr-note { font-size: 7px; color: var(--muted); margin-top: 4px; line-height: 1.35; }
   .qr-note strong { color: var(--ink); }
   .qr-placeholder {
-    width: 33mm; height: 33mm; border: 1.5px dashed var(--border); border-radius: 8px;
+    width: 27mm; height: 27mm; border: 1.5px dashed var(--border); border-radius: 6px;
     display: flex; align-items: center; justify-content: center;
-    font-size: 8.5px; color: var(--muted); padding: 6px; line-height: 1.35;
+    font-size: 7.5px; color: var(--muted); padding: 5px; line-height: 1.35;
   }
 
-  /* ── Receptor y operación ── */
-  .parties { display: flex; gap: 10px; margin-top: 10px; }
-  .party { flex: 1; border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px; }
-  .party-name { font-family: 'Outfit', sans-serif; font-size: 13px; font-weight: 700; margin-bottom: 3px; }
-  .party-row { font-size: 10px; line-height: 1.6; }
-  .party-row span.k { color: var(--muted); }
+  /* ── Emisor y receptor ── */
+  .parties { display: flex; gap: 8px; margin-top: 8px; }
+  .party { flex: 1; min-width: 0; border: 1px solid var(--border); border-radius: 12px; padding: 9px 12px; }
+  .party-head {
+    display: inline-block; font-size: 7px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+    background: var(--ink); color: var(--lime); padding: 2px 8px; border-radius: 999px; margin-bottom: 5px;
+  }
+  .party-name { font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 700; margin-bottom: 4px; line-height: 1.2; }
+  /* Etiqueta y valor en dos columnas: se lee como formulario y entra más
+     por centímetro que una línea por dato con la etiqueta delante. */
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 9px; }
+  .kv .k { color: var(--muted); white-space: nowrap; }
+  .kv .v { font-weight: 500; word-break: break-word; }
+  .kv .v.missing { color: var(--danger); font-style: italic; }
 
   /* ── Detalle ── */
-  table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 14px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
   th {
-    font-size: 8px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
-    color: var(--muted); text-align: left; padding: 0 10px 7px;
-    border-bottom: 2px solid var(--ink);
+    font-size: 7px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); text-align: left; padding: 0 8px 5px;
+    border-bottom: 1.5px solid var(--ink);
   }
-  td { padding: 9px 10px; border-bottom: 1px solid var(--border); font-size: 10.5px; }
+  td { padding: 5px 8px; border-bottom: 1px solid var(--border); font-size: 9.5px; }
   td.desc { font-weight: 500; }
 
   /* ── Totales ── */
-  .summary { display: flex; justify-content: space-between; align-items: flex-end; gap: 18px; margin-top: 12px; }
-  .summary-note { font-size: 9px; color: var(--muted); max-width: 90mm; line-height: 1.5; }
-  .totals { width: 80mm; }
-  .totals-row { display: flex; justify-content: space-between; padding: 4px 12px; font-size: 10.5px; }
+  .summary { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-top: 8px; }
+  .summary-note { font-size: 7.5px; color: var(--muted); max-width: 100mm; line-height: 1.45; }
+  .totals { width: 72mm; }
+  .totals-row { display: flex; justify-content: space-between; padding: 2px 10px; font-size: 9.5px; }
   .totals-row span:first-child { color: var(--muted); }
   .grand {
     display: flex; justify-content: space-between; align-items: center;
-    background: var(--ink); color: #fff; border-radius: 12px;
-    padding: 10px 14px; margin-top: 6px;
+    background: var(--ink); color: #fff; border-radius: 10px;
+    padding: 6px 12px; margin-top: 4px;
   }
-  .grand-label { font-size: 8.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.7); }
-  .grand-value { font-family: 'Outfit', sans-serif; font-size: 20px; font-weight: 800; color: var(--lime); font-variant-numeric: tabular-nums; }
+  .grand-label { font-size: 7.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.7); }
+  .grand-value { font-family: 'Outfit', sans-serif; font-size: 17px; font-weight: 800; color: var(--lime); font-variant-numeric: tabular-nums; }
 
   footer {
-    margin-top: 22px; padding-top: 10px; border-top: 1px solid var(--border);
+    margin-top: 12px; padding-top: 6px; border-top: 1px solid var(--border);
     display: flex; justify-content: space-between; gap: 12px;
-    font-size: 8.5px; color: var(--muted);
+    font-size: 7.5px; color: var(--muted);
   }
 
   @media screen {
     body { background: var(--sage-strong); padding: 24px 0; }
-    .sheet { background: #fff; padding: 12mm; border-radius: 6px; box-shadow: 0 12px 34px rgba(16,25,18,0.10); }
+    .sheet { background: #fff; padding: 10mm; border-radius: 6px; box-shadow: 0 12px 34px rgba(16,25,18,0.10); }
   }
 </style>
 </head>
@@ -240,12 +325,8 @@ export function buildFacturaHTML(sale: Sale, dte: DteDeVenta | null = null): str
   <div class="sheet">
     <header class="masthead">
       <div class="brand">
-        ${logo('#FFFFFF')}
-        <div class="issuer">
-          <div class="issuer-name">${esc(EMISOR.razonSocial)}</div>
-          NIT ${esc(EMISOR.nit)} · NRC ${esc(EMISOR.nrc)}<br/>
-          ${esc(EMISOR.direccion)}
-        </div>
+        ${logo}
+        <div class="issuer-name">${esc(EMISOR.razonSocial)}</div>
       </div>
       <div class="doc-head">
         <div class="doc-kicker">Documento tributario electrónico</div>
@@ -257,53 +338,33 @@ export function buildFacturaHTML(sale: Sale, dte: DteDeVenta | null = null): str
 
     <section class="ident">
       <div class="id-card">
-        ${campoDte('Número de control', dte?.numeroControl)}
-        ${campoDte('Código de generación', dte?.codigoGeneracion)}
-        ${campoDte('Sello de recepción', dte?.selloRecepcion, true)}
-        <div class="id-field">
-          <div class="label">Fecha y hora de emisión</div>
-          <div class="id-value">${esc(fecha)}</div>
-        </div>
-        <div class="id-field">
-          <div class="label">Ambiente</div>
-          <div class="id-value">${!dte ? '—' : pruebas ? 'Pruebas (00)' : 'Producción (01)'}</div>
-        </div>
+        ${campoDte('Número de control', dte?.numeroControl, 'c2')}
+        ${campoDte('Código de generación', dte?.codigoGeneracion, 'c2')}
+        ${campoDte('Sello de recepción', dte?.selloRecepcion, 'c2')}
+        ${campoOp('Fecha y hora de emisión', fecha)}
+        ${campoOp('Ambiente', !dte ? null : pruebas ? 'Pruebas (00)' : 'Producción (01)')}
+        <div class="id-sep"></div>
+        ${campoOp('Orden', sale.order_number)}
+        ${campoOp('Sucursal', sale.branch_name)}
+        ${campoOp('Vehículo', sale.plate)}
+        ${campoOp('Forma de pago', sale.payment_method)}
       </div>
       <div class="qr-card">
         ${dte?.qrUrl
           ? `${qrSvg(dte.qrUrl, { color: '#16191A', margen: 0 })}
-             <div class="qr-note">Verificá este documento en<br/><strong>admin.factura.gob.sv</strong></div>`
+             <div class="qr-note">Verificá en<br/><strong>admin.factura.gob.sv</strong></div>`
           : `<div class="qr-placeholder">El QR de verificación aparece cuando el MH sella el documento</div>`}
       </div>
     </section>
 
     <section class="parties">
-      <div class="party">
-        <div class="label">Receptor</div>
-        <div class="party-name">${esc(sale.customer_name)}</div>
-        ${sale.customer_trade_name && sale.customer_trade_name !== sale.customer_name
-          ? `<div class="party-row"><span class="k">Nombre comercial:</span> ${esc(sale.customer_trade_name)}</div>` : ''}
-        ${sale.customer_nit ? `<div class="party-row"><span class="k">NIT:</span> <span class="mono">${esc(sale.customer_nit)}</span></div>` : ''}
-        ${sale.customer_dui && !sale.customer_nit ? `<div class="party-row"><span class="k">DUI:</span> <span class="mono">${esc(sale.customer_dui)}</span></div>` : ''}
-        ${sale.customer_nrc ? `<div class="party-row"><span class="k">NRC:</span> <span class="mono">${esc(sale.customer_nrc)}</span></div>` : ''}
-        ${sale.customer_desc_actividad
-          ? `<div class="party-row"><span class="k">Actividad:</span> ${esc(sale.customer_desc_actividad)}${sale.customer_cod_actividad ? ` (${esc(sale.customer_cod_actividad)})` : ''}</div>` : ''}
-        ${direccionReceptor ? `<div class="party-row"><span class="k">Dirección:</span> ${esc(direccionReceptor)}</div>` : ''}
-        ${sale.customer_phone ? `<div class="party-row"><span class="k">Tel.:</span> ${esc(sale.customer_phone)}</div>` : ''}
-        ${sale.customer_email ? `<div class="party-row"><span class="k">Correo:</span> ${esc(sale.customer_email)}</div>` : ''}
-      </div>
-      <div class="party">
-        <div class="label">Datos de la operación</div>
-        <div class="party-name">Orden ${esc(sale.order_number)}</div>
-        <div class="party-row"><span class="k">Sucursal:</span> ${esc(sale.branch_name)}</div>
-        ${sale.plate ? `<div class="party-row"><span class="k">Vehículo:</span> <span class="mono">${esc(sale.plate)}</span></div>` : ''}
-        <div class="party-row"><span class="k">Forma de pago:</span> ${esc(sale.payment_method ?? '—')}</div>
-      </div>
+      ${emisorCard}
+      ${receptorCard}
     </section>
 
     <table>
       <thead>
-        <tr><th style="width:58%">Descripción</th><th class="num">Cant.</th><th class="num">Precio</th><th class="num">Total</th></tr>
+        <tr><th style="width:58%">Descripción</th><th class="num">Cant.</th><th class="num">Precio unitario</th><th class="num">Ventas gravadas</th></tr>
       </thead>
       <tbody>
         ${lineas.map(l => `<tr>

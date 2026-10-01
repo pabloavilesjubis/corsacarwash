@@ -33,6 +33,12 @@ export interface TicketEmisor {
   nrc?: string
   direccion?: string
   telefono?: string
+  correo?: string
+  /** Actividad económica inscrita (CAT-019). */
+  codActividad?: string
+  descActividad?: string
+  /** CAT-008: 'Casa matriz', 'Sucursal'… */
+  tipoEstablecimiento?: string
   /** 'PRUEBA' o 'PRODUCCIÓN' — el MH exige distinguir el ambiente. */
   ambiente?: string
 }
