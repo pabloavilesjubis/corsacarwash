@@ -11,11 +11,11 @@ import toast from 'react-hot-toast'
 import { useAuth } from '../hooks/useAuth'
 import { useEsMovil } from '../hooks/useEsMovil'
 import {
-  fetchSales, summarize, dateRange, fetchDtePayload,
-  type Sale, type SalesFilters,
+  fetchSales, summarize, dateRange, fetchDtePayload, fetchDteDeVenta,
+  type DteDeVenta, type Sale, type SalesFilters,
 } from '../services/sales.service'
 import { printFactura } from '../lib/fiscal/facturaDocument'
-import { printCorsaTicket } from '../lib/ticket/corsaTicket'
+import { abrirVentanaTicket, printCorsaTicket } from '../lib/ticket/corsaTicket'
 import { buildTicketArgsFromSale } from '../lib/ticket/fromSale'
 import { formatearFechaHora } from '../utils/fecha'
 
@@ -284,20 +284,41 @@ export function SalesPage() {
 
   const totals = useMemo(() => summarize(sales), [sales])
 
-  const reimprimir = (s: Sale) => {
+  /**
+   * Busca el DTE de la venta, si lo tiene. Un error al buscarlo no impide
+   * imprimir: el documento sale con el bloque fiscal como pendiente, y eso
+   * se avisa para que nadie entregue ese papel creyendo que está completo.
+   */
+  const dteDe = async (s: Sale): Promise<DteDeVenta | null> => {
+    if (!s.invoice_id || s.dte_status === 'no_emitido') return null
     try {
-      printCorsaTicket(buildTicketArgsFromSale(s, (currentBranch as any)?.name))
+      return await fetchDteDeVenta(s.invoice_id)
+    } catch {
+      toast.error('No se pudo leer el DTE de esta venta; se imprime sin él')
+      return null
+    }
+  }
+
+  // La ventana se abre antes del await: después, el navegador ya no lo
+  // considera respuesta al clic y la bloquea.
+  const reimprimir = async (s: Sale) => {
+    const ventana = abrirVentanaTicket(s.order_id)
+    try {
+      const dte = await dteDe(s)
+      printCorsaTicket(buildTicketArgsFromSale(s, (currentBranch as any)?.name, dte), ventana)
     } catch (err) {
+      ventana?.close()
       toast.error(err instanceof Error ? err.message : 'No se pudo abrir el ticket')
     }
   }
 
-  const verFactura = (s: Sale) => {
+  const verFactura = async (s: Sale) => {
+    const ventana = window.open('', `corsa_factura_${s.order_id}`, 'width=900,height=1000')
     try {
-      // Sin DTE transmitido la factura sale rotulada como no válida ante el MH;
-      // el documento ya contempla ese caso.
-      printFactura(s)
+      // Sin DTE transmitido la factura sale rotulada como no válida ante el MH.
+      printFactura(s, await dteDe(s), ventana)
     } catch (err) {
+      ventana?.close()
       toast.error(err instanceof Error ? err.message : 'No se pudo abrir la factura')
     }
   }

@@ -9,6 +9,7 @@
 
 import { supabase } from '../lib/supabase'
 import { hoyLocal, sumarDias } from '../utils/fecha'
+import { urlConsultaMh } from '../lib/fiscal/consultaMh'
 
 export interface SaleItem {
   descripcion: string
@@ -78,6 +79,69 @@ export async function fetchDtePayload(fiscalDocumentId: string): Promise<{
     .single()
   if (error) throw error
   return data
+}
+
+/**
+ * Lo que la representación impresa necesita del DTE de una venta.
+ *
+ * `qrUrl` sólo viene cuando el MH ya selló el documento: antes de eso el portal
+ * de consulta no lo conoce, y un QR que lleva a «documento no encontrado» es
+ * peor que no tener QR.
+ */
+export interface DteDeVenta {
+  tipoDte: string
+  /** '00' pruebas, '01' producción. */
+  ambiente: string
+  estado: string
+  numeroControl: string
+  codigoGeneracion: string
+  selloRecepcion: string | null
+  /** AAAA-MM-DD, tal como viaja en el DTE. */
+  fechaEmision: string | null
+  /** HH:MM:SS, tal como viaja en el DTE. */
+  horaEmision: string | null
+  qrUrl: string | null
+}
+
+/**
+ * El DTE de una venta, o null si todavía no se emitió.
+ *
+ * Una factura puede tener más de un documento —uno rechazado que quemó su
+ * correlativo y el que salió bien después—, así que se busca por la factura y
+ * se prefiere el aceptado. Uno invalidado se sigue imprimiendo: existió, tiene
+ * sello y el portal del MH lo muestra como invalidado.
+ */
+export async function fetchDteDeVenta(invoiceId: string): Promise<DteDeVenta | null> {
+  const { data, error } = await (supabase as any)
+    .from('fiscal_documents')
+    .select(`dte_type, ambiente, status, numero_control, codigo_generacion, sello_recepcion,
+             fec_emi:json_original->identificacion->>fecEmi,
+             hor_emi:json_original->identificacion->>horEmi`)
+    .eq('invoice_id', invoiceId)
+    .not('numero_control', 'is', null)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+
+  const filas = (data ?? []) as any[]
+  const doc = filas.find(f => f.status === 'ACCEPTED')
+    ?? filas.find(f => f.status === 'INVALIDATED')
+    ?? filas[0]
+  if (!doc) return null
+
+  const sellado = Boolean(doc.sello_recepcion) && (doc.status === 'ACCEPTED' || doc.status === 'INVALIDATED')
+  return {
+    tipoDte: doc.dte_type,
+    ambiente: doc.ambiente,
+    estado: doc.status,
+    numeroControl: doc.numero_control,
+    codigoGeneracion: doc.codigo_generacion,
+    selloRecepcion: doc.sello_recepcion ?? null,
+    fechaEmision: doc.fec_emi ?? null,
+    horaEmision: doc.hor_emi ?? null,
+    qrUrl: sellado && doc.fec_emi
+      ? urlConsultaMh({ ambiente: doc.ambiente, codigoGeneracion: doc.codigo_generacion, fechaEmi: doc.fec_emi })
+      : null,
+  }
 }
 
 export interface SalesFilters {

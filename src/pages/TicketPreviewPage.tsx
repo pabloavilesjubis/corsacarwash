@@ -14,21 +14,13 @@ import {
   buildCorsaTicketPreviewHTML, printCorsaTicket, type TicketArgs,
 } from '../lib/ticket/corsaTicket'
 import { ALL_PROGRAMS } from '../lib/ticket/servicePrograms'
+import { EMISOR, rotuloAmbiente } from '../lib/ticket/fromSale'
+import { urlConsultaMh } from '../lib/fiscal/consultaMh'
 
 /** 80 mm a 96 dpi ≈ 302 px: el ancho real del papel. */
 const PAPER_PX = 302
 /** Alto del lienzo de previsualización; el papel real es continuo. */
 const PAPER_HEIGHT_PX = 1400
-
-const EMISOR = {
-  nombreComercial: 'CORSA',
-  razonSocial: 'CORSA Carwash S.A. de C.V.',
-  nit: '0614-010101-000-0',
-  nrc: '123456',
-  direccion: 'Colonia Escalón, San Salvador, El Salvador',
-  telefono: '+503 2222-1111',
-  ambiente: 'AMBIENTE DE PRUEBA',
-}
 
 export function TicketPreviewPage() {
   const [servicio, setServicio] = useState('Elite')
@@ -46,7 +38,7 @@ export function TicketPreviewPage() {
     const totalNum = Number(total) || 0
     const aspiradoPrecio = aspirado ? (Number(aspiradoPrecioTxt) || 0) : 0
     return {
-      emisor: EMISOR,
+      emisor: { ...EMISOR, ambiente: rotuloAmbiente(conDte ? { ambiente: '00' } : null) },
       operacion: { servicio, aspirado, placa, vehiculo, ordenNumero: orden },
       venta: {
         id: 'preview',
@@ -69,8 +61,13 @@ export function TicketPreviewPage() {
               ? 'DTE-03-M001P001-000000000000042'
               : 'DTE-01-M001P001-000000000000042',
             codigoGeneracion: 'A1B2C3D4-E5F6-4A7B-8C9D-0E1F2A3B4C5D',
-            selloRecibido: '2025A1B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6E7F8A9B0C1D2E3F4',
-            qrUrl: 'https://admin.factura.gob.sv/consultaPublica?ambiente=00&codGen=A1B2C3D4-E5F6-4A7B-8C9D-0E1F2A3B4C5D&fechaEmi=2026-09-08',
+            // El sello del MH: 40 caracteres, el año y 36 hexadecimales.
+            selloRecibido: '2026A1B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6E7F8',
+            qrUrl: urlConsultaMh({
+              ambiente: '00',
+              codigoGeneracion: 'A1B2C3D4-E5F6-4A7B-8C9D-0E1F2A3B4C5D',
+              fechaEmi: '2026-10-01',
+            }),
             fhProcesamiento: new Date().toLocaleString('es-SV'),
           }
         : undefined,

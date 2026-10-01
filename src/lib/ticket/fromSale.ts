@@ -6,28 +6,54 @@
  * v_sales_history). Ambos se normalizan acá para que el ticket salga idéntico.
  */
 
-import type { TicketArgs, TicketEmisor } from './corsaTicket'
-import type { Sale } from '../../services/sales.service'
+import type { TicketArgs, TicketDte, TicketEmisor } from './corsaTicket'
+import type { DteDeVenta, Sale } from '../../services/sales.service'
 
 /**
- * Datos del emisor.
+ * Datos del emisor, tal como están inscritos en el MH.
  *
- * PENDIENTE: hoy son constantes con los valores de la organización sembrada en
- * 0002. Cuando se conecte la emisión real de DTE tienen que leerse de
- * `organizations` (y el NIT de ahí es todavía un placeholder).
+ * Tienen que coincidir con los de `fiscal_issuer_config`, que son los que
+ * viajan dentro del DTE: si el papel dice un NIT y el documento sellado otro,
+ * la representación impresa no corresponde al documento.
+ *
+ * Sin teléfono a propósito: no hay uno confirmado, y uno inventado termina
+ * impreso en miles de tickets.
  */
 export const EMISOR: TicketEmisor = {
   nombreComercial: 'CORSA',
-  razonSocial: 'CORSA Carwash S.A. de C.V.',
-  nit: '0614-010101-000-0',
-  nrc: '123456',
-  direccion: 'Colonia Escalón, San Salvador, El Salvador',
-  telefono: '+503 2222-1111',
-  ambiente: 'SIN TRANSMITIR AL MH',
+  razonSocial: 'GRUPO JUBIS S.A. DE C.V.',
+  nit: '0623-190924-101-8',
+  nrc: '349116-2',
+  direccion: 'Redondel Olímpico, San Salvador Centro, San Salvador',
+}
+
+/**
+ * Rótulo del ambiente. Un documento de pruebas tiene que decirlo en el papel:
+ * es idéntico a uno real y no vale nada ante Hacienda.
+ */
+export function rotuloAmbiente(dte?: Pick<DteDeVenta, 'ambiente'> | null): string | undefined {
+  if (!dte) return 'SIN TRANSMITIR AL MH'
+  return dte.ambiente === '00' ? 'AMBIENTE DE PRUEBAS · SIN VALIDEZ FISCAL' : undefined
+}
+
+/** El DTE de la base, en la forma que espera el ticket. */
+export function dteParaTicket(dte: DteDeVenta, tipoPorDefecto: string): TicketDte {
+  return {
+    tipoDte: dte.tipoDte || tipoPorDefecto,
+    numeroControl: dte.numeroControl,
+    codigoGeneracion: dte.codigoGeneracion,
+    selloRecibido: dte.selloRecepcion ?? undefined,
+    qrUrl: dte.qrUrl ?? undefined,
+    fhProcesamiento: dte.fechaEmision
+      ? `${dte.fechaEmision.split('-').reverse().join('/')}${dte.horaEmision ? ` ${dte.horaEmision}` : ''}`
+      : undefined,
+    estado: dte.estado,
+  }
 }
 
 /** Reimpresión desde el historial de ventas. */
-export function buildTicketArgsFromSale(sale: Sale, branchName?: string): TicketArgs {
+export function buildTicketArgsFromSale(sale: Sale, branchName?: string, dte?: DteDeVenta | null): TicketArgs {
+  const tipo = sale.invoice_type === 'credito_fiscal' ? '03' : '01'
   const iva = Number(sale.tax_total || 0)
   const total = Number(sale.total || 0)
 
@@ -35,6 +61,7 @@ export function buildTicketArgsFromSale(sale: Sale, branchName?: string): Ticket
     emisor: {
       ...EMISOR,
       direccion: branchName ? `${branchName} · ${EMISOR.direccion}` : EMISOR.direccion,
+      ambiente: rotuloAmbiente(dte),
     },
     operacion: {
       // service_name viene como "ÉLITE M": el tier es la primera palabra y es
@@ -70,11 +97,8 @@ export function buildTicketArgsFromSale(sale: Sale, branchName?: string): Ticket
       telefono: sale.customer_phone ?? undefined,
       correo: sale.customer_email ?? undefined,
     },
-    // El DTE todavía no se transmite: el ticket sale sin número de control ni
-    // QR, y el generador ya contempla ese caso.
-    dte: {
-      tipoDte: sale.invoice_type === 'credito_fiscal' ? '03' : '01',
-    },
+    // Sin DTE el ticket deja el bloque fiscal rotulado como pendiente.
+    dte: dte ? dteParaTicket(dte, tipo) : { tipoDte: tipo },
     atendio: undefined,
   }
 }
@@ -136,6 +160,8 @@ export function buildTicketArgsFromPos(
     emisor: {
       ...EMISOR,
       direccion: extras.branchName ? `${extras.branchName} · ${EMISOR.direccion}` : EMISOR.direccion,
+      // El POS todavía no emite: el ticket del cobro sale sin DTE.
+      ambiente: rotuloAmbiente(null),
     },
     operacion: {
       servicio: result.service_name,

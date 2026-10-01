@@ -21,6 +21,8 @@
 
 import { resolveServiceProgram } from './servicePrograms'
 import { formatearFechaHora } from '../../utils/fecha'
+import { qrSvg } from '../fiscal/qr'
+import { LOGO_PATH, LOGO_VIEWBOX } from '../../brand/logoCompleto'
 
 // ─── Tipos ───────────────────────────────────────────────────
 
@@ -58,9 +60,11 @@ export interface TicketDte {
   numeroControl?: string
   codigoGeneracion?: string
   selloRecibido?: string
-  /** URL de consulta pública del MH; se convierte a QR si no es imagen. */
+  /** URL de consulta pública del MH; el ticket la dibuja como QR. */
   qrUrl?: string
   fhProcesamiento?: string
+  /** Estado en fiscal_documents. Sólo cambia el papel si es INVALIDATED. */
+  estado?: string
 }
 
 /**
@@ -152,13 +156,11 @@ function money(n: number): string {
 }
 
 /**
- * Fuente del <img> del QR. Si ya es una imagen se usa directo; si es la URL de
- * consulta del MH (el caso normal) se codifica con un servicio público.
+ * El logo completo, en negro. Es el mismo trazo de la pantalla de ingreso: un
+ * «CORSA» escrito con la fuente del ticket sería otra marca.
  */
-function qrImgSrc(value: string): string {
-  if (/\.(png|jpe?g|svg|webp|gif)(\?|$)/i.test(value)) return value
-  return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=4&qzone=2&data=${encodeURIComponent(value)}`
-}
+const LOGO_SVG = `<svg class="brand-logo" viewBox="0 0 ${LOGO_VIEWBOX.ancho} ${LOGO_VIEWBOX.alto}" role="img" aria-label="CORSA Carwash">`
+  + `<path d="${LOGO_PATH}" fill="#000" fill-rule="evenodd"/></svg>`
 
 /**
  * Check y X como SVG, no como carácter.
@@ -194,9 +196,6 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
       hour: '2-digit', minute: '2-digit', second: '2-digit',
     }) : '')
 
-  const sello = d.selloRecibido
-    ? `${d.selloRecibido.slice(0, 40)}${d.selloRecibido.length > 40 ? '…' : ''}`
-    : ''
 
   const iva = v.iva ?? (v.total ? (v.total * 0.13) / 1.13 : 0)
   const subSinIva = (v.total ?? 0) - iva
@@ -278,27 +277,42 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
       </div>
     </div>` : ''
 
+  /**
+   * El bloque del DTE tiene un lugar fijo en el ticket, haya documento o no.
+   *
+   * Con documento van completos el número de control, el código de generación
+   * y el sello —sin recortar: son lo que el cliente o su contador teclean para
+   * buscarlo, y un sello truncado no sirve para nada—. Sin documento el mismo
+   * recuadro dice que está pendiente, en una línea: el ticket se imprime
+   * decenas de veces al día y tres campos vacíos son papel tirado.
+   */
+  const invalidado = d.estado === 'INVALIDATED'
   const dteBlock = d.numeroControl
     ? `<div class="dte-block">
+         <div class="dte-title">Documento tributario electrónico</div>
+         ${invalidado ? `<div class="dte-void">DOCUMENTO INVALIDADO</div>` : ''}
          <div class="dte-row">
-           <div class="dte-label">N° de control</div>
-           <div class="dte-value mono strong">${esc(d.numeroControl)}</div>
+           <div class="dte-label">Número de control</div>
+           <div class="dte-value mono strong wrap">${esc(d.numeroControl)}</div>
          </div>
          <div class="dte-row">
            <div class="dte-label">Código de generación</div>
-           <div class="dte-value mono small wrap">${esc(d.codigoGeneracion)}</div>
+           <div class="dte-value mono wrap">${esc(d.codigoGeneracion)}</div>
          </div>
-         ${sello ? `<div class="dte-row">
+         <div class="dte-row">
            <div class="dte-label">Sello de recepción</div>
-           <div class="dte-value mono small wrap">${esc(sello)}</div>
-         </div>` : ''}
+           <div class="dte-value mono wrap">${d.selloRecibido ? esc(d.selloRecibido) : 'Pendiente'}</div>
+         </div>
        </div>`
-    : ''
+    : `<div class="dte-block dte-pending">
+         <div class="dte-title">Documento tributario electrónico</div>
+         <div class="dte-pending-text">Pendiente de transmisión al Ministerio de Hacienda</div>
+       </div>`
 
   const qrBlock = d.qrUrl
     ? `<div class="qr-block">
-         <img src="${esc(qrImgSrc(d.qrUrl))}" alt="QR DTE" class="qr-img"/>
-         <div class="qr-caption">Escaneá para verificar en<br/>Hacienda · admin.factura.gob.sv</div>
+         <div class="qr-img">${qrSvg(d.qrUrl, { margen: 0 })}</div>
+         <div class="qr-caption">Verificá este documento en<br/>admin.factura.gob.sv</div>
        </div>`
     : ''
 
@@ -397,7 +411,7 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
 
   /* ── Branding ── */
   .brand-block { text-align: center; margin-bottom: 4px; }
-  .brand-name { font-size: 24px; font-weight: 900; letter-spacing: 0.16em; line-height: 1; }
+  .brand-logo { width: 30mm; height: auto; display: block; margin: 2px auto 3px; }
   .brand-tag { font-size: 10px; font-weight: 700; letter-spacing: 0.24em; margin-top: 3px; text-transform: uppercase; }
   .legal-name { font-size: 11px; font-weight: 700; margin-top: 4px; }
   .legal-meta { font-size: 10px; font-weight: 600; margin-top: 2px; }
@@ -411,10 +425,20 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
   .doc-type-name { font-size: 13px; font-weight: 900; letter-spacing: 0.06em; }
   .doc-type-amb { font-size: 10px; font-weight: 700; letter-spacing: 0.14em; margin-top: 2px; }
 
-  .dte-block { margin: 5px 0; text-align: left; }
+  /* Recuadro del DTE: mismo marco que la cabecera operativa, más fino. */
+  .dte-block { margin: 5px 0; padding: 4px 6px 3px; border: 2px solid #000; text-align: left; }
+  .dte-title {
+    font-size: 9px; font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase;
+    text-align: center; border-bottom: 1px solid #000; padding-bottom: 2px; margin-bottom: 3px;
+  }
+  .dte-void {
+    font-size: 12px; font-weight: 900; letter-spacing: 0.08em; text-align: center;
+    border: 2px solid #000; padding: 2px 0; margin-bottom: 3px;
+  }
   .dte-row { margin-bottom: 3px; }
   .dte-label { font-size: 9px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 1px; }
-  .dte-value { font-size: 11px; line-height: 1.2; font-weight: 700; }
+  .dte-value { font-size: 10.5px; line-height: 1.2; font-weight: 700; }
+  .dte-pending-text { font-size: 10px; font-weight: 700; text-align: center; padding: 1px 0 2px; }
   .mono { font-family: 'SF Mono', 'Menlo', 'Consolas', 'Courier New', monospace; }
   .strong { font-weight: 900; }
   .small { font-size: 10px; font-weight: 400; }
@@ -456,7 +480,8 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
   .pay-row { display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; margin-top: 4px; padding: 2px 0; }
 
   .qr-block { text-align: center; margin: 7px 0 4px; }
-  .qr-img { width: 40mm; height: 40mm; max-width: 100%; background: #fff; display: inline-block; }
+  .qr-img { width: 38mm; height: 38mm; max-width: 100%; display: inline-block; }
+  .qr-img svg { width: 100%; height: 100%; display: block; }
   .qr-caption { font-size: 10px; font-weight: 600; margin-top: 3px; line-height: 1.3; }
 
   .footer { text-align: center; margin-top: 6px; padding-top: 4px; border-top: 1px solid #000; }
@@ -490,7 +515,7 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
     ${opBlock}
 
     <div class="brand-block">
-      <div class="brand-name">${esc(e.nombreComercial)}</div>
+      ${LOGO_SVG}
       ${e.razonSocial ? `<div class="legal-name">${esc(e.razonSocial)}</div>` : ''}
       ${(e.nit || e.nrc) ? `<div class="legal-meta">${e.nit ? `NIT ${esc(e.nit)}` : ''}${(e.nit && e.nrc) ? ' · ' : ''}${e.nrc ? `NRC ${esc(e.nrc)}` : ''}</div>` : ''}
       ${e.direccion ? `<div class="legal-addr">${esc(e.direccion)}</div>` : ''}
@@ -550,10 +575,21 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
 </html>`
 }
 
-/** Abre el ticket en una ventana nueva que se auto-imprime. */
-export function printCorsaTicket(args: TicketArgs): void {
+/**
+ * Abre el ticket en una ventana nueva que se auto-imprime.
+ *
+ * `ventana` es para quien necesita esperar algo —el DTE de la venta— antes de
+ * armar el ticket: la ventana se abre en el clic y se llena después, porque
+ * pasado un `await` el navegador ya no lo cuenta como respuesta al clic y la
+ * bloquea.
+ */
+export function abrirVentanaTicket(id?: string): Window | null {
+  return window.open('', `corsa_ticket_${id ?? Date.now()}`, 'width=420,height=760')
+}
+
+export function printCorsaTicket(args: TicketArgs, ventana?: Window | null): void {
   const html = buildCorsaTicketHTML(args)
-  const w = window.open('', `corsa_ticket_${args.venta.id ?? Date.now()}`, 'width=420,height=760')
+  const w = ventana ?? abrirVentanaTicket(args.venta.id)
   if (!w) {
     throw new Error('El navegador bloqueó la ventana de impresión. Permití popups para este sitio.')
   }
