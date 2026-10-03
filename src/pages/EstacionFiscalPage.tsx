@@ -113,9 +113,24 @@ export function EstacionFiscalPage() {
                       tono={estado.certificate.status === 'detected' ? 'ok' : 'mal'}
                       detalle={estado.certificate.nit ? `NIT ${estado.certificate.nit}` : null} />
                 <Fila etiqueta="Huella pública" valor={estado.certificate.fingerprint ?? '—'} tono="neutro" />
-                <Fila etiqueta="Firma fiscal" valor={estado.fiscalSigning === 'available' ? 'Lista' : 'No configurada'}
+                <Fila etiqueta="Firma fiscal"
+                      valor={estado.fiscalSigning === 'available' ? 'Lista'
+                        : estado.fiscalSigning === 'failed' ? 'Falló la prueba de firma' : 'No configurada'}
                       tono={estado.fiscalSigning === 'available' ? 'ok' : 'mal'}
-                      detalle={estado.fiscalSigning === 'available' ? null : estado.fiscalSigningMissing ? `Falta: ${estado.fiscalSigningMissing}` : null} />
+                      detalle={estado.fiscalSigning === 'available' ? 'Firma de prueba aislada verificada; no se transmite nada'
+                        : estado.fiscalSigning === 'failed' ? estado.fiscalSigningError
+                        : estado.fiscalSigningMissing ? `Falta: ${estado.fiscalSigningMissing}` : null} />
+                {hayVersionNueva && puedeDescargar && release && (
+                  <div style={{ marginTop: 14 }}>
+                    <button onClick={descargar} disabled={descargando} style={boton(false)}>
+                      {descargando ? 'Preparando…' : `Descargar actualización v${release.version}`}
+                    </button>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.6 }}>
+                      Extraé el .zip y ejecutá «Instalar Gateway.bat»: actualiza conservando la configuración.
+                      {release.sha256 && <> SHA-256 <code className="font-mono" style={{ wordBreak: 'break-all' }}>{release.sha256}</code></>}
+                    </div>
+                  </div>
+                )}
                 {estado.ready && (
                   <div style={{ marginTop: 14, fontSize: 14, fontWeight: 700, color: 'var(--corsa-green)' }}>Estación fiscal lista</div>
                 )}

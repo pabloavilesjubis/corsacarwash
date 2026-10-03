@@ -79,6 +79,16 @@ test('valores inesperados no se muestran como buenos', () => {
   assert.equal(e.certificate.nit, null)
 })
 
+test('firma configurada pero la prueba falló: se distingue de «no configurada»', () => {
+  const e = m.interpretarEstacion({
+    ...LISTA, fiscalSigning: 'failed', ready: false,
+    fiscalSigningError: 'La contraseña configurada no corresponde al certificado del NIT (803)',
+  })
+  assert.equal(e.fiscalSigning, 'failed')
+  assert.match(e.fiscalSigningError, /803/)
+  assert.equal(e.ready, false)
+})
+
 test('compararVersion', () => {
   assert.ok(m.compararVersion('1.2.0', '1.1.9') > 0)
   assert.ok(m.compararVersion('1.2.0', '1.10.0') < 0)

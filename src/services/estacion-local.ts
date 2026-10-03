@@ -18,8 +18,10 @@ export interface StationResponse {
     nit: string | null
     fingerprint: string | null
   }
-  fiscalSigning: 'available' | 'incomplete' | 'not_configured'
+  /** `failed`: la firma está configurada pero la firma de prueba aislada no salió. */
+  fiscalSigning: 'available' | 'failed' | 'incomplete' | 'not_configured'
   fiscalSigningMissing: string | null
+  fiscalSigningError: string | null
   allowProduction: boolean
   ready: boolean
 }
@@ -46,8 +48,11 @@ export function interpretarEstacion(body: unknown): StationResponse | null {
       nit: typeof cert.nit === 'string' ? cert.nit : null,
       fingerprint: typeof cert.fingerprint === 'string' && /^[0-9a-f]{16}$/.test(cert.fingerprint) ? cert.fingerprint : null,
     },
-    fiscalSigning: b.fiscalSigning === 'available' ? 'available' : b.fiscalSigning === 'incomplete' ? 'incomplete' : 'not_configured',
+    fiscalSigning: b.fiscalSigning === 'available' ? 'available'
+      : b.fiscalSigning === 'failed' ? 'failed'
+      : b.fiscalSigning === 'incomplete' ? 'incomplete' : 'not_configured',
     fiscalSigningMissing: typeof b.fiscalSigningMissing === 'string' ? b.fiscalSigningMissing : null,
+    fiscalSigningError: typeof b.fiscalSigningError === 'string' ? b.fiscalSigningError : null,
     allowProduction: b.allowProduction === true,
     ready: b.ready === true,
   }
