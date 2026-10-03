@@ -25,6 +25,7 @@ const SegurosPage = lazy(() => import('./pages/SegurosPage').then(m => ({ defaul
 const AnalisisMaquinasPage = lazy(() => import('./pages/AnalisisMaquinasPage').then(m => ({ default: m.AnalisisMaquinasPage })))
 const ConfiguracionPage = lazy(() => import('./pages/ConfiguracionPage').then(m => ({ default: m.ConfiguracionPage })))
 const NotificacionesPage = lazy(() => import('./pages/NotificacionesPage').then(m => ({ default: m.NotificacionesPage })))
+const EstacionFiscalPage = lazy(() => import('./pages/EstacionFiscalPage').then(m => ({ default: m.EstacionFiscalPage })))
 const CierreDiarioPage = lazy(() => import('./pages/CierreDiarioPage').then(m => ({ default: m.CierreDiarioPage })))
 // Contabilidad: un solo chunk para las cuatro pantallas del submenú.
 const contabilidad = () => import('./pages/contabilidad/ContabilidadPages')
@@ -128,6 +129,7 @@ export default function App() {
                     máquinas tiene que poder apagarlos. El permiso de la
                     pantalla es el mismo con el que ve las máquinas. */}
                 <Route path="/settings/notificaciones" element={<ScreenGuard permission="plc.read"><NotificacionesPage/></ScreenGuard>}/>
+                <Route path="/settings/estacion-fiscal" element={<ScreenGuard permission="screens.settings"><EstacionFiscalPage/></ScreenGuard>}/>
                 {/* La ruta exacta a la que lleva el push de cierre. */}
                 <Route path="/dashboard/cierre-diario" element={<ScreenGuard permission="plc.read"><CierreDiarioPage/></ScreenGuard>}/>
                 {/* Contabilidad. Emitir pide además fiscal.issue y sembrar

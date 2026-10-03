@@ -28,6 +28,13 @@ const SECCIONES: Seccion[] = [
     descripcion: 'Activá los avisos de lavados, fallas y cierre del día en tu teléfono o '
                + 'computadora, y administrá tus dispositivos.',
   },
+  {
+    path: '/settings/estacion-fiscal',
+    icono: '🧾',
+    titulo: 'Estación fiscal',
+    descripcion: 'Probá desde la PC de facturación si el CORSA Gateway, el firmador de '
+               + 'Hacienda y el certificado están listos, o descargá el Gateway.',
+  },
 ]
 
 export function ConfiguracionPage() {
