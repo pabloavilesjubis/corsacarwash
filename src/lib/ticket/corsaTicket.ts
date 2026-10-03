@@ -293,7 +293,16 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
    * decenas de veces al día y tres campos vacíos son papel tirado.
    */
   const invalidado = d.estado === 'INVALIDATED'
-  const dteBlock = d.numeroControl
+  // Sin DTE y sin NIT el ticket salió con la marca sola porque la
+  // configuración fiscal está incompleta: no es ni será un documento
+  // tributario, y el papel lo dice en vez de prometer una transmisión.
+  const sinValidezFiscal = !d.numeroControl && !e.nit
+  const dteBlock = sinValidezFiscal
+    ? `<div class="dte-block dte-pending">
+         <div class="dte-title">Comprobante interno</div>
+         <div class="dte-pending-text">Sin validez fiscal</div>
+       </div>`
+    : d.numeroControl
     ? `<div class="dte-block">
          <div class="dte-title">Documento tributario electrónico</div>
          ${invalidado ? `<div class="dte-void">DOCUMENTO INVALIDADO</div>` : ''}

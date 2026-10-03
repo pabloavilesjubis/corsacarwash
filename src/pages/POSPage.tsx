@@ -20,7 +20,8 @@ import { FCF_IDENTIFICACION_OBLIGATORIA_DESDE } from '../lib/mh-catalogs'
 import { abrirVentanaTicket, avisoEnVentanaTicket, printCorsaTicket } from '../lib/ticket/corsaTicket'
 import { emitirDteDeVenta, posEmiteDte } from '../services/fiscal.service'
 import { fetchDteDeVenta, type DteDeVenta } from '../services/sales.service'
-import { buildTicketArgsFromPos, EMISOR, type PosSaleResult } from '../lib/ticket/fromSale'
+import { buildTicketArgsFromPos, type PosSaleResult } from '../lib/ticket/fromSale'
+import { cargarEmisor, emisorParaTicket, MARCA } from '../lib/fiscal/emisor'
 import { lookupVoucher, redeemVoucher, type VoucherLookup } from '../services/vouchers.service'
 import { fetchPolizaVigente, tiempoRestante, type RainPolicy } from '../services/rain.service'
 import {
@@ -839,6 +840,10 @@ export function POSPage() {
    * circuito con Hacienda queda listo.
    */
   const [emiteDte, setEmiteDte] = useState(false)
+  // El emisor del ticket se pide al abrir la caja: al cobrar ya está en
+  // memoria y la impresión no espera a la red. Un fallo acá no importa: la
+  // impresión lo vuelve a pedir.
+  useEffect(() => { cargarEmisor(branchId).catch(() => {}) }, [branchId])
   useEffect(() => {
     if (!branchId) { setEmiteDte(false); return }
     let vivo = true
@@ -974,7 +979,8 @@ export function POSPage() {
       })
       try {
         printCorsaTicket({
-          emisor: EMISOR,
+          // El canje no tiene contenido tributario: sólo la marca.
+          emisor: MARCA,
           operacion: {
             servicio: r.service_name,
             aspirado: r.includes_aspirado,
@@ -1077,7 +1083,10 @@ export function POSPage() {
       // el equipo en piso. Si el navegador bloquea la ventana emergente el
       // cobro ya quedó registrado, así que sólo se avisa — no se revierte.
       try {
-        printCorsaTicket(buildTicketArgsFromPos(sale, {
+        // Con DTE es un documento fiscal y exige el emisor completo; sin él,
+        // el ticket sale aunque falte configuración, rotulado sin validez.
+        const emisor = await emisorParaTicket(branchId, !!dte)
+        printCorsaTicket(buildTicketArgsFromPos(sale, emisor, {
           clienteNombre: billing.fcfName ?? (receptor ? displayName(receptor) : undefined),
           clienteDoc: receptor
             ? { tipo: receptor.nit ? 'NIT' : 'DUI', numero: receptor.nit ?? receptor.dui, nrc: receptor.nrc }

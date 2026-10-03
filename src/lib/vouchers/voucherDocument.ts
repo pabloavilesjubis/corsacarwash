@@ -11,7 +11,7 @@
  */
 
 import type { VoucherRow } from '../../services/vouchers.service'
-import { EMISOR } from '../ticket/fromSale'
+import { MARCA } from '../fiscal/emisor'
 
 function esc(value: unknown): string {
   if (value == null) return ''
@@ -43,7 +43,7 @@ function voucherCard(v: VoucherRow): string {
   return `
   <section class="voucher">
     <div class="left">
-      <div class="brand">${esc(EMISOR.nombreComercial)}</div>
+      <div class="brand">${esc(MARCA.nombreComercial)}</div>
       <div class="kicker">${v.is_gift ? 'Cupón de cortesía' : 'Cupón de servicio · prepagado'}</div>
 
       <div class="service">${esc(servicio)}</div>

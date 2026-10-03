@@ -10,24 +10,23 @@ import type { TicketArgs, TicketDte, TicketEmisor } from './corsaTicket'
 import type { DteDeVenta, Sale } from '../../services/sales.service'
 
 /**
- * Datos del emisor, tal como están inscritos en el MH.
+ * El emisor del ticket con el rótulo del ambiente y la sucursal.
  *
- * Tienen que coincidir con los de `fiscal_issuer_config`, que son los que
- * viajan dentro del DTE: si el papel dice un NIT y el documento sellado otro,
- * la representación impresa no corresponde al documento.
- *
- * Sin teléfono a propósito: no hay uno confirmado, y uno inventado termina
- * impreso en miles de documentos.
+ * Los datos fiscales vienen de `fiscal_issuer_config` (ver lib/fiscal/emisor),
+ * la misma fila que el Worker mete en el DTE: si el papel dijera un NIT y el
+ * documento sellado otro, la representación impresa no le correspondería.
  */
-export const EMISOR: TicketEmisor = {
-  nombreComercial: 'CORSA CARWASH',
-  razonSocial: 'GRUPO JUBIS S.A. DE C.V.',
-  nit: '0623-190924-101-8',
-  nrc: '349116-2',
-  direccion: 'Redondel Olímpico, San Salvador Centro, San Salvador',
-  codActividad: '45208',
-  descActividad: 'Lavado y pasteado de vehículos (carwash)',
-  correo: 'corsacarwash@gmail.com',
+function emisorDelTicket(
+  emisor: TicketEmisor, branchName: string | undefined, dte: DteDeVenta | null | undefined,
+): TicketEmisor {
+  return {
+    ...emisor,
+    direccion: branchName
+      ? [branchName, emisor.direccion].filter(Boolean).join(' · ')
+      : emisor.direccion,
+    // Sin NIT es el ticket con la marca sola: no hay DTE que esperar.
+    ambiente: emisor.nit ? rotuloAmbiente(dte) : 'SIN VALIDEZ FISCAL',
+  }
 }
 
 /**
@@ -55,17 +54,15 @@ export function dteParaTicket(dte: DteDeVenta, tipoPorDefecto: string): TicketDt
 }
 
 /** Reimpresión desde el historial de ventas. */
-export function buildTicketArgsFromSale(sale: Sale, branchName?: string, dte?: DteDeVenta | null): TicketArgs {
+export function buildTicketArgsFromSale(
+  sale: Sale, emisor: TicketEmisor, branchName?: string, dte?: DteDeVenta | null,
+): TicketArgs {
   const tipo = sale.invoice_type === 'credito_fiscal' ? '03' : '01'
   const iva = Number(sale.tax_total || 0)
   const total = Number(sale.total || 0)
 
   return {
-    emisor: {
-      ...EMISOR,
-      direccion: branchName ? `${branchName} · ${EMISOR.direccion}` : EMISOR.direccion,
-      ambiente: rotuloAmbiente(dte),
-    },
+    emisor: emisorDelTicket(emisor, branchName, dte),
     operacion: {
       // service_name viene como "ÉLITE M": el tier es la primera palabra y es
       // lo que resuelve el número de programa.
@@ -141,6 +138,7 @@ export interface PosSaleResult {
 /** Cobro recién hecho en el POS. */
 export function buildTicketArgsFromPos(
   result: PosSaleResult,
+  emisor: TicketEmisor,
   extras: {
     clienteNombre?: string
     clienteDoc?: { tipo?: string; numero?: string; nrc?: string }
@@ -163,11 +161,7 @@ export function buildTicketArgsFromPos(
   const base = total - (result.with_aspirado ? aspirado : 0) - seguro
 
   return {
-    emisor: {
-      ...EMISOR,
-      direccion: extras.branchName ? `${extras.branchName} · ${EMISOR.direccion}` : EMISOR.direccion,
-      ambiente: rotuloAmbiente(dte),
-    },
+    emisor: emisorDelTicket(emisor, extras.branchName, dte),
     operacion: {
       servicio: result.service_name,
       aspirado: result.with_aspirado,

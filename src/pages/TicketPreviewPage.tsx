@@ -9,12 +9,15 @@
  * no debe llegar a producción, por eso tampoco pasa por el ScreenGuard.
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   buildCorsaTicketPreviewHTML, printCorsaTicket, type TicketArgs,
 } from '../lib/ticket/corsaTicket'
 import { ALL_PROGRAMS } from '../lib/ticket/servicePrograms'
-import { EMISOR, rotuloAmbiente } from '../lib/ticket/fromSale'
+import { rotuloAmbiente } from '../lib/ticket/fromSale'
+import { cargarEmisor, MARCA, type EstadoEmisor } from '../lib/fiscal/emisor'
+import { useAuth } from '../hooks/useAuth'
+import type { TicketEmisor } from '../lib/ticket/corsaTicket'
 import { urlConsultaMh } from '../lib/fiscal/consultaMh'
 
 /** 80 mm a 96 dpi ≈ 302 px: el ancho real del papel. */
@@ -33,12 +36,25 @@ export function TicketPreviewPage() {
   const [conDte, setConDte] = useState(true)
   const [esCcf, setEsCcf] = useState(false)
   const [zoom, setZoom] = useState(1.5)
+  // El emisor real de la sucursal abierta: la vista previa tiene que mostrar
+  // lo mismo que va a salir impreso.
+  const { currentBranch } = useAuth()
+  const [estadoEmisor, setEstadoEmisor] = useState<EstadoEmisor | null>(null)
+  useEffect(() => {
+    let vivo = true
+    cargarEmisor((currentBranch as any)?.id)
+      .then(e => { if (vivo) setEstadoEmisor(e) })
+      .catch(() => { if (vivo) setEstadoEmisor({ completo: false, faltantes: ['no se pudo leer fiscal_issuer_config'] }) })
+    return () => { vivo = false }
+  }, [currentBranch])
+  // Incompleta, la vista previa muestra lo que saldría sin DTE: la marca sola.
+  const emisor: TicketEmisor = estadoEmisor?.completo ? estadoEmisor.emisor : MARCA
 
   const args: TicketArgs = useMemo(() => {
     const totalNum = Number(total) || 0
     const aspiradoPrecio = aspirado ? (Number(aspiradoPrecioTxt) || 0) : 0
     return {
-      emisor: { ...EMISOR, ambiente: rotuloAmbiente(conDte ? { ambiente: '00' } : null) },
+      emisor: { ...emisor, ambiente: emisor.nit ? rotuloAmbiente(conDte ? { ambiente: '00' } : null) : 'SIN VALIDEZ FISCAL' },
       operacion: { servicio, aspirado, placa, vehiculo, ordenNumero: orden },
       venta: {
         id: 'preview',
@@ -76,7 +92,7 @@ export function TicketPreviewPage() {
         : { nombre: 'Consumidor Final' },
       atendio: 'Mauricio J.',
     }
-  }, [servicio, aspirado, placa, vehiculo, orden, total, aspiradoPrecioTxt, conDte, esCcf])
+  }, [servicio, aspirado, placa, vehiculo, orden, total, aspiradoPrecioTxt, conDte, esCcf, emisor])
 
   const html = useMemo(() => buildCorsaTicketPreviewHTML(args), [args])
 
@@ -92,6 +108,16 @@ export function TicketPreviewPage() {
         <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 16 }}>
           Banco de pruebas · sólo desarrollo
         </div>
+
+        {estadoEmisor && !estadoEmisor.completo && (
+          <div role="alert" style={{ fontSize: 12, lineHeight: 1.4, marginBottom: 16, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--danger, #c0392b)', color: 'var(--danger, #c0392b)' }}>
+            <strong>Configuración fiscal del emisor incompleta.</strong> Un ticket con DTE y la factura carta no
+            se imprimen; sin DTE sale con la marca sola y sin validez fiscal.
+            <ul style={{ margin: '6px 0 0', paddingLeft: 16 }}>
+              {estadoEmisor.faltantes.map(f => <li key={f}>{f}</li>)}
+            </ul>
+          </div>
+        )}
 
         <div style={field}>
           <span style={label}>Servicio</span>

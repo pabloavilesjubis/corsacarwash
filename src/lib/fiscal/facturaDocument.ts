@@ -18,7 +18,7 @@
  */
 
 import type { DteDeVenta, Sale } from '../../services/sales.service'
-import { EMISOR } from '../ticket/fromSale'
+import type { TicketEmisor } from '../ticket/corsaTicket'
 import { findDepartamento, findMunicipio } from '../mh-catalogs'
 import { formatearFechaHora } from '../../utils/fecha'
 import { LOGO_PATH, LOGO_VIEWBOX } from '../../brand/logoCompleto'
@@ -81,7 +81,11 @@ function fila(label: string, value: string | null | undefined, opts: { mono?: bo
     <div class="v${opts.mono && value ? ' mono' : ''}${value ? '' : ' missing'}">${value ? esc(value) : 'No registrado'}</div>`
 }
 
-export function buildFacturaHTML(sale: Sale, dte: DteDeVenta | null = null): string {
+/**
+ * `emisor` es el de `fiscal_issuer_config` de la sucursal (lib/fiscal/emisor):
+ * el mismo que viaja dentro del DTE.
+ */
+export function buildFacturaHTML(sale: Sale, emisor: TicketEmisor, dte: DteDeVenta | null = null): string {
   const tipo = (dte && TIPO_DTE_LABEL[dte.tipoDte])
     ?? TIPO_LABEL[sale.invoice_type ?? '']
     ?? 'Documento de venta'
@@ -136,21 +140,21 @@ export function buildFacturaHTML(sale: Sale, dte: DteDeVenta | null = null): str
 
   // El emisor lleva lo mismo en una factura que en un CCF: el MH lo exige
   // completo en los dos.
-  const actividadEmisor = EMISOR.descActividad
-    ? `${EMISOR.descActividad}${EMISOR.codActividad ? ` (${EMISOR.codActividad})` : ''}`
+  const actividadEmisor = emisor.descActividad
+    ? `${emisor.descActividad}${emisor.codActividad ? ` (${emisor.codActividad})` : ''}`
     : undefined
   const emisorCard = `
       <div class="party">
         <div class="party-head">Emisor</div>
-        <div class="party-name">${esc(EMISOR.razonSocial)}</div>
+        <div class="party-name">${esc(emisor.razonSocial ?? emisor.nombreComercial)}</div>
         <div class="kv">
-          ${fila('Nombre comercial', EMISOR.nombreComercial, { requerido: true })}
-          ${fila('NIT', EMISOR.nit, { mono: true, requerido: true })}
-          ${fila('NRC', EMISOR.nrc, { mono: true, requerido: true })}
+          ${fila('Nombre comercial', emisor.nombreComercial, { requerido: true })}
+          ${fila('NIT', emisor.nit, { mono: true, requerido: true })}
+          ${fila('NRC', emisor.nrc, { mono: true, requerido: true })}
           ${fila('Actividad económica', actividadEmisor, { requerido: true })}
-          ${fila('Dirección', EMISOR.direccion, { requerido: true })}
-          ${fila('Teléfono', EMISOR.telefono)}
-          ${fila('Correo', EMISOR.correo, { requerido: true })}
+          ${fila('Dirección', emisor.direccion, { requerido: true })}
+          ${fila('Teléfono', emisor.telefono)}
+          ${fila('Correo', emisor.correo, { requerido: true })}
         </div>
       </div>`
 
@@ -325,7 +329,7 @@ export function buildFacturaHTML(sale: Sale, dte: DteDeVenta | null = null): str
     <header class="masthead">
       <div class="brand">
         ${logo}
-        <div class="issuer-name">${esc(EMISOR.razonSocial)}</div>
+        <div class="issuer-name">${esc(emisor.razonSocial ?? emisor.nombreComercial)}</div>
       </div>
       <div class="doc-head">
         <div class="doc-kicker">Documento tributario electrónico</div>
@@ -388,7 +392,7 @@ export function buildFacturaHTML(sale: Sale, dte: DteDeVenta | null = null): str
     </section>
 
     <footer>
-      <span>${esc(EMISOR.razonSocial)} · CORSA Carwash</span>
+      <span>${esc(emisor.razonSocial ?? emisor.nombreComercial)} · CORSA Carwash</span>
       <span>Generado el ${new Date().toLocaleDateString('es-SV')}</span>
     </footer>
   </div>
@@ -416,12 +420,14 @@ export function buildFacturaHTML(sale: Sale, dte: DteDeVenta | null = null): str
  * abrir ventanas en respuesta directa a un clic, y después de un `await` ya no
  * cuenta como tal.
  */
-export function printFactura(sale: Sale, dte: DteDeVenta | null = null, ventana?: Window | null): void {
+export function printFactura(
+  sale: Sale, emisor: TicketEmisor, dte: DteDeVenta | null = null, ventana?: Window | null,
+): void {
   const w = ventana ?? window.open('', `corsa_factura_${sale.order_id}`, 'width=900,height=1000')
   if (!w) {
     throw new Error('El navegador bloqueó la ventana. Permití popups para este sitio.')
   }
   w.document.open()
-  w.document.write(buildFacturaHTML(sale, dte))
+  w.document.write(buildFacturaHTML(sale, emisor, dte))
   w.document.close()
 }

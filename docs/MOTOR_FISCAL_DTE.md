@@ -33,7 +33,7 @@ Esto va primero a propósito. Las pruebas automatizadas son buenas y numerosas,
 | **Builder FSEE (14)** | ✅ **Validado contra schema y contra una FSEE real** | Pasa `fe-fse-v1.json`; reproduce campo por campo una FSEE sellada en producción |
 | **Evento de invalidación** | ✅ **Validado contra schema** | Pasa `anulacion-schema-v2.json` (con un parche documentado, §13) |
 | **Correlativos** | ✅ **Validados contra PostgreSQL** | 50 reservas simultáneas con pgbench, más idempotencia y concurrencia |
-| **Circuito interno** | ✅ **Validado con dobles** | 14 pruebas de punta a punta con Supabase y MH simulados |
+| **Circuito interno** | ✅ **Validado con dobles** | Pruebas de punta a punta con Supabase y MH simulados, incluida la recuperación del sello con `consultadte` |
 | **Integración con el MH** | ❌ **NO VALIDADA** | El cliente compila y tiene pruebas de forma, pero **nunca habló con Hacienda** |
 | **Motor DTE de punta a punta** | ❌ **NO VALIDADO** | Falta el hito: un DTE aceptado con `selloRecibido` real |
 
@@ -146,6 +146,7 @@ schemas usan `additionalProperties: false` y exigen los nullable presentes; un
 | Producción | `https://api.dtes.mh.gob.sv` |
 | Login | `POST /seguridad/auth` |
 | Recepción | `POST /fesv/recepciondte` |
+| Consulta | `POST /fesv/recepcion/consultadte/` — `{ nitEmisor, tdte, codigoGeneracion }` |
 | Anulación | `POST /fesv/anulardte` |
 
 **El login va en `application/x-www-form-urlencoded`, no en JSON.** Es el error
@@ -160,15 +161,24 @@ El token puede venir con o sin el prefijo `Bearer `; se normaliza. Dura 24 h y
 se renueva a las 12 h por margen de reloj. Ante un `401`: limpiar cache,
 renovar y reintentar **una sola vez**.
 
+**Credenciales malas no llegan como 401.** Hacienda contesta HTTP 200 con
+`status: "ERROR"` y `codigoMsg: "101"`. El error de login lleva ese código en
+el mensaje, y la emisión lo reporta como problema de `MH_NIT`/`MH_PASSWORD`,
+no como «Hacienda no respondió». (Lección de ChuchoWash en producción.)
+
 **Campo `ambiente`:** `00` sandbox, `01` producción. Viaja dentro del DTE y
 también en el sobre del envío.
 
 ### El cache del token en un Worker
 
-ERP-PAAJ guarda el token en una variable de módulo. Eso funciona en un proceso
-Node que vive semanas; en Cloudflare los isolates son efímeros y hay muchos en
-paralelo, así que esa variable acierta a veces. El cache de CORSA es un
-parámetro con interfaz propia (`CacheDeToken`): hoy entra el de memoria, y
+En Cloudflare los isolates son efímeros y hay muchos en paralelo, así que un
+cache en memoria acierta a veces, nunca siempre. Aun así ahorra logins: dos
+emisiones seguidas en el mismo isolate comparten token.
+
+El cache vive a nivel de módulo (`cacheDelIsolate` en `src/mh/auth.ts`), uno
+por URL de Hacienda y NIT: un token del sandbox nunca viaja a producción. Hasta
+octubre de 2026 se creaba un cache nuevo en cada llamada y cada documento
+pagaba un login. La interfaz (`CacheDeToken`) sigue siendo un parámetro:
 cuando el volumen lo pida entra uno sobre KV sin tocar el resto.
 
 ---
@@ -357,6 +367,23 @@ ruido no es adorno: sin él, veinte Workers que fallaron al mismo tiempo le
 pegan a Hacienda en manada justo cuando ya está en problemas. Los 4xx no se
 reintentan.
 
+### Recuperar el sello: `consultadte`
+
+Un timeout no dice si el documento entró. Antes, la única salida era mirar el
+portal del MH a mano. Ahora el Worker le pregunta a Hacienda con
+`/fesv/recepcion/consultadte/` en tres momentos:
+
+| Cuándo | Qué hace |
+|---|---|
+| **Antes de retransmitir** un JWS ya firmado | Si Hacienda lo tiene sellado, se guarda ese sello y **no se vuelve a mandar** |
+| **Después de un fallo transitorio** en la primera transmisión (timeout, red, PROCESADO sin sello) | Una consulta rápida (sin reintentos, 10 s): si entró, queda aceptado en el mismo cobro |
+| **Ante un «ya existe»** de Hacienda | Va a buscar el sello. Si no lo trae, el documento queda **pendiente, nunca rechazado**: Hacienda lo tiene |
+
+La consulta sólo cuenta si devuelve `PROCESADO` **con** `selloRecibido`.
+Cualquier otra respuesta —no lo conoce, no contesta, falla el login— no cambia
+el estado del documento y el camino sigue como antes. Un rechazo real de
+Hacienda (que no sea «ya existe») sigue quemando el número y no consulta.
+
 ---
 
 ## 8. Modelo de datos
@@ -437,6 +464,7 @@ src/
 | `POST` | `/v1/app/nota-credito` | Nota de Crédito desde Contabilidad. Ídem. |
 | `POST` | `/v1/app/invalidacion` | Invalida un documento aceptado. Ídem. |
 | `POST` | `/v1/app/reintentar` | Retransmite un documento o una invalidación pendientes. Ídem. |
+| `POST` | `/v1/diagnostico` | Qué secretos están cargados (sí/no), huella de la llave con la que firma, si firma y verifica. Con `{"probarLogin": true}` además pide un token a Hacienda. **No emite, no numera, no devuelve secretos.** Corre también en producción. |
 | `POST` | `/v1/prueba/firmar` | Firma un payload. No toca Hacienda. |
 | `POST` | `/v1/prueba/validar` | Valida contra el schema. No firma ni transmite. |
 | `POST` | `/v1/prueba/emitir` | Emisión sin base, para diagnóstico. |
@@ -453,7 +481,9 @@ HTTP: un rechazo de Hacienda no es un fallo de este servicio.
 ### El candado de producción
 
 Mientras `MH_ENV=production`, las rutas `/v1/prueba/*` responden **403**. Está
-en el código, no en la disciplina de quien despliega.
+en el código, no en la disciplina de quien despliega. `/v1/diagnostico` no está
+bajo `/v1/prueba/` a propósito: no emite nada, y es justo lo que hace falta
+para revisar el Worker de producción antes del primer documento.
 
 ---
 
@@ -565,7 +595,9 @@ Builder: `src/builders/nc.ts`. Se emite desde **Contabilidad → Notas de crédi
 - El **emisor no lleva** `codEstable`/`codPuntoVenta` ni sus versiones MH, y el
   **resumen no lleva** `pagos`, `totalPagar`, `saldoFavor`, `totalIva` ni
   `porcentajeDescuento`. Mandarlos es un rechazo seguro.
-- El teléfono del emisor es obligatorio (en la FCF no).
+- El teléfono del emisor es obligatorio, como en los otros tres tipos: los
+  schemas de 01, 03, 05 y 14 lo exigen (string de 8 a 30). Se creyó opcional en
+  la FCF y no lo es.
 - Si el CCF relacionado es nuestro, el Worker verifica **antes de reservar
   número** que esté aceptado, no invalidado y que sea del mismo receptor. Un CCF
   de antes de CORSA (otro sistema, o papel) se acepta sin esa verificación.
@@ -661,7 +693,9 @@ Worker con `fiscal_sale_for_emission`, y si las líneas no suman el total de la
 factura no emite. La llave es `SALE:<invoice_id>:DTE:<01|03>`, la misma de
 `/v1/dte/emit`: repetir la llamada retoma el mismo documento. Una venta de
 Crédito Fiscal sale como CCF con el receptor de la ficha del cliente (§12).
-El interruptor nace apagado:
+El interruptor nace apagado, y **el Worker lo respeta** (no sólo el
+navegador): con `emitir_en_pos` en `false`, `/v1/app/venta` responde `409
+EMISION_POS_APAGADA` sin abrir documento ni reservar número.
 
 ```sql
 update public.fiscal_issuer_config set emitir_en_pos = true where branch_id = '<sucursal>';
@@ -690,6 +724,30 @@ CORSA ya tiene [`facturaDocument.ts`](../src/lib/fiscal/facturaDocument.ts), que
 hoy marca los campos fiscales como «Pendiente de transmisión». Cuando exista el
 DTE se llenan con `numeroControl`, `codigoGeneracion`, sello y QR.
 
+**El emisor impreso sale de `fiscal_issuer_config`**, la misma fila que el
+Worker mete en el DTE ([`lib/fiscal/emisor.ts`](../src/lib/fiscal/emisor.ts)).
+Antes estaba escrito a mano en `fromSale.ts`, y un cambio en la base no se
+habría visto en el papel. **No hay datos fiscales de respaldo en el código.**
+Para imprimir hacen falta `nit`, `nrc`, `nombre`, `cod_actividad`,
+`desc_actividad`, `departamento` y `municipio` (que existan en el catálogo),
+`complemento`, `telefono` y `correo`. Si alguno falta:
+
+| Documento | Qué pasa |
+|---|---|
+| Factura carta | No se imprime: «Configuración fiscal del emisor incompleta: falta …» |
+| Ticket con DTE | Igual: no se imprime |
+| Ticket sin DTE | Sale con la marca sola, rotulado «Comprobante interno · Sin validez fiscal»: es también la orden del equipo en piso |
+| Cupón | Siempre con la marca sola: no tiene contenido tributario |
+
+### El Worker no numera con una configuración a medias
+
+Antes de abrir el documento —que es lo que reserva el número de control— el
+Worker revisa la fila del emisor (`validation/emisor.ts`): campos obligatorios
+no vacíos, NIT de 14 o 9 dígitos, NRC de 1 a 8 y teléfono para los cuatro
+tipos. Si falta algo responde `422 CONFIGURACION_FISCAL_INCOMPLETA` con la
+lista en `faltantes`, y **no se gasta ningún número**. Antes, un CCF sin
+teléfono reservaba el correlativo y quedaba pendiente para siempre.
+
 ---
 
 ## 15. Secrets y configuración
@@ -699,6 +757,7 @@ DTE se llenan con `numeroControl`, `codigoGeneracion`, sello y QR.
 | Nombre | Qué es |
 |---|---|
 | `CERT_PKCS8_B64` | Llave privada del certificado, PKCS#8 en base64 |
+| `CERT_SPKI_B64` | Llave pública del certificado. No es secreta, pero sin ella la firma no se verifica antes de transmitir y no hay huella con qué comparar. **Cargarla.** |
 | `CERT_PASSWORD` | `passwordPri` del certificado (portón SHA-512) |
 | `MH_NIT` | NIT del emisor, 14 dígitos sin guiones |
 | `MH_PASSWORD` | Contraseña del portal de Hacienda — distinta de la anterior |
@@ -720,7 +779,14 @@ npm run cert:preparar -- ruta/al/NIT.crt
 ```
 
 Comprueba que la llave firma de verdad, que la contraseña corresponde al
-certificado, e imprime el `CERT_PKCS8_B64`. **No lo escribe en ningún archivo.**
+certificado, e imprime el `CERT_PKCS8_B64`, el `CERT_SPKI_B64` y la **huella de
+la llave** (SHA-256 del SPKI, 16 hex). **No los escribe en ningún archivo.**
+
+Después de cargar los secretos, `POST /v1/diagnostico` tiene que devolver esa
+misma huella. Si no coincide, el Worker está firmando con la llave de otro
+certificado: es lo que le pasó a ChuchoWash en producción (octubre de 2026),
+y Hacienda contesta con el error 802. Cada emisión deja la huella en el log del
+Worker (`[fiscal] firmado`).
 Pide la contraseña por entrada interactiva y no por argumento: lo que va en la
 línea de comandos queda en el historial del shell y en la lista de procesos.
 
@@ -736,7 +802,7 @@ importa con `extractable: false`.
 
 ## 16. Pruebas
 
-### Worker — 178 pruebas
+### Worker — 227 pruebas
 
 ```bash
 cd corsa-fiscal-api && npm test && npm run typecheck
@@ -754,6 +820,7 @@ cd corsa-fiscal-api && npm test && npm run typecheck
 | `nc.test.ts` | Nota de Crédito contra su schema y contra la forma de una NC real |
 | `anulacion.test.ts` | Evento de invalidación, sus tres tipos y el parche al patrón |
 | `app.test.ts` | `/v1/app/*`: JWT y permiso, CORS, ambiente, invalidación, reintento con el mismo JWS |
+| `recuperacion.test.ts` | `consultadte` (respuesta perdida, «ya existe», consulta antes de retransmitir), token compartido entre emisiones, huella de la llave y `/v1/diagnostico` |
 
 Las pruebas generan su propio par de llaves. No hay ni debe haber un certificado
 real en el repositorio.
@@ -788,26 +855,67 @@ psql … -f supabase/tests/0046_contabilidad_fiscal.test.sql
 
 ---
 
-## 17. Plan de prueba contra el MH
+## 17. Prueba controlada contra el MH
 
-El hito que falta. **No considerar terminado el motor hasta completarlo.**
+El hito que falta. **No considerar terminado el motor hasta completarlo**, y no
+encender `emitir_en_pos` en ninguna sucursal antes.
 
-1. Cargar los secrets con los datos reales de CORSA.
-2. Cargar `fiscal_issuer_config` con los códigos del portal del MH **y el
-   teléfono** (NC y FSEE lo exigen).
-3. Sembrar las secuencias del ambiente **de pruebas** en Contabilidad →
-   Correlativos (en 0 sirve).
-4. `MH_ENV=sandbox`. Login → token. *(Gate: `status:"OK"`)*
-5. FCF mínima por `/v1/dte/emit`. Comparar el header contra
-   `eyJhbGciOiJSUzUxMiJ9`.
-6. **Gate real: `estado:"ACCEPTED"` con `selloRecepcion` guardado en
-   `fiscal_documents`.**
-7. Desde Contabilidad: un Sujeto Excluido, una invalidación de ese Sujeto
-   Excluido (confirma el parche del §13 y el `montoIva: 0`) y una Nota de
-   Crédito contra un CCF de prueba.
-8. Antes de pasar a producción: sembrar las secuencias de **producción** con
-   el último número emitido por el sistema anterior, y recién ahí cambiar
-   `MH_ENV`.
+Cada paso tiene un gate. Si un gate no pasa, se para ahí.
+
+### A. Sin tocar Hacienda
+
+1. `npm run cert:preparar -- NIT.crt` con el certificado **vigente**. Anotar la
+   huella que imprime.
+2. Cargar los secretos en el Worker de la prueba (`--env dev` para sandbox):
+   `CERT_PKCS8_B64`, `CERT_SPKI_B64`, `CERT_PASSWORD`, `MH_NIT`, `MH_PASSWORD`,
+   `FISCAL_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`.
+3. `POST /v1/diagnostico` con `{}`.
+   *Gate: los 8 secretos en `true`, `firmaVerifica: true`, `huellaLlave` igual
+   a la del paso 1, `nit.formatoValido: true`, sin advertencias.*
+4. Cargar `fiscal_issuer_config` de la sucursal de la prueba con los códigos
+   del portal del MH (`cod_estable_mh`, `cod_punto_venta_mh`) **y el teléfono**
+   (los cuatro tipos lo exigen). Dejar `emitir_en_pos = false`.
+   *Gate: la vista previa del ticket (`/dev/ticket`) muestra NIT, NRC y
+   dirección correctos: salen de esa fila.*
+
+### B. Login, sin emitir
+
+5. `POST /v1/diagnostico` con `{"probarLogin": true}`.
+   *Gate: `login.ok: true`. Un `código 101` es NIT o contraseña de la API.*
+
+### C. Un documento
+
+6. Sembrar **sólo** la secuencia del ambiente de la prueba en Contabilidad →
+   Correlativos. Las de producción no se tocan en este paso.
+7. Una FCF mínima (una línea, monto chico) por `/v1/dte/emit` o con un cobro de
+   prueba reintentado desde Contabilidad.
+   *Gate real: `estado: "ACCEPTED"` con `selloRecepcion` guardado en
+   `fiscal_documents`, y el QR del ticket abre el documento en el portal
+   público del MH.*
+8. Reintentar ese mismo documento desde Contabilidad.
+   *Gate: no se transmite otra vez (ya está aceptado) y no se gasta otro
+   número.*
+
+### D. El resto de tipos (en sandbox)
+
+9. Un CCF con un cliente de prueba, un Sujeto Excluido, la invalidación de ese
+   Sujeto Excluido (confirma el parche del §13 y el `montoIva: 0`) y una Nota de
+   Crédito contra el CCF.
+
+### E. Recién entonces, producción
+
+10. Sembrar las secuencias de **producción** con el último número emitido por
+    el sistema anterior.
+11. Cargar los secretos en `--env prod` y repetir A y B contra producción.
+12. Un primer documento real, de una venta real, desde Contabilidad.
+13. Con ese sello en la mano: `emitir_en_pos = true` en **una** sucursal.
+
+**Decisión abierta:** `wrangler.jsonc` dice que se decidió salir sin pasar por
+el sandbox. Si se mantiene, D se hace en producción con documentos reales y
+cada error es un número quemado. La recomendación es hacer C y D en sandbox:
+este cliente nunca habló con Hacienda, y ChuchoWash encontró en producción
+tres sorpresas que el sandbox habría mostrado (login 101, `codigoGeneracion`
+en mayúsculas, error 802 por la llave equivocada).
 
 Cuando lleguen los secrets y los datos fiscales, **el desarrollo de features
 nuevas se detiene** hasta completar esta prueba.
@@ -818,14 +926,15 @@ nuevas se detiene** hasta completar esta prueba.
 
 Después del primer FCF aceptado:
 
-1. CCF (DTE 03)
-2. Cola y reintentos automáticos (hoy el reintento es manual, desde Contabilidad)
+1. ~~CCF (DTE 03)~~ — hecho
+2. Cola y reintentos automáticos (hoy el reintento es manual, desde Contabilidad;
+   `consultadte` ya evita retransmitir lo que entró)
 3. ~~Invalidación~~ — hecha
 4. Contingencia
-5. PDF + QR
+5. ~~PDF + QR~~ — hecho para 01 y 03; falta para 05 y 14
 6. Envío por correo
 7. Catálogos restantes (CAT-011, 014, 017, 018)
-8. Integración con el POS
+8. ~~Integración con el POS~~ — hecha (0047), apagada por sucursal
 9. Rate limiting
 10. Hardening y despliegue
 
@@ -851,3 +960,7 @@ Después del primer FCF aceptado:
 | 14 | La app entra al Worker con el JWT del usuario | El navegador no puede guardar la `FISCAL_API_KEY`; el permiso lo decide la base |
 | 15 | Reintentar retransmite el JWS guardado | Reconstruir daría otra fecha de emisión con el mismo `codigoGeneracion` |
 | 16 | Los schemas del MH se parchean al compilar, no en el JSON | El original queda comparable con la fuente; el parche, a la vista y con su motivo |
+| 17 | Preguntar con `consultadte` antes de retransmitir | Un documento que entró y perdió su respuesta se recupera con su sello, sin viajar dos veces ni quedar «a verificar en el portal» |
+| 18 | El emisor impreso sale de `fiscal_issuer_config` | Es la fila que va dentro del DTE: el papel no puede decir otro NIT que el documento sellado |
+| 19 | Sin emisor completo no se numera ni se imprime un documento fiscal | Un número reservado no se devuelve, y un papel con datos a medias no se puede corregir después |
+| 20 | `emitir_en_pos` lo valida el Worker | Cualquier sesión con `screens.pos` puede llamar a `/v1/app/venta` sin pasar por la pantalla |

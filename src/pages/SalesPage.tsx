@@ -17,6 +17,7 @@ import {
 import { printFactura } from '../lib/fiscal/facturaDocument'
 import { abrirVentanaTicket, printCorsaTicket } from '../lib/ticket/corsaTicket'
 import { buildTicketArgsFromSale } from '../lib/ticket/fromSale'
+import { emisorParaTicket, exigirEmisor } from '../lib/fiscal/emisor'
 import { formatearFechaHora } from '../utils/fecha'
 
 const PRESETS = [
@@ -304,8 +305,11 @@ export function SalesPage() {
   const reimprimir = async (s: Sale) => {
     const ventana = abrirVentanaTicket(s.order_id)
     try {
+      // El emisor es el de la sucursal donde se vendió, no el de la que está
+      // abierta ahora: es el que va dentro de su DTE.
       const dte = await dteDe(s)
-      printCorsaTicket(buildTicketArgsFromSale(s, (currentBranch as any)?.name, dte), ventana)
+      const emisor = await emisorParaTicket(s.branch_id, !!dte)
+      printCorsaTicket(buildTicketArgsFromSale(s, emisor, s.branch_name || (currentBranch as any)?.name, dte), ventana)
     } catch (err) {
       ventana?.close()
       toast.error(err instanceof Error ? err.message : 'No se pudo abrir el ticket')
@@ -316,7 +320,10 @@ export function SalesPage() {
     const ventana = window.open('', `corsa_factura_${s.order_id}`, 'width=900,height=1000')
     try {
       // Sin DTE transmitido la factura sale rotulada como no válida ante el MH.
-      printFactura(s, await dteDe(s), ventana)
+      // La factura carta es siempre un documento fiscal: sin emisor completo
+      // no sale, y el error dice qué falta.
+      const [dte, emisor] = await Promise.all([dteDe(s), exigirEmisor(s.branch_id)])
+      printFactura(s, emisor, dte, ventana)
     } catch (err) {
       ventana?.close()
       toast.error(err instanceof Error ? err.message : 'No se pudo abrir la factura')
