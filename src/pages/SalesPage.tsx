@@ -585,7 +585,8 @@ export function SalesPage() {
       <div className="kpi-grid" style={{ marginBottom: 16 }}>
         {[
           { label: 'Ventas', value: String(totals.count) },
-          { label: 'Ingreso bruto', value: money(totals.gross) },
+          { label: 'Venta facturada', value: money(totals.facturada) },
+          { label: 'Sólo CxC (sin facturar)', value: money(totals.soloCxc) },
           { label: 'IVA incluido', value: money(totals.tax) },
           { label: 'Ticket promedio', value: money(totals.average) },
           { label: 'Cupones', value: `${totals.vouchersSold} vendidos · ${totals.vouchersRedeemed} canjes` },

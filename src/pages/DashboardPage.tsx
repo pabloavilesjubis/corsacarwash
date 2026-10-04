@@ -38,6 +38,11 @@ interface HourCell {
 
 interface KPIs {
   gross_revenue: number
+  /** 0062: con documento (contado o crédito con DTE). Es la que cuadra la caja. */
+  venta_facturada: number
+  /** 0062: lavados al crédito sin facturar todavía (facturación consolidada). */
+  venta_solo_cxc: number
+  servicios_solo_cxc: number
   total_orders: number
   completed_orders: number
   avg_ticket: number
@@ -951,6 +956,9 @@ export function DashboardPage() {
       // Un día sin ventas es un dato, no un error: se muestran ceros.
       setKpis({
         gross_revenue: Number(totales?.gross_revenue ?? 0),
+        venta_facturada: Number(totales?.venta_facturada ?? totales?.gross_revenue ?? 0),
+        venta_solo_cxc: Number(totales?.venta_solo_cxc ?? 0),
+        servicios_solo_cxc: Number(totales?.servicios_solo_cxc ?? 0),
         total_orders: Number(totales?.services_delivered ?? 0),
         completed_orders: Number(totales?.services_delivered ?? 0),
         avg_ticket: Number(totales?.avg_ticket ?? 0),
@@ -1173,11 +1181,18 @@ export function DashboardPage() {
 
       {/* ── KPI Cards (Top) ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
+        {/* La venta del día en dos: lo facturado (lo que cuadra la caja) y los
+            lavados al crédito que sólo van a CxC hasta su CCF consolidado. */}
         <KpiCard
           primary
-          label="Ventas de hoy"
-          value={kpis ? fmt(kpis.gross_revenue) : '—'}
-          trend={kpis ? { val: '12% vs. ayer', up: true } : null}
+          label="Venta facturada"
+          value={kpis ? fmt(kpis.venta_facturada) : '—'}
+          sub="con documento · cuadra la caja"
+        />
+        <KpiCard
+          label="Venta sólo CxC"
+          value={kpis ? fmt(kpis.venta_solo_cxc) : '—'}
+          sub={kpis ? `${kpis.servicios_solo_cxc} lavados al crédito sin facturar` : undefined}
         />
         <KpiCard
           label="Vehículos atendidos"

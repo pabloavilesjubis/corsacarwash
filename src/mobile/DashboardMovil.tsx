@@ -140,7 +140,7 @@ export function DashboardMovil() {
 
   const [maquinas, setMaquinas] = useState<MaquinaPlc[]>([])
   const [servicios, setServicios] = useState<ServicioDelDia[]>([])
-  const [ventas, setVentas] = useState({ bruto: 0, servicios: 0, ticket: 0 })
+  const [ventas, setVentas] = useState({ bruto: 0, facturada: 0, soloCxc: 0, servicios: 0, ticket: 0 })
   const [activas, setActivas] = useState(0)
   const [cargando, setCargando] = useState(true)
 
@@ -154,7 +154,7 @@ export function DashboardMovil() {
     if (!branchId) return
 
     const totales = await fetchTotalesDelDia(branchId)
-    setVentas({ bruto: totales.ingresos, servicios: totales.servicios, ticket: totales.ticket })
+    setVentas({ bruto: totales.ingresos, facturada: totales.facturada, soloCxc: totales.soloCxc, servicios: totales.servicios, ticket: totales.ticket })
 
     const { data: ordenes } = await (supabase as any)
       .from('work_orders')
@@ -190,7 +190,8 @@ export function DashboardMovil() {
       </div>
 
       <div className="corsa-movil__grid2">
-        <Kpi label="Ventas de hoy" valor={money(ventas.bruto)} destacado/>
+        <Kpi label="Venta facturada" valor={money(ventas.facturada)} destacado/>
+        <Kpi label="Venta sólo CxC" valor={money(ventas.soloCxc)} sub="lavados al crédito sin facturar"/>
         <Kpi label="Vehículos" valor={String(ventas.servicios)} sub={`ticket ${money(ventas.ticket)}`}/>
         <Kpi label="Lavados (PLC)" valor={String(totalLavados)} sub="lectura de las máquinas"/>
         <Kpi label="Órdenes activas" valor={String(activas)} sub="en proceso ahora"/>

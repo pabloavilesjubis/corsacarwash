@@ -84,6 +84,9 @@ export async function fetchTotalesDelDia(branchId: string) {
 
   return {
     ingresos: Number(data?.gross_revenue ?? 0),
+    // 0062: lo que tiene factura (cuadra caja) y los lavados sólo a CxC.
+    facturada: Number(data?.venta_facturada ?? data?.gross_revenue ?? 0),
+    soloCxc: Number(data?.venta_solo_cxc ?? 0),
     servicios: Number(data?.services_delivered ?? 0),
     ticket: Number(data?.avg_ticket ?? 0),
   }

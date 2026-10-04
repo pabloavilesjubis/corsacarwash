@@ -194,6 +194,10 @@ export async function fetchSales(filters: SalesFilters = {}): Promise<Sale[]> {
 export interface SalesTotals {
   count: number
   gross: number
+  /** Con documento: es lo que cuadra la caja (0062). */
+  facturada: number
+  /** Lavados al crédito sin facturar (facturación consolidada). */
+  soloCxc: number
   tax: number
   net: number
   average: number
@@ -206,6 +210,8 @@ export interface SalesTotals {
 export function summarize(sales: Sale[]): SalesTotals {
   const activas = sales.filter(s => s.status !== 'cancelled')
   const gross = activas.reduce((sum, s) => sum + Number(s.total || 0), 0)
+  // 0062: lo facturado cuadra la caja; lo diferido sólo afecta CxC.
+  const soloCxc = activas.filter(s => s.facturacion_diferida).reduce((sum, s) => sum + Number(s.total || 0), 0)
   const tax = activas.reduce((sum, s) => sum + Number(s.tax_total || 0), 0)
 
   // El ticket promedio se calcula sólo sobre servicios cobrados en el momento.
@@ -217,6 +223,8 @@ export function summarize(sales: Sale[]): SalesTotals {
   return {
     count: activas.length,
     gross,
+    facturada: gross - soloCxc,
+    soloCxc,
     tax,
     net: gross - tax,
     average: servicios.length ? grossServicios / servicios.length : 0,
