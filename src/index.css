@@ -1385,6 +1385,59 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 .cxc-mini { font-size: 11px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
 .cxc-mini-valor { font-family: var(--font-heading); font-weight: 800; font-size: 20px; font-variant-numeric: tabular-nums; }
 
+/* Ventas: datos primero. Indicadores en una franja, filtros en una fila y una
+   tabla densa que entra completa en el ancho sin scroll horizontal. */
+.ventas-page { gap: 12px; padding-top: 22px; }
+.ventas-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.ventas-head h1 { font-family: var(--font-heading); font-weight: 700; font-size: 24px; letter-spacing: -0.02em; margin: 0; }
+.ventas-head .sub { font-size: 12.5px; color: var(--text-secondary); margin-left: 10px; }
+.ventas-kpis {
+  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+}
+.ventas-kpi { padding: 8px 12px; border-left: 1px solid var(--border); min-width: 0; }
+.ventas-kpi:first-child { border-left: none; }
+.ventas-kpi .l { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ventas-kpi .v { font-family: var(--font-heading); font-weight: 800; font-size: 17px; font-variant-numeric: tabular-nums; white-space: nowrap; margin-top: 1px; }
+.ventas-filtros { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ventas-filtros .filter-pill { padding: 4px 10px; font-size: 12px; }
+.ventas-filtros .corsa-input { padding: 5px 9px; font-size: 12.5px; border-radius: 8px; }
+.ventas-tabla { table-layout: auto; }
+.ventas-tabla th { padding: 7px 6px; font-size: 9.5px; white-space: nowrap; position: sticky; top: 0; background: var(--surface); z-index: 1; }
+.ventas-tabla td { padding: 4px 6px; font-size: 12.5px; white-space: nowrap; line-height: 1.3; }
+.ventas-tabla tbody tr { cursor: default; }
+.ventas-tabla .badge { font-size: 10.5px; padding: 1px 7px; }
+.ventas-tabla .cliente { max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
+.ventas-tabla .servicio { max-width: 190px; overflow: hidden; text-overflow: ellipsis; }
+.ventas-tabla .extra { font-size: 11px; color: var(--text-secondary); margin-left: 4px; }
+.ventas-tabla .acciones { display: flex; gap: 3px; justify-content: flex-end; }
+.ventas-chip {
+  display: inline-flex; align-items: center; height: 22px; padding: 0 7px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-primary);
+  font-size: 11px; font-weight: 600; font-family: var(--font-body); cursor: pointer; white-space: nowrap;
+}
+.ventas-chip:hover:not(:disabled) { background: var(--subtle-bg); }
+.ventas-chip:disabled { opacity: 0.35; cursor: not-allowed; }
+.ventas-chip.peligro { color: var(--color-danger-text); }
+.ventas-pago {
+  display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--subtle-bg); color: var(--text-primary);
+  font-size: 11.5px; font-weight: 600; font-family: var(--font-body); cursor: pointer; white-space: nowrap;
+}
+.ventas-pago:hover { border-color: var(--text-secondary); }
+.ventas-pago.fijo { cursor: default; background: transparent; border-color: transparent; padding-left: 0; }
+.ventas-correo { display: inline-block; width: 9px; height: 9px; border-radius: 50%; border: none; padding: 0; cursor: pointer; vertical-align: middle; }
+@media (max-width: 1100px) {
+  .ventas-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .ventas-kpi:nth-child(5) { border-left: none; }
+  .ventas-kpi:nth-child(n+5) { border-top: 1px solid var(--border); }
+}
+@media (max-width: 760px) {
+  .ventas-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ventas-kpi { border-left: none; border-top: 1px solid var(--border); }
+  .ventas-head .sub { margin-left: 0; display: block; }
+}
+
 /* Detalle de CxC: denso, la información primero y las acciones pequeñas. */
 .cxc-det .ficha-cabecera { padding: 16px 20px; align-items: center; }
 .cxc-det .ficha-nombre { font-size: 18px; }

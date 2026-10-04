@@ -40,52 +40,6 @@ const DOC_LABELS: Record<string, string> = {
   nota_debito: 'Nota de débito',
 }
 
-
-// ─── Iconos de descarga ──────────────────────────────────────
-
-const ICONS = {
-  ticket: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 4h16v5a3 3 0 0 0 0 6v5H4v-5a3 3 0 0 0 0-6z"/>
-      <line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="14" x2="15" y2="14"/>
-    </svg>
-  ),
-  sello: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-      <polyline points="9 12 11 14 15 10"/>
-    </svg>
-  ),
-  anular: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/>
-    </svg>
-  ),
-  pago: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>
-    </svg>
-  ),
-  json: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M8 4H7a2 2 0 0 0-2 2v3a2 2 0 0 1-2 2 2 2 0 0 1 2 2v3a2 2 0 0 0 2 2h1"/>
-      <path d="M16 4h1a2 2 0 0 1 2 2v3a2 2 0 0 0 2 2 2 2 0 0 0-2 2v3a2 2 0 0 1-2 2h-1"/>
-    </svg>
-  ),
-  factura: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-      <polyline points="14 2 14 8 20 8"/>
-      <line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/>
-    </svg>
-  ),
-}
-
-/**
- * Botón de icono para las descargas de cada venta.
- * Cuando está deshabilitado explica por qué en el title: un icono gris sin
- * explicación se lee como que la app está rota.
- */
 /**
  * Una venta, en el teléfono: sólo lo que sirve para reconocerla.
  *
@@ -223,32 +177,28 @@ function DetalleVenta({ s, onCerrar, acciones }: {
   )
 }
 
-function IconAction({ icon, label, onClick, disabled, reason }: {
-  icon: React.ReactNode
+
+/** Acción de la tabla con su nombre escrito: «Ticket», «PDF», «.json»… */
+function ChipAction({ label, title, onClick, disabled, reason, peligro }: {
   label: string
+  title: string
   onClick: () => void
   disabled?: boolean
   reason?: string
+  peligro?: boolean
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={disabled ? `${label} — ${reason ?? 'no disponible'}` : label}
-      aria-label={label}
-      style={{
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        width: 28, height: 28, borderRadius: 10, marginRight: 4,
-        border: '1px solid var(--border)', background: 'var(--surface)',
-        color: disabled ? 'var(--text-secondary)' : 'var(--text-primary)',
-        opacity: disabled ? 0.4 : 1,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-      }}
-    >
-      {icon}
+    <button type="button" className={`ventas-chip${peligro ? ' peligro' : ''}`} onClick={onClick} disabled={disabled}
+            title={disabled ? `${title} — ${reason ?? 'no disponible'}` : title} aria-label={title}>
+      {label}
     </button>
   )
+}
+
+/** «ESC-2026-000015» → «15»: con una sola sucursal basta el correlativo. */
+function correlativo(orden: string): string {
+  const m = /(\d+)$/.exec(orden ?? '')
+  return m ? String(Number(m[1])) : orden
 }
 
 function money(n: number): string {
@@ -257,6 +207,14 @@ function money(n: number): string {
 
 function fechaHora(iso: string): string {
   return formatearFechaHora(iso)
+}
+
+/** «04 oct · 14:56»: la fecha de la fila en una sola línea corta. */
+function fechaFila(iso: string): string {
+  const d = new Date(iso)
+  const dia = d.toLocaleDateString('es-SV', { day: '2-digit', month: 'short', timeZone: 'America/El_Salvador' }).replace('.', '')
+  const hora = d.toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/El_Salvador' })
+  return `${dia} · ${hora}`
 }
 
 export function SalesPage() {
@@ -491,6 +449,19 @@ export function SalesPage() {
     )
   }
 
+  /** En la tabla, el correo es un punto: verde salió, rojo no (tocá para reintentar). */
+  const PuntoCorreo = ({ s }: { s: Sale }) => {
+    if (!tieneCorreo(s)) return <span style={{ color: 'var(--text-secondary)' }}>·</span>
+    const enviado = s.correo_estado === 'sent'
+    const cargando = enviandoCorreo === s.order_id
+    return (
+      <button type="button" className="ventas-correo" onClick={() => reintentarCorreo(s)} disabled={enviado || cargando}
+        aria-label={enviado ? 'Correo enviado' : 'Correo no enviado'}
+        title={cargando ? 'Enviando…' : enviado ? `Correo enviado ${s.correo_at ? fechaHora(s.correo_at) : ''}` : `Correo no enviado${s.correo_error ? `: ${s.correo_error}` : ''} · tocá para reintentar`}
+        style={{ background: cargando ? 'var(--color-warning)' : enviado ? 'var(--color-success)' : 'var(--color-danger)', cursor: enviado ? 'default' : 'pointer' }}/>
+    )
+  }
+
   /** Las mismas tres acciones, con rótulo y a ancho completo, para la hoja. */
   const accionesGrandes = (s: Sale) => (
     <>
@@ -531,30 +502,38 @@ export function SalesPage() {
 
   const accionesDe = (s: Sale) => (
     <>
-      <IconAction icon={ICONS.ticket} label="Ticket térmico (PDF)"
-                  onClick={() => reimprimir(s)}/>
+      <ChipAction label="Ticket" title="Ticket térmico (PDF)" onClick={() => reimprimir(s)}/>
       {/* Un canje no genera documento fiscal: el cupón se facturó el día que
           se vendió. */}
-      <IconAction icon={ICONS.factura} label="Factura carta (PDF)"
-                  onClick={() => verFactura(s)}
-                  disabled={s.order_kind === 'voucher_redemption'}
-                  reason="un canje no genera documento fiscal"/>
+      <ChipAction label="PDF" title="Factura carta (PDF)" onClick={() => verFactura(s)}
+                  disabled={s.order_kind === 'voucher_redemption'} reason="un canje no genera documento fiscal"/>
+      <ChipAction label=".json" title="JSON del DTE" onClick={() => descargarJsonDte(s)}
+                  disabled={!tieneJson(s)} reason="se genera cuando Hacienda sella el DTE"/>
       {puedeEmitir(s) && (
-        <IconAction icon={ICONS.sello} label={emitiendo === s.order_id ? 'Emitiendo DTE…' : rotuloEmitir(s)}
+        <ChipAction label={emitiendo === s.order_id ? 'Emitiendo…' : 'Emitir'} title={rotuloEmitir(s)}
                     onClick={() => emitirDte(s)} disabled={emitiendo !== null} reason="hay otra emisión en curso"/>
       )}
-      {puedeCambiarPago(s) && (
-        <IconAction icon={ICONS.pago} label="Cambiar forma de pago" onClick={() => setAjuste({ tipo: 'pago', venta: s })}/>
-      )}
       {puedeAnular(s) && (
-        <IconAction icon={ICONS.anular} label="Anular venta" onClick={() => setAjuste({ tipo: 'anular', venta: s })}/>
+        <ChipAction label="Anular" title="Anular venta" peligro onClick={() => setAjuste({ tipo: 'anular', venta: s })}/>
       )}
-      <IconAction icon={ICONS.json} label="JSON del DTE"
-                  onClick={() => descargarJsonDte(s)}
-                  disabled={!tieneJson(s)}
-                  reason="se genera cuando Hacienda sella el DTE"/>
     </>
   )
+
+  /** La forma de pago, como tarjetita: si se puede cambiar, al tocarla lo ofrece. */
+  const PagoDe = ({ s }: { s: Sale }) => {
+    const texto = s.payment_method ?? (s.facturacion_diferida ? 'Crédito' : '—')
+    if (!puedeCambiarPago(s)) return <span className="ventas-pago fijo">{texto}</span>
+    return (
+      <button type="button" className="ventas-pago" title="Tocá para cambiar la forma de pago"
+              onClick={() => {
+                if (window.confirm(`La venta ${s.order_number} se cobró con ${texto}.\n\n¿Deseás cambiar el método de pago?`)) {
+                  setAjuste({ tipo: 'pago', venta: s })
+                }
+              }}>
+        {texto}
+      </button>
+    )
+  }
 
   if (!canRead) {
     return (
@@ -568,39 +547,37 @@ export function SalesPage() {
   }
 
   return (
-    <div className="page-inner">
-      <div className="page-header">
-        <div className="page-header-left">
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 34, letterSpacing: '-0.025em' }}>Ventas</h1>
-          <div className="page-header-sub">
-            Historial completo · {sales.length} {sales.length === 1 ? 'venta' : 'ventas'} en el rango
-          </div>
+    <div className="page-inner ventas-page">
+      <div className="ventas-head">
+        <div>
+          <h1 style={{ display: 'inline' }}>Ventas</h1>
+          <span className="sub">{sales.length} {sales.length === 1 ? 'venta' : 'ventas'} en el rango</span>
         </div>
-        <button className="btn btn-ghost" onClick={exportarCsv} disabled={sales.length === 0}>
+        <button className="btn btn-ghost btn-sm" onClick={exportarCsv} disabled={sales.length === 0}>
           Exportar CSV
         </button>
       </div>
 
-      {/* KPIs del rango filtrado */}
-      <div className="kpi-grid" style={{ marginBottom: 16 }}>
+      {/* KPIs del rango filtrado: una franja, no tarjetas */}
+      <div className="ventas-kpis">
         {[
           { label: 'Ventas', value: String(totals.count) },
           { label: 'Venta facturada', value: money(totals.facturada) },
           { label: 'Sólo CxC (sin facturar)', value: money(totals.soloCxc) },
           { label: 'IVA incluido', value: money(totals.tax) },
           { label: 'Ticket promedio', value: money(totals.average) },
-          { label: 'Cupones', value: `${totals.vouchersSold} vendidos · ${totals.vouchersRedeemed} canjes` },
+          { label: 'Cupones', value: `${totals.vouchersSold} vend. · ${totals.vouchersRedeemed} canj.` },
           { label: 'Con aspirado', value: `${totals.withAspirado} de ${totals.count}` },
         ].map(k => (
-          <div key={k.label} className="kpi-card">
-            <div className="kpi-label">{k.label}</div>
-            <div className="kpi-value">{k.value}</div>
+          <div key={k.label} className="ventas-kpi" title={k.label}>
+            <div className="l">{k.label}</div>
+            <div className="v">{k.value}</div>
           </div>
         ))}
       </div>
 
       {/* Filtros */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 14 }}>
+      <div className="ventas-filtros">
         <div className="filter-pills">
           {PRESETS.map(p => (
             <button key={p.id}
@@ -612,12 +589,12 @@ export function SalesPage() {
         </div>
         {/* Los anchos fijos de escritorio no entran en 390 px: las dos fechas
             se reparten la fila y el resto ocupa el ancho completo. */}
-        <input type="date" className="corsa-input" style={{ width: esMovil ? 0 : 150, flex: esMovil ? '1 1 0' : undefined }} value={from}
+        <input type="date" className="corsa-input" style={{ width: esMovil ? 0 : 132, flex: esMovil ? '1 1 0' : undefined }} value={from}
                onChange={e => setFrom(e.target.value)} aria-label="Desde"/>
         <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>a</span>
-        <input type="date" className="corsa-input" style={{ width: esMovil ? 0 : 150, flex: esMovil ? '1 1 0' : undefined }} value={to}
+        <input type="date" className="corsa-input" style={{ width: esMovil ? 0 : 132, flex: esMovil ? '1 1 0' : undefined }} value={to}
                onChange={e => setTo(e.target.value)} aria-label="Hasta"/>
-        <select className="corsa-input" style={{ width: esMovil ? '100%' : 170 }} value={docType}
+        <select className="corsa-input" style={{ width: esMovil ? '100%' : 150 }} value={docType}
                 onChange={e => setDocType(e.target.value)} aria-label="Documento">
           <option value="">Todos los documentos</option>
           <option value="consumidor_final">Ticket</option>
@@ -629,7 +606,7 @@ export function SalesPage() {
       </div>
 
       {/* Tabla */}
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
         {loading ? (
           <div className="loading-center"><div className="spinner"/><span>Cargando…</span></div>
         ) : sales.length === 0 ? (
@@ -645,42 +622,34 @@ export function SalesPage() {
           ))
         ) : (
           <div className="table-wrap">
-            <table className="corsa-table">
+            <table className="corsa-table ventas-tabla">
               <thead>
                 <tr>
-                  <th>Fecha</th><th>Orden</th><th>Cliente</th><th>Servicio</th>
-                  <th>Placa</th><th>Pago</th><th>Documento</th>
-                  <th style={{ textAlign: 'right' }}>Total</th><th>Correo</th><th>Documentos</th>
+                  <th>Fecha</th><th>#</th><th>Cliente</th><th>Servicio</th>
+                  <th>Placa</th><th>Pago</th><th>Doc.</th>
+                  <th style={{ textAlign: 'right' }}>Total</th><th title="Correo">✉</th><th style={{ textAlign: 'right' }}>Acciones</th>
                 </tr>
               </thead>
               <tbody>
                 {sales.map(s => (
-                  <tr key={s.order_id} style={{ cursor: 'default' }}>
-                    <td style={{ fontSize: 12.5, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{fechaHora(s.created_at)}</td>
-                    <td className="font-mono" style={{ fontSize: 12.5, fontWeight: 600 }}>
-                      <span style={anulada(s) ? { textDecoration: 'line-through', opacity: 0.6 } : undefined}>{s.order_number}</span>
-                      {anulada(s) && <span className="badge badge-neutral" style={{ marginLeft: 6 }}>Anulada</span>}
+                  <tr key={s.order_id}>
+                    <td style={{ color: 'var(--text-secondary)' }} title={fechaHora(s.created_at)}>{fechaFila(s.created_at)}</td>
+                    <td className="font-mono" style={{ fontSize: 12, fontWeight: 600 }}>
+                      <span style={anulada(s) ? { textDecoration: 'line-through', opacity: 0.6 } : undefined} title={s.order_number}>#{correlativo(s.order_number)}</span>
+                      {anulada(s) && <span className="badge badge-neutral" style={{ marginLeft: 4 }}>Anulada</span>}
                     </td>
-                    <td style={{ fontSize: 13 }} className="truncate">{s.customer_name}</td>
-                    <td style={{ fontSize: 13 }}>
+                    <td className="cliente" title={s.customer_name}>{s.customer_name}</td>
+                    <td className="servicio">
                       {s.order_kind === 'voucher_sale'
-                        ? <span className="badge badge-orange">Venta de {s.voucher_quantity ?? ''} cupones</span>
+                        ? <span className="badge badge-orange">{s.voucher_quantity ?? ''} cupones</span>
                         : s.order_kind === 'voucher_redemption'
                           ? <span className="badge badge-neutral">Canje de cupón</span>
                           : s.order_kind === 'addon_sale'
-                            ? <>
-                                {(s.items ?? []).map(i => i.descripcion).join(' + ') || '—'}
-                                <span className="badge badge-neutral" style={{ marginLeft: 6 }}>sin lavado</span>
-                              </>
-                          : <>
-                              {s.service_name ?? '—'}
-                              {s.with_aspirado && (
-                                <span className="badge badge-neutral" style={{ marginLeft: 6 }}>+ aspirado</span>
-                              )}
-                            </>}
+                            ? <>{(s.items ?? []).map(i => String(i.descripcion).replace(/^Aspirado de interiores/, 'Aspirado')).join(' + ') || '—'}<span className="extra">sin lavado</span></>
+                            : <>{s.service_name ?? '—'}{s.with_aspirado && <span className="extra">+ aspirado</span>}</>}
                     </td>
-                    <td className="font-mono" style={{ fontSize: 12.5 }}>{s.plate ?? '—'}</td>
-                    <td style={{ fontSize: 12.5 }}>{s.payment_method ?? (s.facturacion_diferida ? 'Crédito' : '—')}</td>
+                    <td className="font-mono" style={{ fontSize: 12 }}>{s.plate ?? '—'}</td>
+                    <td><PagoDe s={s}/></td>
                     <td>
                       {s.facturacion_diferida && !s.invoice_type
                         ? <span className="badge badge-warning" title="Se factura en el CCF consolidado desde Cuentas por cobrar">Por facturar</span>
@@ -689,8 +658,8 @@ export function SalesPage() {
                           </span>}
                     </td>
                     <td style={{ textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{money(s.total)}</td>
-                    <td><TarjetaCorreo s={s}/></td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{accionesDe(s)}</td>
+                    <td><PuntoCorreo s={s}/></td>
+                    <td><div className="acciones">{accionesDe(s)}</div></td>
                   </tr>
                 ))}
               </tbody>
