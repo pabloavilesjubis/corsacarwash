@@ -484,9 +484,15 @@ function CustomerSearchPanel({ selected, onSelect, onClear, onNuevo }: {
             .ilike('plate', `%${debouncedQ.replace(/\s/g, '')}%`).limit(6)
           data = (vd ?? []).map((v: any) => ({ ...(v.customers ?? {}), vehicle: { id: v.id, plate: v.plate, brand: v.brand, model: v.model, year: v.year, color: v.color } }))
         } else {
+          // Una empresa puede tener sólo razón social (sin nombre comercial):
+          // sin legal_name acá no aparecía en caja. Comas y paréntesis rompen
+          // el filtro de PostgREST, así que se quitan del texto.
+          const q = debouncedQ.replace(/[,()]/g, ' ').trim()
           const { data: cd } = await (supabase as any)
             .from('customers').select(CUSTOMER_COLUMNS)
-            .or(`first_name.ilike.%${debouncedQ}%,last_name.ilike.%${debouncedQ}%,trade_name.ilike.%${debouncedQ}%`).limit(8)
+            .eq('active', true)
+            .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,trade_name.ilike.%${q}%,legal_name.ilike.%${q}%,` +
+                `nit.ilike.%${q}%,dui.ilike.%${q}%,phone.ilike.%${q}%`).limit(8)
           data = cd ?? []
         }
         setResults(data); setOpen(true)
