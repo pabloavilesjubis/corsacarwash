@@ -2,8 +2,9 @@
  * CORSA — estado de cuenta de un cliente con crédito (0058).
  *
  * Un documento tamaño carta con la marca: datos del cliente, resumen del
- * crédito, antigüedad del saldo, documentos pendientes y los movimientos
- * recientes. Se arma como HTML y se imprime o se guarda como PDF desde el
+ * crédito, antigüedad del saldo, los documentos emitidos que debe y los lavados
+ * pendientes de facturar.
+ * Se arma como HTML y se imprime o se guarda como PDF desde el
  * diálogo del navegador, igual que la factura carta.
  *
  * `estadoCuentaHTML` devuelve el documento solo, para quien lo quiera enviar
@@ -12,7 +13,6 @@
 import { LOGO_PATH, LOGO_VIEWBOX } from '../../brand/logoCompleto'
 import type { TicketEmisor } from '../ticket/corsaTicket'
 import type { CxcCliente, DocumentoCxc, LavadoCredito, MovimientoCredito } from '../../services/credito.service'
-import { EVENTO_ETIQUETA } from './eventos'
 
 const esc = (v: unknown) => String(v ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -33,14 +33,29 @@ export function estadoCuentaHTML(args: {
   emisor: TicketEmisor
   cliente: CxcCliente
   documentos: DocumentoCxc[]
-  movimientos: MovimientoCredito[]
+  /** Ya no se imprimen (repetían lo mismo); se acepta para no tocar a quien lo pasa. */
+  movimientos?: MovimientoCredito[]
   /** Lavados con facturación consolidada (0060): facturados y pendientes. */
   lavados?: LavadoCredito[]
 }): string {
-  const { emisor: e, cliente: c, documentos, movimientos } = args
+  const { emisor: e, cliente: c, documentos } = args
   const lavados = args.lavados ?? []
   const corte = new Date().toLocaleDateString('es-SV', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'America/El_Salvador' })
-  const abiertos = documentos.filter(d => d.balance > 0)
+  // Al cliente se le muestra sólo lo que necesita: los documentos YA emitidos
+  // que debe (un CCF consolidado agrupa varias cuentas: va como una fila) y
+  // los lavados que todavía no se facturaron. Sin movimientos: repetían lo mismo.
+  const emitidos = Object.values(documentos
+    .filter(d => d.balance > 0 && d.factura)
+    .reduce((acc, d) => {
+      const k = d.factura as string
+      const g = acc[k] ??= { factura: k, created_at: d.created_at, due_date: d.due_date, amount: 0, balance: 0 }
+      g.amount += d.amount; g.balance += d.balance
+      if (d.due_date < g.due_date) g.due_date = d.due_date
+      if (d.created_at < g.created_at) g.created_at = d.created_at
+      return acc
+    }, {} as Record<string, { factura: string; created_at: string; due_date: string; amount: number; balance: number }>))
+    .sort((a, b) => a.due_date.localeCompare(b.due_date))
+  const pendientes = lavados.filter(l => !l.consolidated_invoice_id)
   const logo = `<svg viewBox="0 0 ${LOGO_VIEWBOX.ancho} ${LOGO_VIEWBOX.alto}" style="width:150px;height:auto" role="img" aria-label="CORSA Carwash"><path d="${LOGO_PATH}" fill="#16191A" fill-rule="evenodd"/></svg>`
 
   const tramos: [string, number][] = [
@@ -48,12 +63,10 @@ export function estadoCuentaHTML(args: {
     ['61–90 días', c.vencido_61_90], ['Más de 90', c.vencido_90_mas],
   ]
 
-  const filasDocs = abiertos.length === 0
-    ? `<tr><td colspan="7" class="vacio">Sin documentos pendientes.</td></tr>`
-    : abiertos.map(d => {
+  const filasDocs = emitidos.map(d => {
         const dias = diasVencido(d.due_date)
         return `<tr>
-          <td>${esc(d.factura ?? d.orden ?? '—')}</td>
+          <td>${esc(d.factura)}</td>
           <td>${fecha(d.created_at)}</td>
           <td>${fecha(d.due_date)}</td>
           <td class="num">${money(d.amount)}</td>
@@ -62,16 +75,6 @@ export function estadoCuentaHTML(args: {
           <td class="num ${dias > 0 ? 'rojo' : ''}">${dias > 0 ? `${dias} días` : 'Al día'}</td>
         </tr>`
       }).join('')
-
-  const filasMov = movimientos.filter(m => m.event_type === 'CHARGE' || m.event_type === 'CHARGE_OVERRIDE' || m.event_type === 'PAYMENT')
-    .slice(0, 25)
-    .map(m => `<tr>
-      <td>${fecha(m.created_at)}</td>
-      <td>${esc(EVENTO_ETIQUETA[m.event_type] ?? m.event_type)}${m.reason ? ` · ${esc(m.reason)}` : ''}</td>
-      <td class="num">${m.event_type === 'PAYMENT' ? '' : money(m.amount ?? 0)}</td>
-      <td class="num">${m.event_type === 'PAYMENT' ? money(m.amount ?? 0) : ''}</td>
-      <td class="num">${m.balance_after != null ? money(m.balance_after) : ''}</td>
-    </tr>`).join('') || `<tr><td colspan="5" class="vacio">Sin movimientos.</td></tr>`
 
   return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/>
 <title>Estado de cuenta · ${esc(c.customer_name ?? '')}</title>
@@ -136,7 +139,7 @@ export function estadoCuentaHTML(args: {
       <div class="kv"><span>Límite de crédito</span><b>${money(c.credit_limit)}</b></div>
       <div class="kv"><span>Plazo</span><b>${c.credit_days} días</b></div>
       <div class="kv"><span>Disponible</span><b>${money(c.disponible)}</b></div>
-      <div class="kv"><span>Documentos pendientes</span><b>${c.documentos_abiertos}</b></div>
+      <div class="kv"><span>Lavados por facturar</span><b>${pendientes.length}</b></div>
     </div>
   </div>
 
@@ -151,31 +154,25 @@ export function estadoCuentaHTML(args: {
   <table class="tramos"><tr>${tramos.map(([t]) => `<th>${t}</th>`).join('')}</tr>
     <tr>${tramos.map(([, v]) => `<td class="num" style="text-align:center">${money(v)}</td>`).join('')}</tr></table>
 
-  <h2>Documentos pendientes</h2>
+  ${emitidos.length ? `
+  <h2>Documentos emitidos pendientes de pago</h2>
   <table>
     <tr><th>Documento</th><th>Fecha</th><th>Vence</th><th class="num">Monto</th><th class="num">Abonado</th><th class="num">Saldo</th><th class="num">Atraso</th></tr>
     ${filasDocs}
-  </table>
+  </table>` : ''}
 
-  ${lavados.length ? `
-  <h2>Lavados (${lavados.length}) · ${lavados.filter(l => !l.consolidated_invoice_id).length} pendientes de facturar</h2>
+  ${pendientes.length ? `
+  <h2>Lavados pendientes de facturar (${pendientes.length})</h2>
   <table>
-    <tr><th>Fecha</th><th>Placa</th><th>Servicio</th><th class="num">Monto</th><th>Factura</th></tr>
-    ${lavados.slice(0, 120).map(l => `<tr>
+    <tr><th>Fecha</th><th>Placa</th><th>Servicio</th><th class="num">Monto</th></tr>
+    ${pendientes.slice(0, 150).map(l => `<tr>
       <td>${fecha(l.created_at)}</td>
       <td style="font-weight:700">${esc(l.placa_principal)}</td>
       <td>${esc(l.detalle ?? '')}</td>
       <td class="num">${money(l.total)}</td>
-      <td>${!l.consolidated_invoice_id ? '<span class="rojo">Pendiente de facturar</span>'
-            : l.numero_control ? `CCF ${esc(l.numero_control)}` : esc(l.ccf_interno ?? '')}</td>
     </tr>`).join('')}
+    <tr><td colspan="3" class="fuerte">Total por facturar</td><td class="num fuerte">${money(pendientes.reduce((t, l) => t + l.total, 0))}</td></tr>
   </table>` : ''}
-
-  <h2>Movimientos recientes</h2>
-  <table>
-    <tr><th>Fecha</th><th>Concepto</th><th class="num">Cargo</th><th class="num">Abono</th><th class="num">Saldo</th></tr>
-    ${filasMov}
-  </table>
 
   <div class="pie">
     Este estado de cuenta resume las ventas al crédito y los abonos registrados hasta la fecha de corte.
