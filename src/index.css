@@ -1426,6 +1426,10 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 }
 .ventas-pago:hover { border-color: var(--text-secondary); }
 .ventas-pago.fijo { cursor: default; background: transparent; border-color: transparent; padding-left: 0; }
+.ventas-kpi.clic { cursor: pointer; transition: background 0.12s; }
+.ventas-kpi.clic:hover { background: var(--subtle-bg); }
+.ventas-kpi.activo { background: var(--subtle-bg); box-shadow: inset 0 -2px 0 var(--corsa-green); }
+.clientes-tabla tbody tr { cursor: pointer; }
 .ventas-correo { display: inline-block; width: 9px; height: 9px; border-radius: 50%; border: none; padding: 0; cursor: pointer; vertical-align: middle; }
 @media (max-width: 1100px) {
   .ventas-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }

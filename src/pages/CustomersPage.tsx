@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import toast from 'react-hot-toast'
 import { useAuth } from '../hooks/useAuth'
-import { ClipButton } from '../components/ui/ClipButton'
 import { useEsMovil } from '../hooks/useEsMovil'
 import { CustomerFormPanel } from '../components/CustomerFormPanel'
 import { CargaMasivaClientes } from '../components/CargaMasivaClientes'
@@ -99,37 +98,54 @@ export function CustomersPage() {
 
   const totalVehicles = customers.reduce((s, c) => s + (c.vehicle_count ?? 0), 0)
   const esMovil = useEsMovil()
+  const cuenta = (f: FilterType) => customers.filter(c => classifySegment(c) === f).length
+  const fiscalPendiente = customers.filter(c => infoFiscalPendiente(c).length > 0).length
 
   return (
-    <div className="page-inner">
+    <div className="page-inner ventas-page">
       {/* Header */}
-      <div className="page-header">
-        <div className="page-header-left">
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 34, letterSpacing: '-0.025em' }}>Clientes</h1>
-          <div className="page-header-sub">
-            {customers.length} clientes · {totalVehicles} vehículos registrados
-          </div>
+      <div className="ventas-head">
+        <div>
+          <h1 style={{ display: 'inline' }}>Clientes</h1>
+          <span className="sub">{customers.length} clientes · {totalVehicles} vehículos registrados</span>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           {currentBranch?.code && (
-            <button id="btn-qr-registro" className="btn btn-ghost" onClick={() => setQrRegistro(true)}>
+            <button id="btn-qr-registro" className="btn btn-ghost btn-sm" onClick={() => setQrRegistro(true)}>
               QR de registro
             </button>
           )}
-          <button id="btn-grupos" className="btn btn-ghost" onClick={() => setGrupos(true)}>
+          <button id="btn-grupos" className="btn btn-ghost btn-sm" onClick={() => setGrupos(true)}>
             Grupos empresariales
           </button>
           {hasPermission('customers.create') && !esMovil && (
-            <button id="btn-carga-masiva" className="btn btn-ghost" onClick={() => setCargaMasiva(true)}>
+            <button id="btn-carga-masiva" className="btn btn-ghost btn-sm" onClick={() => setCargaMasiva(true)}>
               Carga masiva
             </button>
           )}
-          <ClipButton
-            id="btn-new-customer"
-            label="+ Nuevo cliente"
-            onClick={() => setPanel({ type: 'new' })}
-          />
+          <button id="btn-new-customer" className="btn btn-primary btn-sm" onClick={() => setPanel({ type: 'new' })}>
+            + Nuevo cliente
+          </button>
         </div>
+      </div>
+
+      {/* Indicadores: una franja que además filtra */}
+      <div className="ventas-kpis">
+        {([
+          ['todos', 'Clientes', customers.length],
+          ['corporativo', 'Corporativos', cuenta('corporativo')],
+          ['frecuente', 'Frecuentes', cuenta('frecuente')],
+          ['nuevo', 'Nuevos', cuenta('nuevo')],
+          ['riesgo', 'En riesgo de fuga', cuenta('riesgo')],
+          [null, 'Vehículos', totalVehicles],
+          [null, 'Info fiscal pendiente', fiscalPendiente],
+        ] as [FilterType | null, string, number][]).map(([f, l, v]) => (
+          <div key={l} className={`ventas-kpi${f ? ' clic' : ''}${f && filter === f ? ' activo' : ''}`}
+               onClick={f ? () => setFilter(f) : undefined} title={f ? `Ver ${l.toLowerCase()}` : l}>
+            <div className="l">{l}</div>
+            <div className="v" style={l === 'Info fiscal pendiente' && v > 0 ? { color: 'var(--color-danger-text)' } : undefined}>{v}</div>
+          </div>
+        ))}
       </div>
 
       {qrRegistro && currentBranch?.code && (
@@ -150,8 +166,8 @@ export function CustomersPage() {
         />
       )}
 
-      {/* Filters + Search */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+      {/* Filtros + búsqueda, en una fila */}
+      <div className="ventas-filtros">
         <div className="filter-pills">
           {FILTER_DEFS.map(f => (
             <button
@@ -164,19 +180,16 @@ export function CustomersPage() {
             </button>
           ))}
         </div>
-        <div className="search-bar">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2" strokeLinecap="round">
-            <circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-          </svg>
-          <input
-            id="customer-search"
-            type="search"
-            placeholder="Buscar por nombre, placa o DUI"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            aria-label="Buscar clientes"
-          />
-        </div>
+        <input
+          id="customer-search"
+          type="search"
+          className="corsa-input"
+          style={{ flex: '1 1 220px', minWidth: esMovil ? 0 : 200 }}
+          placeholder="Buscar por nombre, placa o DUI…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          aria-label="Buscar clientes"
+        />
       </div>
 
       {/* Content */}
@@ -186,16 +199,7 @@ export function CustomersPage() {
             y tener que pasar cien fichas para llegar a la suya es peor que no
             abrirlo. El panel reemplaza a la lista y se vuelve con su ✕. */}
         {(!esMovil || !panel) && (
-        <div style={{ flex: '2 1 560px', minWidth: esMovil ? 0 : 480, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-          {/* Table header — en el teléfono no hay columnas que encabezar */}
-          <div style={{ display: esMovil ? 'none' : 'flex', padding: '10px 16px', borderBottom: '1px solid var(--border)', fontSize: 11.5, fontWeight: 600, color: 'var(--text-secondary)' }}>
-            <div style={{ flex: 2.2 }}>Cliente</div>
-            <div style={{ flex: 1.6 }}>Contacto</div>
-            <div style={{ flex: 1 }}>Documento</div>
-            <div style={{ flex: 0.8, textAlign: 'center' }}>Vehículos</div>
-            <div style={{ flex: 1 }}>Última visita</div>
-            <div style={{ flex: 1.3 }}>Membresía</div>
-          </div>
+        <div style={{ flex: '2 1 560px', minWidth: esMovil ? 0 : 480, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
 
           {loading ? (
             <div className="loading-center"><div className="spinner"/><span>Cargando…</span></div>
@@ -258,58 +262,64 @@ export function CustomersPage() {
                 )
               })
             ) : (
-            <table className="corsa-table" style={{ border: 'none' }}>
+            <div className="table-wrap">
+            <table className="corsa-table ventas-tabla clientes-tabla" style={{ border: 'none' }}>
+              <thead>
+                <tr>
+                  <th>Cliente</th><th>Tipo</th><th>Correo</th><th>Teléfono</th><th>Doc.</th>
+                  <th style={{ textAlign: 'right' }}>Vehíc.</th><th>Última visita</th><th>Membresía</th>
+                </tr>
+              </thead>
               <tbody>
                 {filtered.map(c => {
                   const name = getDisplayName(c)
                   const ms = getMembershipStyle(c.membership_status)
                   const isSelected = panel?.customerId === c.id
                   const segment = classifySegment(c)
-                  const segLabels: Partial<Record<FilterType, string>> = { frecuente: 'Cliente frecuente', riesgo: 'En riesgo de fuga', nuevo: 'Cliente nuevo', corporativo: 'Cuenta corporativa' }
-                  const segLabel = segLabels[segment] ?? segment
+                  const segLabels: Partial<Record<FilterType, string>> = { frecuente: 'Frecuente', riesgo: 'Riesgo de fuga', nuevo: 'Nuevo', corporativo: 'Corporativo' }
+                  const pendiente = infoFiscalPendiente(c)
 
                   return (
                     <tr
                       key={c.id}
                       className={isSelected ? 'selected' : ''}
+                      style={{ cursor: 'pointer' }}
                       onClick={() => setPanel({ type: 'view', customerId: c.id })}
                     >
-                      <td style={{ flex: undefined, width: undefined }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', maxWidth: 200 }}>
-                          <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }} className="truncate">{name}</div>
-                          {infoFiscalPendiente(c).length > 0
-                            ? <span className="pendiente-fiscal" style={{ marginTop: 3, alignSelf: 'flex-start' }}
-                                    title={`Falta: ${infoFiscalPendiente(c).join(', ')}`}>Información fiscal pendiente</span>
-                            : <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>{segLabel}</div>}
-                        </div>
+                      <td className="cliente" title={name} style={{ fontWeight: 600, maxWidth: 240 }}>
+                        {name}
+                        {pendiente.length > 0 && (
+                          <span className="pendiente-fiscal" style={{ marginLeft: 6, fontSize: 10 }}
+                                title={`Falta: ${pendiente.join(', ')}`}>Fiscal pendiente</span>
+                        )}
                       </td>
-                      <td>
-                        <div style={{ fontSize: 12.5, color: 'var(--text-primary)' }} className="truncate">{c.email ?? '—'}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{c.phone ?? '—'}</div>
+                      <td style={{ color: segment === 'riesgo' ? 'var(--color-warning-text)' : 'var(--text-secondary)' }}>
+                        {segLabels[segment] ?? segment}
                       </td>
+                      <td className="cliente" title={c.email ?? ''} style={{ maxWidth: 230 }}>{c.email ?? '—'}</td>
+                      <td style={{ color: 'var(--text-secondary)' }}>{c.phone ?? '—'}</td>
                       <td>
                         <span className={`badge ${requiereCcf(c) ? 'badge-green' : 'badge-neutral'}`}>
-                          {requiereCcf(c) ? 'CCF' : 'Consumidor final'}
+                          {requiereCcf(c) ? 'CCF' : 'CF'}
                         </span>
                       </td>
-                      <td style={{ textAlign: 'center', fontSize: 13, fontWeight: 600 }}>
-                        {c.vehicle_count ?? 0}
-                      </td>
-                      <td style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
+                      <td style={{ textAlign: 'right', fontWeight: 600 }}>{c.vehicle_count ?? 0}</td>
+                      <td style={{ color: 'var(--text-secondary)' }}>
                         {c.last_visit_days != null
-                          ? c.last_visit_days === 0 ? 'Hoy' : c.last_visit_days === 1 ? 'Hace 1 día' : `Hace ${c.last_visit_days} días`
+                          ? c.last_visit_days === 0 ? 'Hoy' : c.last_visit_days === 1 ? 'Ayer' : `Hace ${c.last_visit_days} d`
                           : '—'}
                       </td>
-                      <td>
-                        <span style={{ fontSize: 11.5, fontWeight: 600, color: ms.color, background: ms.tint, padding: '3px 8px', borderRadius: 4 }}>
-                          {c.membership_plan ? `${c.membership_plan} · ${ms.label}` : ms.label}
-                        </span>
+                      <td style={{ color: ms.color, fontWeight: 600 }}>
+                        {c.membership_status === 'active' || c.membership_status === 'expiring'
+                          ? (c.membership_plan ? `${c.membership_plan} · ${ms.label}` : ms.label)
+                          : '—'}
                       </td>
                     </tr>
                   )
                 })}
               </tbody>
             </table>
+            </div>
             )
           )}
         </div>
