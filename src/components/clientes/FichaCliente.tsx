@@ -22,6 +22,7 @@ import {
 } from '../../services/credito.service'
 import { ccfReceptorStatus, requiereCcf } from '../../lib/fiscal/receptor'
 import { VehiculosClienteModal } from '../VehiculosClienteModal'
+import { CustomerFormPanel } from '../CustomerFormPanel'
 import type { Vehicle } from '../../types'
 
 function money(n: number) { return 'US$' + (Number(n) || 0).toFixed(2) }
@@ -52,11 +53,10 @@ function Dato({ label, valor, fuerte }: { label: string; valor: React.ReactNode;
   )
 }
 
-export function FichaCliente({ customer, orgId, onCerrar, onEditar, onActualizado }: {
+export function FichaCliente({ customer, orgId, onCerrar, onActualizado }: {
   customer: CustomerWithStats
   orgId: string
   onCerrar: () => void
-  onEditar: () => void
   onActualizado: () => void
 }) {
   const { hasPermission } = useAuth()
@@ -76,6 +76,9 @@ export function FichaCliente({ customer, orgId, onCerrar, onEditar, onActualizad
   const [limite, setLimite] = useState('')
   const [dias, setDias] = useState('30')
   const [guardando, setGuardando] = useState(false)
+  // Editar la ficha pasa adentro de la misma tarjeta, no en otro panel.
+  const [editando, setEditando] = useState(false)
+  const onEditar = () => setEditando(true)
 
   const nombre = nombreCliente(customer)
   const esEmpresa = customer.customer_type === 'company'
@@ -84,10 +87,13 @@ export function FichaCliente({ customer, orgId, onCerrar, onEditar, onActualizad
   const pendiente = ccf && !estadoFiscal.ok
 
   useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape' && !modalVehiculos) onCerrar() }
+    const h = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || modalVehiculos) return
+      if (editando) setEditando(false); else onCerrar()
+    }
     document.addEventListener('keydown', h)
     return () => document.removeEventListener('keydown', h)
-  }, [onCerrar, modalVehiculos])
+  }, [onCerrar, modalVehiculos, editando])
 
   const cargarCredito = useCallback(async () => {
     if (!verCredito) return
@@ -186,10 +192,20 @@ export function FichaCliente({ customer, orgId, onCerrar, onEditar, onActualizad
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-            <button className="ficha-btn-claro" onClick={onEditar}>Editar ficha</button>
+            {editando
+              ? <button className="ficha-btn-claro" onClick={() => setEditando(false)}>← Volver a la ficha</button>
+              : <button id="btn-editar-ficha" className="ficha-btn-claro" onClick={onEditar}>Editar ficha</button>}
             <button className="ficha-cerrar" onClick={onCerrar} aria-label="Cerrar">×</button>
           </div>
         </header>
+
+        {editando ? (
+          <div className="ficha-edicion">
+            <CustomerFormPanel customer={customer as any} orgId={orgId} embebido
+              onClose={() => setEditando(false)}
+              onSaved={() => { setEditando(false); onActualizado() }}/>
+          </div>
+        ) : (<>
 
         {/* ── Indicadores ── */}
         <div className="ficha-indicadores">
@@ -353,6 +369,7 @@ export function FichaCliente({ customer, orgId, onCerrar, onEditar, onActualizad
             )}
           </div>
         </div>
+        </>)}
       </div>
 
       {modalVehiculos && (

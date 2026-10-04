@@ -1380,3 +1380,10 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
   .cxc-tramos { grid-template-columns: repeat(3, 1fr); }
   .cxc-tarjeta-valor { font-size: 22px; }
 }
+/* Edición de la ficha dentro de la misma tarjeta: una columna centrada. */
+.ficha-edicion { padding: 18px 24px 24px; }
+.ficha-formulario { max-width: 620px; margin: 0 auto; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 18px; }
+@media (max-width: 760px) {
+  .ficha-edicion { padding: 14px 16px 20px; }
+  .ficha-formulario { padding: 14px; }
+}

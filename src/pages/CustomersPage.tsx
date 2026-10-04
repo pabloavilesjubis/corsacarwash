@@ -323,7 +323,6 @@ export function CustomersPage() {
               orgId={orgId}
               onCerrar={() => setPanel(null)}
               onActualizado={() => loadCustomers(search)}
-              onEditar={() => setPanel({ type: 'edit', customerId: selectedCustomer.id })}
             />
           ) : panel.type === 'new' || (panel.type === 'edit' && selectedCustomer) ? (
             <CustomerFormPanel

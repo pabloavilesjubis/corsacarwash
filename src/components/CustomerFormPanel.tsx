@@ -174,8 +174,10 @@ function blankToNull(v: string | undefined): string | null {
 // ─── Panel ───────────────────────────────────────────────────
 
 export function CustomerFormPanel({
-  customer, orgId, onClose, onSaved,
+  customer, orgId, onClose, onSaved, embebido,
 }: {
+  /** Dentro de la ficha del cliente: sin marco de panel lateral, a todo el ancho. */
+  embebido?: boolean
   /** Presente = edición; ausente = alta. */
   customer?: Customer
   orgId: string
@@ -254,13 +256,15 @@ export function CustomerFormPanel({
   }
 
   return (
-    <div className="side-panel" style={{ maxWidth: 420 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>
-          {isEdit ? 'Editar cliente' : 'Nuevo cliente'}
+    <div className={embebido ? 'ficha-formulario' : 'side-panel'} style={embebido ? undefined : { maxWidth: 420 }}>
+      {!embebido && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>
+            {isEdit ? 'Editar cliente' : 'Nuevo cliente'}
+          </div>
+          <button className="panel-close" onClick={onClose} aria-label="Cerrar">×</button>
         </div>
-        <button className="panel-close" onClick={onClose} aria-label="Cerrar">×</button>
-      </div>
+      )}
 
       <form onSubmit={handleSubmit(onSubmit)} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 

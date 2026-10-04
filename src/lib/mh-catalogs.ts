@@ -311,9 +311,10 @@ export const MUNICIPIOS_POR_DEPARTAMENTO: Record<string, CatalogItem[]> = {
 
 /* ───────────────────────── CAT-019 — Actividades económicas ───────────────────────── */
 /**
- * Subset curado de actividades económicas estandarizadas (CIIU rev. 4) —
- * las más comunes para PyMEs salvadoreñas. La opción "Otra" permite ingresar
- * un código personalizado si la actividad específica no está aquí.
+ * CAT-019 completo, tal como lo publica el Ministerio de Hacienda en los
+ * «Catálogos del Sistema de Transmisión», versión 1.2 (vigente desde el
+ * 1/12/2025, factura.gob.sv): 774 actividades, en su orden y con su texto.
+ * descActividad viaja en el DTE, así que el nombre se copia sin corregirlo.
  */
 export const ACTIVIDADES_ECONOMICAS: CatalogItem[] = [
   { codigo: '01111', nombre: 'Cultivo de cereales excepto arroz y para forrajes' },
@@ -405,7 +406,7 @@ export const ACTIVIDADES_ECONOMICAS: CatalogItem[] = [
   { codigo: '10108', nombre: 'Elaboración de productos de carne ncp' },
   { codigo: '10201', nombre: 'Procesamiento y conservación de pescado, crustáceos y moluscos' },
   { codigo: '10209', nombre: 'Fabricación de productos de pescado ncp' },
-  { codigo: '10301', nombre: 'Elaboración de jugos de frutas y hortalizasv' },
+  { codigo: '10301', nombre: 'Elaboración de jugos de frutas y hortalizas' },
   { codigo: '10302', nombre: 'Elaboración y envase de jaleas, mermeladas y frutas deshidratadas' },
   { codigo: '10309', nombre: 'Elaboración de productos de frutas y hortalizas n.c.p.' },
   { codigo: '10401', nombre: 'Fabricación de aceites y grasas vegetales y animales comestibles' },
@@ -451,7 +452,7 @@ export const ACTIVIDADES_ECONOMICAS: CatalogItem[] = [
   { codigo: '13910', nombre: 'Fabricación de tejidos de punto y ganchillo' },
   { codigo: '13921', nombre: 'Fabricación de productos textiles para el hogar' },
   { codigo: '13922', nombre: 'Sacos, bolsas y otros artículos textiles' },
-  { codigo: '13929', nombre: 'Fabricación de artículos confeccionados con materiales textiles, excepto prendas de vestir ncp' },
+  { codigo: '13929', nombre: 'Fabricación de artículos confeccionados con materiales textiles, excepto prendas de vestir n.c.p' },
   { codigo: '13930', nombre: 'Fabricación de tapices y alfombras' },
   { codigo: '13941', nombre: 'Fabricación de cuerdas de henequén y otras fibras naturales (lazos, pitas)' },
   { codigo: '13942', nombre: 'Fabricación de redes de diversos materiales' },
@@ -479,7 +480,7 @@ export const ACTIVIDADES_ECONOMICAS: CatalogItem[] = [
   { codigo: '15201', nombre: 'Fabricación de calzado' },
   { codigo: '15202', nombre: 'Fabricación de partes y accesorios de calzado' },
   { codigo: '15208', nombre: 'Maquilado de partes y accesorios de calzado' },
-  { codigo: '16100', nombre: 'Aserradero y acepil adura de madera' },
+  { codigo: '16100', nombre: 'Aserradero y acepilladura de madera' },
   { codigo: '16210', nombre: 'Fabricación de madera laminada, terciada, enchapada y contrachapada, paneles para la construcción' },
   { codigo: '16220', nombre: 'Fabricación de partes y piezas de carpintería para edificios y construcciones' },
   { codigo: '16230', nombre: 'Fabricación de envases y recipientes de madera' },
@@ -492,7 +493,9 @@ export const ACTIVIDADES_ECONOMICAS: CatalogItem[] = [
   { codigo: '18110', nombre: 'Impresión' },
   { codigo: '18120', nombre: 'Servicios relacionados con la impresión' },
   { codigo: '18200', nombre: 'Reproducción de grabaciones' },
-  { codigo: '19100', nombre: 'Fabricación de productos de hornos de coque 19201 Fabricación de combustible 19202 Fabricación de aceites y lubricantes' },
+  { codigo: '19100', nombre: 'Fabricación de productos de hornos de coque' },
+  { codigo: '19201', nombre: 'Fabricación de combustible' },
+  { codigo: '19202', nombre: 'Fabricación de aceites y lubricantes' },
   { codigo: '20111', nombre: 'Fabricación de materias primas para la fabricación de colorantes' },
   { codigo: '20112', nombre: 'Fabricación de materiales curtientes' },
   { codigo: '20113', nombre: 'Fabricación de gases industriales' },
@@ -501,7 +504,7 @@ export const ACTIVIDADES_ECONOMICAS: CatalogItem[] = [
   { codigo: '20120', nombre: 'Fabricación de abonos y fertilizantes' },
   { codigo: '20130', nombre: 'Fabricación de plástico y caucho en formas primarias' },
   { codigo: '20210', nombre: 'Fabricación de plaguicidas y otros productos químicos de uso agropecuario' },
-  { codigo: '20220', nombre: 'Fabricación de pinturas, barnices y productos de revestimiento similares; tintas de imprenta y masil as' },
+  { codigo: '20220', nombre: 'Fabricación de pinturas, barnices y productos de revestimiento similares; tintas de imprenta y masillas' },
   { codigo: '20231', nombre: 'Fabricación de jabones, detergentes y similares para limpieza' },
   { codigo: '20232', nombre: 'Fabricación de perfumes, cosméticos y productos de higiene y cuidado personal, incluyendo tintes, champú, etc.' },
   { codigo: '20291', nombre: 'Fabricación de tintas y colores para escribir y pintar; fabricación de cintas para impresoras' },
@@ -684,7 +687,7 @@ export const ACTIVIDADES_ECONOMICAS: CatalogItem[] = [
   { codigo: '46373', nombre: 'Venta al por mayor de carne bovina y porcina, productos de carne y embutidos' },
   { codigo: '46374', nombre: 'Venta al por mayor de huevos' },
   { codigo: '46375', nombre: 'Venta al por mayor de productos lácteos' },
-  { codigo: '46376', nombre: 'Venta al por mayor de productos farináceos de panadería (pan dulce, cakes, repostería, etc.)' },
+  { codigo: '46376', nombre: 'Venta al por mayor de productos farináceos de panadería (pan dulce, cakes, respostería, etc.)' },
   { codigo: '46377', nombre: 'Venta al por mayor de pastas alimenticias, aceites y grasas comestibles vegetal y animal' },
   { codigo: '46378', nombre: 'Venta al por mayor de sal comestible' },
   { codigo: '46379', nombre: 'Venta al por mayor de azúcar' },
@@ -765,6 +768,7 @@ export const ACTIVIDADES_ECONOMICAS: CatalogItem[] = [
   { codigo: '47111', nombre: 'Venta en supermercados' },
   { codigo: '47112', nombre: 'Venta en tiendas de artículos de primera necesidad' },
   { codigo: '47119', nombre: 'Almacenes (venta de diversos artículos)' },
+  { codigo: '47120', nombre: 'Almacenes (venta de diversos artículos), y venta de vehículos automotores y motocicletas' },
   { codigo: '47190', nombre: 'Venta al por menor de otros productos en comercios no especializados' },
   { codigo: '47199', nombre: 'Venta de establecimientos no especializados con surtido compuesto principalmente de alimentos, bebidas y tabaco' },
   { codigo: '47211', nombre: 'Venta al por menor de frutas y hortalizas' },
@@ -882,6 +886,7 @@ export const ACTIVIDADES_ECONOMICAS: CatalogItem[] = [
   { codigo: '52291', nombre: 'Agencias de tramitaciones aduanales' },
   { codigo: '53100', nombre: 'Servicios de correo nacional' },
   { codigo: '53200', nombre: 'Actividades de correo distintas a las actividades postales nacionales' },
+  { codigo: '53201', nombre: 'Agencia privada de correo y encomiendas' },
   { codigo: '55101', nombre: 'Actividades de alojamiento para estancias cortas' },
   { codigo: '55102', nombre: 'Hoteles' },
   { codigo: '55200', nombre: 'Actividades de campamentos, parques de vehículos de recreo y parques de caravanas' },
@@ -922,10 +927,10 @@ export const ACTIVIDADES_ECONOMICAS: CatalogItem[] = [
   { codigo: '61301', nombre: 'Telecomunicaciones satelitales' },
   { codigo: '61309', nombre: 'Comunicación vía satélite n.c.p.' },
   { codigo: '61900', nombre: 'Actividades de telecomunicación n.c.p.' },
-  { codigo: '62010', nombre: 'Programación informática' },
+  { codigo: '62010', nombre: 'Programación Informática' },
   { codigo: '62020', nombre: 'Consultorías y gestión de servicios informáticos' },
   { codigo: '62090', nombre: 'Otras actividades de tecnología de información y servicios de computadora' },
-  { codigo: '63110', nombre: 'Procesamiento de datos y actividades relacionadas' },
+  { codigo: '63110', nombre: 'Procesamiento de datos y Actividades relacionadas' },
   { codigo: '63120', nombre: 'Portales WEB' },
   { codigo: '63910', nombre: 'Servicios de Agencias de Noticias' },
   { codigo: '63990', nombre: 'Otros servicios de información n.c.p.' },
@@ -1005,7 +1010,7 @@ export const ACTIVIDADES_ECONOMICAS: CatalogItem[] = [
   { codigo: '82929', nombre: 'Servicio de envase y empaque ncp' },
   { codigo: '82990', nombre: 'Actividades de apoyo empresariales ncp' },
   { codigo: '84110', nombre: 'Actividades de la Administración Pública en general' },
-  { codigo: '84111', nombre: 'Alcaldías municipales' },
+  { codigo: '84111', nombre: 'Alcaldías Municipales' },
   { codigo: '84120', nombre: 'Regulación de las actividades de prestación de servicios sanitarios, educativos, culturales y otros servicios sociales, excepto seguridad social' },
   { codigo: '84130', nombre: 'Regulación y facilitación de la actividad económica' },
   { codigo: '84210', nombre: 'Actividades de administración y funcionamiento del Ministerio de Relaciones Exteriores' },
@@ -1041,7 +1046,7 @@ export const ACTIVIDADES_ECONOMICAS: CatalogItem[] = [
   { codigo: '87900', nombre: 'Actividades de asistencia a niños y jóvenes' },
   { codigo: '87901', nombre: 'Otras actividades de atención en instituciones' },
   { codigo: '88100', nombre: 'Actividades de asistencia sociales sin alojamiento para ancianos y discapacitados' },
-  { codigo: '88900', nombre: 'Servicios sociales sin alojamiento ncp' },
+  { codigo: '88900', nombre: 'servicios sociales sin alojamiento ncp' },
   { codigo: '90000', nombre: 'Actividades creativas artísticas y de esparcimiento' },
   { codigo: '91010', nombre: 'Actividades de bibliotecas y archivos' },
   { codigo: '91020', nombre: 'Actividades de museos y preservación de lugares y edificios históricos' },
@@ -1081,10 +1086,11 @@ export const ACTIVIDADES_ECONOMICAS: CatalogItem[] = [
   { codigo: '98200', nombre: 'Actividades indiferenciadas de producción de servicios de los hogares privados para uso propio' },
   { codigo: '99000', nombre: 'Actividades de organizaciones y órganos extraterritoriales' },
   { codigo: '10001', nombre: 'Empleados' },
-  { codigo: '10002', nombre: 'Jubilado' },
+  { codigo: '10002', nombre: 'Pensionado' },
   { codigo: '10003', nombre: 'Estudiante' },
   { codigo: '10004', nombre: 'Desempleado' },
   { codigo: '10005', nombre: 'Otros' },
+  { codigo: '10006', nombre: 'Comerciante' },
 ];
 
 /* ───────────────────────── Helpers ───────────────────────── */
