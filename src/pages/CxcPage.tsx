@@ -338,57 +338,70 @@ function DetalleCxc({ cliente: c, branchId, puedeAbonar, puedeFacturar, onCerrar
     }
   }
 
+  const usado = c.credit_limit > 0 ? Math.min(1, c.saldo / c.credit_limit) : 0
+  const totalPendiente = pendientes.reduce((t, l) => t + l.total, 0)
+  const conSeleccion = puedeFacturar && pendientes.length > 0
+
   return (
     <div className="ficha-fondo" onClick={e => { if (e.target === e.currentTarget) onCerrar() }}>
-      <div className="ficha" role="dialog" aria-label={`Cuenta de ${c.customer_name}`}>
+      <div className="ficha cxc-det" role="dialog" aria-label={`Cuenta de ${c.customer_name}`}>
         <header className="ficha-cabecera">
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="ficha-nombre">{c.customer_name}</div>
-            <div style={{ fontSize: 12.5, opacity: 0.75 }}>{[c.legal_name !== c.customer_name ? c.legal_name : null, c.nit ? `NIT ${c.nit}` : null].filter(Boolean).join(' · ')}</div>
-            <div className="ficha-etiquetas">
-              <span className="ficha-etiqueta lima">Límite {money(c.credit_limit)}</span>
-              <span className="ficha-etiqueta">Plazo {c.credit_days} días</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <div className="ficha-nombre">{c.customer_name}</div>
               {c.vencido > 0 && <span className="ficha-etiqueta roja">En mora · {money(c.vencido)}</span>}
               {!c.credit_enabled && <span className="ficha-etiqueta">Crédito desactivado</span>}
             </div>
+            <div className="cxc-det-sub">
+              {[c.legal_name !== c.customer_name ? c.legal_name : null, c.nit ? `NIT ${c.nit}` : null].filter(Boolean).join(' · ')}
+              {' · '}Límite <b>{money(c.credit_limit)}</b> · Plazo {c.credit_days} días
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-            <button id="btn-estado-cuenta" className="ficha-btn-claro" onClick={estadoCuenta} disabled={cargando}>Estado de cuenta (PDF)</button>
-            <button id="btn-enviar-estado" className="ficha-btn-claro" onClick={enviarEstado} disabled={enviando}>{enviando ? 'Enviando…' : 'Enviar por correo'}</button>
+          <div className="cxc-det-acciones">
+            <button id="btn-estado-cuenta" className="cxc-btn-mini" onClick={estadoCuenta} disabled={cargando} title="Estado de cuenta en PDF">Estado de cuenta</button>
+            <button id="btn-enviar-estado" className="cxc-btn-mini" onClick={enviarEstado} disabled={enviando} title="Enviar el estado de cuenta por correo">{enviando ? 'Enviando…' : 'Enviar'}</button>
             <button className="ficha-cerrar" onClick={onCerrar} aria-label="Cerrar">×</button>
           </div>
         </header>
 
         <div className="ficha-indicadores">
-          <div><div className="cxc-mini">Saldo</div><div className="cxc-mini-valor">{money(c.saldo)}</div></div>
-          <div><div className="cxc-mini">Vencido</div><div className="cxc-mini-valor" style={{ color: c.vencido > 0 ? 'var(--color-danger-text)' : undefined }}>{money(c.vencido)}</div></div>
+          <div><div className="cxc-mini">Saldo</div><div className="cxc-mini-valor principal">{money(c.saldo)}</div></div>
+          <div><div className="cxc-mini">Vencido</div><div className="cxc-mini-valor" style={{ color: c.vencido > 0 ? 'var(--color-danger-text)' : 'var(--text-secondary)' }}>{money(c.vencido)}</div></div>
           <div><div className="cxc-mini">Por vencer</div><div className="cxc-mini-valor">{money(c.por_vencer)}</div></div>
-          <div><div className="cxc-mini">Disponible</div><div className="cxc-mini-valor">{money(c.disponible)}</div></div>
+          <div>
+            <div className="cxc-mini">Disponible</div>
+            <div className="cxc-mini-valor">{money(c.disponible)}</div>
+            {c.credit_limit > 0 && (
+              <div className="cxc-det-uso" title={`${Math.round(usado * 100)}% del límite usado`}>
+                <div style={{ width: `${usado * 100}%`, background: usado >= 0.9 ? 'var(--color-danger)' : 'var(--corsa-green)' }}/>
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="ficha-cuerpo" style={{ gridTemplateColumns: puedeAbonar && c.saldo > 0 ? '1.6fr 1fr' : '1fr' }}>
+        <div className="ficha-cuerpo" style={{ gridTemplateColumns: puedeAbonar && c.saldo > 0 ? 'minmax(0, 2fr) minmax(220px, 1fr)' : '1fr' }}>
           <div className="ficha-columna">
             <section className="cxc-seccion">
               <div className="cxc-seccion-titulo">Documentos pendientes ({abiertos.length})</div>
               {cargando ? <div className="spinner" style={{ width: 18, height: 18 }}/> : abiertos.length === 0 ? (
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>No debe nada.</div>
+                <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>No debe nada.</div>
               ) : (
                 <div style={{ overflowX: 'auto' }}>
-                  <table className="corsa-table" style={{ border: 'none', minWidth: 520 }}>
-                    <thead><tr><th>Documento</th><th>Fecha</th><th>Vence</th><th style={{ textAlign: 'right' }}>Monto</th><th style={{ textAlign: 'right' }}>Saldo</th><th>Atraso</th></tr></thead>
+                  <table className="corsa-table cxc-tabla" style={{ border: 'none' }}>
+                    <thead><tr><th>Documento</th><th>Fecha</th><th>Vence</th><th style={{ textAlign: 'right' }}>Monto</th><th style={{ textAlign: 'right' }}>Saldo</th><th style={{ textAlign: 'right' }}>Estado</th></tr></thead>
                     <tbody>
                       {abiertos.map(d => {
                         const dias = diasVencido(d.due_date)
                         return (
                           <tr key={d.id}>
                             <td className="font-mono" style={{ fontSize: 12 }}>{d.factura ?? d.orden ?? '—'}</td>
-                            <td style={{ fontSize: 12.5 }}>{fechaCorta(d.created_at)}</td>
-                            <td style={{ fontSize: 12.5 }}>{fechaCorta(d.due_date)}</td>
-                            <td className="tnum" style={{ textAlign: 'right' }}>{money(d.amount)}</td>
+                            <td>{fechaCorta(d.created_at)}</td>
+                            <td>{fechaCorta(d.due_date)}</td>
+                            <td className="tnum" style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>{money(d.amount)}</td>
                             <td className="tnum" style={{ textAlign: 'right', fontWeight: 700 }}>{money(d.balance)}</td>
-                            <td>{dias > 0
-                              ? <span className="badge badge-danger">{dias} días</span>
-                              : <span className="badge badge-success">{dias === 0 ? 'Vence hoy' : `En ${-dias} días`}</span>}</td>
+                            <td style={{ textAlign: 'right' }}>{dias > 0
+                              ? <span className="badge badge-danger">Vencido {dias} d</span>
+                              : <span className="badge badge-success">{dias === 0 ? 'Vence hoy' : `Vence en ${-dias} d`}</span>}</td>
                           </tr>
                         )
                       })}
@@ -400,45 +413,36 @@ function DetalleCxc({ cliente: c, branchId, puedeAbonar, puedeFacturar, onCerrar
 
             {lavados.length > 0 && (
               <section className="cxc-seccion">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-                  <div className="cxc-seccion-titulo" style={{ marginBottom: 0 }}>Lavados · facturación consolidada</div>
-                  {puedeFacturar && pendientes.length > 0 && (
-                    <button id="btn-ccf-consolidado" className="btn btn-primary" onClick={facturarPendientes}
-                            disabled={facturando || elegidos.length === 0}>
-                      {facturando ? 'Emitiendo…' : `Emitir CCF de ${elegidos.length} pendientes (${money(totalElegido)})`}
-                    </button>
-                  )}
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-                  <span className="badge badge-neutral">{lavados.length} lavados</span>
-                  <span className="badge badge-success">{lavados.length - pendientes.length} facturados</span>
-                  <span className={`badge ${pendientes.length ? 'badge-warning' : 'badge-neutral'}`}>
-                    {pendientes.length} pendientes de facturar · {money(pendientes.reduce((t, l) => t + l.total, 0))}
-                  </span>
+                <div className="cxc-det-cabeza">
+                  <div className="cxc-seccion-titulo">Lavados al crédito</div>
+                  <div className="cxc-det-resumen">
+                    {lavados.length} lavados · {lavados.length - pendientes.length} facturados
+                    {pendientes.length > 0 && <> · <b>{pendientes.length} pendientes ({money(totalPendiente)})</b></>}
+                  </div>
                 </div>
                 {sinSello.map(g => (
-                  <div key={g.id} className="alert-banner danger" style={{ marginBottom: 10 }}>
+                  <div key={g.id} className="alert-banner danger" style={{ marginBottom: 8 }}>
                     <div className="alert-body" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, width: '100%' }}>
                       <span style={{ fontSize: 12.5 }}>El CCF {g.numero} ({g.items.length} lavados) no tiene sello de Hacienda.</span>
-                      {puedeFacturar && <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => emitirConsolidado(g.id, g.items)}>Reintentar</button>}
+                      {puedeFacturar && <button className="btn btn-ghost btn-sm" onClick={() => emitirConsolidado(g.id, g.items)}>Reintentar</button>}
                     </div>
                   </div>
                 ))}
                 <div style={{ overflowX: 'auto' }}>
-                  <table className="corsa-table" style={{ border: 'none', minWidth: 600 }}>
+                  <table className="corsa-table cxc-tabla" style={{ border: 'none' }}>
                     <thead><tr>
-                      {puedeFacturar && pendientes.length > 0 && (
-                        <th style={{ width: 30 }}>
+                      {conSeleccion && (
+                        <th style={{ width: 24 }}>
                           <input type="checkbox" aria-label="Elegir todos" checked={elegidos.length === pendientes.length}
                                  onChange={e => setSeleccion(e.target.checked ? new Set(pendientes.map(p => p.work_order_id)) : new Set())}/>
                         </th>
                       )}
-                      <th>Fecha</th><th>Placa</th><th>Servicio</th><th style={{ textAlign: 'right' }}>Monto</th><th>Factura</th>
+                      <th>Fecha</th><th>Placa</th><th>Servicio</th><th style={{ textAlign: 'right' }}>Monto</th><th style={{ textAlign: 'right' }}>Factura</th>
                     </tr></thead>
                     <tbody>
                       {lavados.map(l => (
                         <tr key={l.work_order_id}>
-                          {puedeFacturar && pendientes.length > 0 && (
+                          {conSeleccion && (
                             <td>{!l.consolidated_invoice_id && (
                               <input type="checkbox" checked={seleccion.has(l.work_order_id)} aria-label={`Facturar ${l.order_number}`}
                                      onChange={e => setSeleccion(prev => {
@@ -448,31 +452,42 @@ function DetalleCxc({ cliente: c, branchId, puedeAbonar, puedeFacturar, onCerrar
                                      })}/>
                             )}</td>
                           )}
-                          <td style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>{fechaCorta(l.created_at)}</td>
-                          <td className="font-mono" style={{ fontSize: 12.5, fontWeight: 700 }}>{l.placa_principal}</td>
-                          <td style={{ fontSize: 12.5 }}>{l.detalle ?? '—'}</td>
+                          <td>{fechaCorta(l.created_at)}</td>
+                          <td className="font-mono" style={{ fontWeight: 700 }}>{l.placa_principal}</td>
+                          <td className="envuelve" style={{ color: 'var(--text-secondary)' }}>{l.detalle ?? '—'}</td>
                           <td className="tnum" style={{ textAlign: 'right', fontWeight: 700 }}>{money(l.total)}</td>
-                          <td>
+                          <td style={{ textAlign: 'right' }}>
                             {!l.consolidated_invoice_id
-                              ? <span className="badge badge-warning">Pendiente de facturar</span>
+                              ? <span className="badge badge-warning">Pendiente</span>
                               : l.dte_status === 'ACCEPTED'
-                                ? <span className="badge badge-success" title={l.sello_recepcion ?? ''}>CCF {l.numero_control}</span>
-                                : <span className="badge badge-danger">{l.ccf_interno} sin sello</span>}
+                                ? <span className="badge badge-success" title={`CCF ${l.numero_control ?? ''}\n${l.sello_recepcion ?? ''}`}>Facturado</span>
+                                : <span className="badge badge-danger" title={l.ccf_interno ?? ''}>Sin sello</span>}
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
+                {conSeleccion && (
+                  <div className="cxc-det-pie">
+                    <span style={{ color: 'var(--text-secondary)' }}>
+                      {elegidos.length} de {pendientes.length} seleccionados · <b style={{ color: 'var(--text-primary)' }}>{money(totalElegido)}</b>
+                    </span>
+                    <button id="btn-ccf-consolidado" className="btn btn-primary btn-sm" onClick={facturarPendientes}
+                            disabled={facturando || elegidos.length === 0}>
+                      {facturando ? 'Emitiendo…' : 'Emitir CCF'}
+                    </button>
+                  </div>
+                )}
               </section>
             )}
 
             <section className="cxc-seccion">
               <div className="cxc-seccion-titulo">Movimientos</div>
-              {movimientos.length === 0 ? <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Sin movimientos.</div> : (
+              {movimientos.length === 0 ? <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>Sin movimientos.</div> : (
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                   {movimientos.slice(0, 30).map(m => (
-                    <div key={m.id} style={{ display: 'flex', gap: 10, alignItems: 'baseline', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 12.5 }}>
+                    <div key={m.id} style={{ display: 'flex', gap: 10, alignItems: 'baseline', padding: '5px 0', borderBottom: '1px solid var(--border)', fontSize: 12.5 }}>
                       <span style={{ width: 118, flexShrink: 0, color: 'var(--text-secondary)' }}>{formatearFechaHora(m.created_at)}</span>
                       <span style={{ flex: 1, minWidth: 0 }}>
                         {EVENTO_ETIQUETA[m.event_type] ?? m.event_type}
@@ -493,23 +508,24 @@ function DetalleCxc({ cliente: c, branchId, puedeAbonar, puedeFacturar, onCerrar
             <div className="ficha-columna">
               <section className="cxc-seccion">
                 <div className="cxc-seccion-titulo">Registrar abono</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <label className="ficha-campo">
                     <span>Monto (US$)</span>
-                    <input id="abono-monto" className="corsa-input" type="number" min="0.01" step="0.01" value={abono}
-                           onChange={e => setAbono(e.target.value)} placeholder={c.saldo.toFixed(2)}/>
+                    <div className="cxc-det-monto">
+                      <input id="abono-monto" className="corsa-input" type="number" min="0.01" step="0.01" value={abono}
+                             onChange={e => setAbono(e.target.value)} placeholder={c.saldo.toFixed(2)}/>
+                      <button type="button" onClick={() => setAbono(c.saldo.toFixed(2))} title={`Pagar todo (${money(c.saldo)})`}>Todo</button>
+                    </div>
                   </label>
-                  <button type="button" className="btn btn-ghost" style={{ justifyContent: 'center', fontSize: 12 }}
-                          onClick={() => setAbono(c.saldo.toFixed(2))}>Pagar todo ({money(c.saldo)})</button>
                   <label className="ficha-campo">
-                    <span>Referencia (opcional)</span>
-                    <input className="corsa-input" value={nota} onChange={e => setNota(e.target.value)} placeholder="Transferencia #, cheque…"/>
+                    <span>Referencia</span>
+                    <input className="corsa-input" value={nota} onChange={e => setNota(e.target.value)} placeholder="Opcional: transferencia #, cheque…"/>
                   </label>
-                  <button id="abono-guardar" className="btn btn-primary" style={{ justifyContent: 'center' }} onClick={registrar} disabled={guardando}>
+                  <button id="abono-guardar" className="btn btn-primary btn-sm" style={{ justifyContent: 'center' }} onClick={registrar} disabled={guardando}>
                     {guardando ? 'Registrando…' : 'Registrar abono'}
                   </button>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
-                    El abono se aplica a las deudas más antiguas primero y libera cupo de crédito.
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                    Se aplica a lo más antiguo primero y libera cupo.
                   </div>
                 </div>
               </section>
