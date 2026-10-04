@@ -18,7 +18,7 @@ import {
   getCustomerVehicles, getCustomerMetrics, getMembershipPlans, updateCustomer, type CustomerWithStats,
 } from '../../services/customers.service'
 import {
-  cambiarLimite, deshabilitarCredito, fetchCuentaCredito, habilitarCredito, type CuentaCredito,
+  cambiarLimite, deshabilitarCredito, fetchCuentaCredito, habilitarCredito, setFacturacionConsolidada, type CuentaCredito,
 } from '../../services/credito.service'
 import { ccfReceptorStatus, requiereCcf } from '../../lib/fiscal/receptor'
 import { VehiculosClienteModal } from '../VehiculosClienteModal'
@@ -152,6 +152,20 @@ export function FichaCliente({ customer, orgId, onCerrar, onActualizado }: {
     setGuardando(false)
   }
 
+  const cambiarConsolidada = async (activa: boolean) => {
+    const msg = activa
+      ? 'Con facturación consolidada, las ventas al crédito de este cliente NO emiten DTE en caja: quedan en CxC y se facturan juntas en un CCF desde Cuentas por cobrar. ¿Activar?'
+      : 'Las próximas ventas al crédito volverán a emitir su DTE en caja. Los lavados pendientes se siguen facturando desde CxC. ¿Desactivar?'
+    if (!window.confirm(msg)) return
+    try {
+      await setFacturacionConsolidada(customer.id, activa)
+      toast.success(activa ? 'Facturación consolidada activada' : 'Facturación consolidada desactivada')
+      await cargarCredito(); onActualizado()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo cambiar')
+    }
+  }
+
   const desactivar = async () => {
     const motivo = window.prompt('¿Por qué se desactiva el crédito? (el saldo pendiente se sigue cobrando)')
     if (!motivo?.trim()) return
@@ -188,7 +202,7 @@ export function FichaCliente({ customer, orgId, onCerrar, onActualizado }: {
               <span className="ficha-etiqueta lima">{ccf ? 'Crédito fiscal (CCF)' : 'Consumidor final'}</span>
               {pendiente && <span className="ficha-etiqueta roja">Información fiscal pendiente</span>}
               {grupo && <span className="ficha-etiqueta">Grupo {grupo}</span>}
-              {creditoActivo && <span className="ficha-etiqueta">Crédito activo</span>}
+              {creditoActivo && <span className="ficha-etiqueta">Crédito activo{cuenta?.consolidated_billing ? ' · CCF consolidado' : ''}</span>}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
@@ -339,6 +353,20 @@ export function FichaCliente({ customer, orgId, onCerrar, onActualizado }: {
                     <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
                       {Math.round(usado)}% usado · cada venta vence a {cuenta.credit_days} días{cuenta.blocked ? ' · CUENTA BLOQUEADA' : ''}
                     </div>
+                    {/* Facturación consolidada (0060): un CCF por período en vez de uno por venta. */}
+                    <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 12,
+                                    border: `1.5px solid ${cuenta.consolidated_billing ? 'var(--corsa-green)' : 'var(--border)'}`,
+                                    cursor: adminCredito ? 'pointer' : 'default' }}>
+                      <input id="credito-consolidado" type="checkbox" checked={cuenta.consolidated_billing} disabled={!adminCredito}
+                             onChange={e => cambiarConsolidada(e.target.checked)}
+                             style={{ accentColor: 'var(--corsa-green)', width: 16, height: 16, marginTop: 2 }}/>
+                      <span>
+                        <span style={{ fontSize: 13, fontWeight: 700 }}>Facturación consolidada</span>
+                        <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                          Las ventas al crédito no emiten DTE en caja: se juntan en un solo CCF, con el detalle de cada placa, desde Cuentas por cobrar.
+                        </span>
+                      </span>
+                    </label>
                     {adminCredito && (
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center' }}

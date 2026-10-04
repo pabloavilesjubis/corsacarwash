@@ -129,6 +129,8 @@ export interface PosSaleResult {
     /** De cortesía (0053): la agrega el POS después del cobro, sin línea de venta. */
     courtesy?: boolean
   } | null
+  /** Al crédito con facturación consolidada (0060): sin factura ni DTE. */
+  facturacion_diferida?: boolean
   /** Póliza consumida por esta venta, si el lavado se cobró con un seguro. */
   rain_redeemed: {
     id: string
@@ -156,6 +158,7 @@ export function buildTicketArgsFromPos(
 ): TicketArgs {
   const tipo = result.doc_type === 'ccf' ? '03' : '01'
   const total = Number(result.total || 0)
+  const diferida = Boolean(result.facturacion_diferida)
   const aspirado = extras.aspiradoPrecio ?? 0
   const seguro = Number(result.rain_policy?.price ?? 0)
   // El precio del lavado es lo que queda después de los complementos: sin
@@ -205,7 +208,8 @@ export function buildTicketArgsFromPos(
     },
     // Con la sucursal emitiendo, el POS espera el sello y llega el DTE; si no,
     // el ticket deja el bloque fiscal como pendiente.
-    dte: dte ? dteParaTicket(dte, tipo) : { tipoDte: tipo },
+    dte: dte ? dteParaTicket(dte, tipo) : diferida ? {} : { tipoDte: tipo },
+    creditoDiferido: diferida,
     atendio: extras.atendio,
     // La vigencia se imprime con lo que devolvió el servidor, no con una
     // cuenta hecha acá: el reloj que vale es el de la base, que es el mismo
@@ -270,6 +274,7 @@ export interface PosSaleMultiResult {
   fcf_name: string | null
   issued_at: string
   lineas: LineaMulti[]
+  facturacion_diferida?: boolean
 }
 
 /**
@@ -317,7 +322,8 @@ export function buildTicketArgsFromPosMulti(
       numeroDocumento: extras.clienteDoc?.numero,
       nrc: extras.clienteDoc?.nrc,
     },
-    dte: dte ? dteParaTicket(dte, tipo) : { tipoDte: tipo },
+    dte: dte ? dteParaTicket(dte, tipo) : result.facturacion_diferida ? {} : { tipoDte: tipo },
+    creditoDiferido: Boolean(result.facturacion_diferida),
   }
 }
 
@@ -330,5 +336,36 @@ export function buildTicketOrdenDeLavado(
     operacion: { servicio: linea.service_name, aspirado: linea.with_aspirado, placa: linea.plate, ordenNumero: result.order_number },
     venta: { id: `${result.order_id}-${indice}`, fecha: result.issued_at, lineas: [], total: 0 },
     ordenDeLavado: { orden: result.order_number, indice, total: result.lineas.length, cliente },
+  }
+}
+
+/**
+ * El ticket del CCF consolidado (0060): un resumen. Cuántos lavados, de qué
+ * período, el total y el bloque del DTE; el detalle por carro va en el CCF.
+ */
+export function buildTicketCcfConsolidado(args: {
+  emisor: TicketEmisor
+  cliente: { nombre: string; nit?: string | null; nrc?: string | null }
+  lavados: number
+  desde: string
+  hasta: string
+  total: number
+  invoiceId: string
+  dte: DteDeVenta | null
+  branchName?: string
+}): TicketArgs {
+  const f = (iso: string) => formatearFechaHora(iso, { day: '2-digit', month: '2-digit', year: 'numeric' })
+  return {
+    emisor: emisorDelTicket(args.emisor, args.branchName, args.dte),
+    operacion: { servicio: '', aspirado: false },
+    venta: {
+      id: args.invoiceId,
+      lineas: [{ nombre: `${args.lavados} lavados (detalle por placa en el CCF)`, cantidad: 1, precioUnitario: args.total, subtotal: args.total }],
+      total: args.total,
+      metodoPago: 'Crédito',
+    },
+    cliente: { nombre: args.cliente.nombre, tipoDocumento: args.cliente.nit ? 'NIT' : undefined, numeroDocumento: args.cliente.nit ?? undefined, nrc: args.cliente.nrc ?? undefined },
+    dte: args.dte ? dteParaTicket(args.dte, '03') : { tipoDte: '03' },
+    consolidado: { lavados: args.lavados, desde: f(args.desde), hasta: f(args.hasta) },
   }
 }

@@ -775,6 +775,10 @@ interface CobroModalProps {
   grupo: GrupoPos | null
   /** La caja no tiene servicio: sólo se puede canjear un cupón (que trae el suyo). */
   sinServicio: boolean
+  /** Al crédito de un cliente con facturación consolidada (0060): no se emite documento ahora. */
+  ventaDiferida: boolean
+  /** Con facturación consolidada cada lavado necesita su placa. */
+  faltaPlaca: boolean
   /** Método de pago, monto y teclado: lo arma la página. */
   pago: ReactNode
   pagaConCupon: boolean
@@ -788,7 +792,7 @@ interface CobroModalProps {
 }
 
 function CobroModal({
-  total, customer, grupo, sinServicio, pago, pagaConCupon, cuponValido, submitting, onTecla, onConfirm, onCanjear, onCancel,
+  total, customer, grupo, sinServicio, ventaDiferida, faltaPlaca, pago, pagaConCupon, cuponValido, submitting, onTecla, onConfirm, onCanjear, onCancel,
 }: CobroModalProps) {
   const esMovil = useEsMovil()
   // Si hay cliente en la caja, el modal abre resuelto: su documento preferido
@@ -849,6 +853,7 @@ function CobroModal({
   const canConfirm = submitting ? false
     : pagaConCupon ? cuponValido
     : sinServicio ? false
+    : ventaDiferida ? !faltaPlaca
     // «A nombre de…» sin cliente elegido sería un genérico disfrazado.
     : docType === 'ticket' ? fcfStatus.ok && (fcfMode === 'generic' || Boolean(fcfCliente))
     : docType === 'ccf'  ? Boolean(ccfSelected && ccfStatus?.ok)
@@ -857,6 +862,8 @@ function CobroModal({
   const confirmar = () => {
     if (!canConfirm) return
     if (pagaConCupon) { onCanjear(); return }
+    // Sin documento: la base no crea factura y la venta queda para el CCF consolidado.
+    if (ventaDiferida) { onConfirm({ docType: 'ccf' }); return }
     if (docType) onConfirm({
       docType,
       fcfMode: docType === 'ticket' ? fcfMode : undefined,
@@ -907,6 +914,19 @@ function CobroModal({
           {pagaConCupon ? (
             <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', background: 'var(--subtle-bg)', padding: '10px 12px', borderRadius: 10 }}>
               El canje no emite documento: el cupón se facturó el día que se vendió. Se imprime un comprobante de canje.
+            </div>
+          ) : ventaDiferida ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 13, background: 'rgba(223,245,107,0.35)', border: '1.5px solid var(--corsa-orange)', padding: '12px 14px', borderRadius: 12, color: 'var(--text-primary)' }}>
+                <div style={{ fontWeight: 800, marginBottom: 4 }}>Venta al crédito · facturación consolidada</div>
+                Este cliente recibe un solo CCF por período. Esta venta se carga a su cuenta por cobrar
+                sin emitir documento ahora; se factura después desde Cuentas por cobrar.
+              </div>
+              {faltaPlaca && (
+                <div style={{ fontSize: 12.5, color: 'var(--color-danger-text)', background: 'var(--color-danger-tint)', padding: '10px 12px', borderRadius: 10, fontWeight: 600 }}>
+                  Elegí la placa del carro que se está lavando: va en la línea del CCF.
+                </div>
+              )}
             </div>
           ) : (<>
           {/* Doc type */}
@@ -1434,7 +1454,8 @@ export function POSPage() {
       try {
         const emisor = await emisorParaTicket(branchId, !!dte)
         await imprimirTicketEnSegundoPlano(buildTicketArgsFromPosMulti(sale, emisor, {
-          clienteNombre: receptor ? displayName(receptor) : undefined,
+          clienteNombre: receptor ? displayName(receptor)
+            : sale.facturacion_diferida ? (mode === 'flotilla' ? fleetCompany?.trade_name : displayName(customer)) : undefined,
           clienteDoc: receptor
             ? { tipo: receptor.nit ? 'NIT' : 'DUI', numero: receptor.nit ?? receptor.dui, nrc: receptor.nrc }
             : undefined,
@@ -1554,7 +1575,8 @@ export function POSPage() {
         // el ticket sale aunque falte configuración, rotulado sin validez.
         const emisor = await emisorParaTicket(branchId, !!dte)
         await imprimirTicketEnSegundoPlano(buildTicketArgsFromPos(sale, emisor, {
-          clienteNombre: receptor ? displayName(receptor) : undefined,
+          clienteNombre: receptor ? displayName(receptor)
+            : sale.facturacion_diferida ? (mode === 'flotilla' ? fleetCompany?.trade_name : displayName(customer)) : undefined,
           clienteDoc: receptor
             ? { tipo: receptor.nit ? 'NIT' : 'DUI', numero: receptor.nit ?? receptor.dui, nrc: receptor.nrc }
             : undefined,
@@ -2362,6 +2384,8 @@ export function POSPage() {
           customer={mode === 'flotilla' ? clienteFlotilla : customer}
           grupo={mode === 'normal' ? grupo : null}
           sinServicio={!svc && !multi}
+          ventaDiferida={selectedPayment === 'credito' && creditoCaja?.consolidado === true}
+          faltaPlaca={!multi && !vehiculoActual}
           total={total}
           pago={bloqueDeCobro}
           pagaConCupon={pagaConCupon}

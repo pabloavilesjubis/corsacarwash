@@ -16,9 +16,13 @@ import { useAuth } from '../hooks/useAuth'
 import { emisorParaTicket } from '../lib/fiscal/emisor'
 import { diasVencido, estadoCuentaHTML, imprimirEstadoCuenta } from '../lib/cxc/estadoCuenta'
 import {
-  EVENTO_ETIQUETA, fetchCxcClientes, fetchDocumentosCxc, fetchMovimientosCredito, registrarAbono,
-  type CxcCliente, type DocumentoCxc, type MovimientoCredito,
+  EVENTO_ETIQUETA, crearCcfConsolidado, fetchCxcClientes, fetchDocumentosCxc, fetchLavadosCredito, fetchMovimientosCredito,
+  registrarAbono, type CxcCliente, type DocumentoCxc, type LavadoCredito, type MovimientoCredito,
 } from '../services/credito.service'
+import { emitirConFirmaLocal } from '../services/fiscal.service'
+import { fetchDteDeVenta } from '../services/sales.service'
+import { imprimirTicketEnSegundoPlano } from '../lib/ticket/corsaTicket'
+import { buildTicketCcfConsolidado } from '../lib/ticket/fromSale'
 import { formatearFechaHora } from '../utils/fecha'
 
 function money(n: number) { return 'US$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
@@ -41,6 +45,7 @@ function Tarjeta({ titulo, valor, detalle, tono }: { titulo: string; valor: stri
 export function CxcPage() {
   const { hasPermission, currentBranch } = useAuth()
   const puedeAbonar = hasPermission('payments.create')
+  const puedeFacturar = hasPermission('fiscal.issue')
   const [params, setParams] = useSearchParams()
 
   const [clientes, setClientes] = useState<CxcCliente[]>([])
@@ -187,7 +192,7 @@ export function CxcPage() {
       </div>
 
       {elegido && (
-        <DetalleCxc cliente={elegido} branchId={(currentBranch as any)?.id ?? null} puedeAbonar={puedeAbonar}
+        <DetalleCxc cliente={elegido} branchId={(currentBranch as any)?.id ?? null} puedeAbonar={puedeAbonar} puedeFacturar={puedeFacturar}
           onCerrar={() => elegir(null)} onCambio={cargar}/>
       )}
     </div>
@@ -196,10 +201,11 @@ export function CxcPage() {
 
 // ─── Detalle de la deuda de un cliente ─────────────────────────
 
-function DetalleCxc({ cliente: c, branchId, puedeAbonar, onCerrar, onCambio }: {
+function DetalleCxc({ cliente: c, branchId, puedeAbonar, puedeFacturar, onCerrar, onCambio }: {
   cliente: CxcCliente
   branchId: string | null
   puedeAbonar: boolean
+  puedeFacturar: boolean
   onCerrar: () => void
   onCambio: () => void
 }) {
@@ -209,12 +215,20 @@ function DetalleCxc({ cliente: c, branchId, puedeAbonar, onCerrar, onCambio }: {
   const [abono, setAbono] = useState('')
   const [nota, setNota] = useState('')
   const [guardando, setGuardando] = useState(false)
+  // Lavados con facturación consolidada (0060) y cuáles se van a facturar.
+  const [lavados, setLavados] = useState<LavadoCredito[]>([])
+  const [seleccion, setSeleccion] = useState<Set<string>>(new Set())
+  const [facturando, setFacturando] = useState(false)
 
   const cargar = useCallback(async () => {
     setCargando(true)
     try {
-      const [d, m] = await Promise.all([fetchDocumentosCxc(c.customer_id), fetchMovimientosCredito(c.customer_id)])
-      setDocumentos(d); setMovimientos(m)
+      const [d, m, l] = await Promise.all([
+        fetchDocumentosCxc(c.customer_id), fetchMovimientosCredito(c.customer_id),
+        fetchLavadosCredito(c.customer_id).catch(() => [] as LavadoCredito[]),
+      ])
+      setDocumentos(d); setMovimientos(m); setLavados(l)
+      setSeleccion(new Set(l.filter(x => !x.consolidated_invoice_id).map(x => x.work_order_id)))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'No se pudo cargar el detalle')
     }
@@ -229,6 +243,59 @@ function DetalleCxc({ cliente: c, branchId, puedeAbonar, onCerrar, onCambio }: {
   }, [onCerrar])
 
   const abiertos = documentos.filter(d => d.balance > 0)
+  const pendientes = lavados.filter(l => !l.consolidated_invoice_id)
+  const elegidos = pendientes.filter(l => seleccion.has(l.work_order_id))
+  const totalElegido = Math.round(elegidos.reduce((t, l) => t + l.total, 0) * 100) / 100
+  // CCF consolidados ya armados pero sin sello: se reintenta el MISMO.
+  const sinSello = Object.values(lavados.reduce((acc, l) => {
+    if (l.consolidated_invoice_id && l.dte_status !== 'ACCEPTED' && l.dte_status !== 'INVALIDATED') {
+      const g = acc[l.consolidated_invoice_id] ??= { id: l.consolidated_invoice_id, numero: l.ccf_interno ?? '', items: [] as LavadoCredito[] }
+      g.items.push(l)
+    }
+    return acc
+  }, {} as Record<string, { id: string; numero: string; items: LavadoCredito[] }>))
+
+  /** Emite (o retoma) el DTE de un CCF consolidado y, sellado, imprime su ticket resumen. */
+  const emitirConsolidado = async (invoiceId: string, items: LavadoCredito[]) => {
+    const espera = toast.loading('Firmando en la estación fiscal y transmitiendo el CCF a Hacienda…')
+    try {
+      const r = await emitirConFirmaLocal(invoiceId, { manual: true })
+      if (r.estado === 'ACCEPTED') {
+        toast.success(`CCF sellado por Hacienda: ${r.numeroControl ?? ''}`, { id: espera, duration: 8000 })
+        try {
+          const dte = await fetchDteDeVenta(invoiceId)
+          const fechas = items.map(i => i.created_at).sort()
+          const emisor = await emisorParaTicket(branchId, true)
+          await imprimirTicketEnSegundoPlano(buildTicketCcfConsolidado({
+            emisor, cliente: { nombre: c.legal_name || c.customer_name || '', nit: c.nit }, lavados: items.length,
+            desde: fechas[0], hasta: fechas[fechas.length - 1],
+            total: Math.round(items.reduce((t, i) => t + i.total, 0) * 100) / 100, invoiceId, dte,
+          }))
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : 'El CCF quedó sellado, pero no se pudo imprimir el ticket')
+        }
+      } else {
+        toast.error(`CCF ${r.estado === 'REJECTED' ? 'rechazado' : 'pendiente'}: ${r.mensaje ?? 'revisalo en Contabilidad'}`, { id: espera, duration: 12000 })
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo emitir el CCF', { id: espera, duration: 12000 })
+    }
+    await cargar(); onCambio()
+  }
+
+  const facturarPendientes = async () => {
+    if (elegidos.length === 0) return
+    if (!window.confirm(`Se emitirá UN CCF a ${c.legal_name || c.customer_name} por ${elegidos.length} lavados (${money(totalElegido)}), ` +
+                        'con una línea por carro: fecha, placa y servicio. Es un documento tributario real. ¿Continuar?')) return
+    setFacturando(true)
+    try {
+      const r = await crearCcfConsolidado(c.customer_id, elegidos.map(l => l.work_order_id))
+      await emitirConsolidado(r.invoice_id, elegidos)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo armar el CCF')
+    }
+    setFacturando(false)
+  }
 
   const registrar = async () => {
     const monto = Math.round(parseFloat(abono) * 100) / 100
@@ -315,6 +382,75 @@ function DetalleCxc({ cliente: c, branchId, puedeAbonar, onCerrar, onCambio }: {
               )}
             </section>
 
+            {lavados.length > 0 && (
+              <section className="cxc-seccion">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+                  <div className="cxc-seccion-titulo" style={{ marginBottom: 0 }}>Lavados · facturación consolidada</div>
+                  {puedeFacturar && pendientes.length > 0 && (
+                    <button id="btn-ccf-consolidado" className="btn btn-primary" onClick={facturarPendientes}
+                            disabled={facturando || elegidos.length === 0}>
+                      {facturando ? 'Emitiendo…' : `Emitir CCF de ${elegidos.length} pendientes (${money(totalElegido)})`}
+                    </button>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+                  <span className="badge badge-neutral">{lavados.length} lavados</span>
+                  <span className="badge badge-success">{lavados.length - pendientes.length} facturados</span>
+                  <span className={`badge ${pendientes.length ? 'badge-warning' : 'badge-neutral'}`}>
+                    {pendientes.length} pendientes de facturar · {money(pendientes.reduce((t, l) => t + l.total, 0))}
+                  </span>
+                </div>
+                {sinSello.map(g => (
+                  <div key={g.id} className="alert-banner danger" style={{ marginBottom: 10 }}>
+                    <div className="alert-body" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, width: '100%' }}>
+                      <span style={{ fontSize: 12.5 }}>El CCF {g.numero} ({g.items.length} lavados) no tiene sello de Hacienda.</span>
+                      {puedeFacturar && <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => emitirConsolidado(g.id, g.items)}>Reintentar</button>}
+                    </div>
+                  </div>
+                ))}
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="corsa-table" style={{ border: 'none', minWidth: 600 }}>
+                    <thead><tr>
+                      {puedeFacturar && pendientes.length > 0 && (
+                        <th style={{ width: 30 }}>
+                          <input type="checkbox" aria-label="Elegir todos" checked={elegidos.length === pendientes.length}
+                                 onChange={e => setSeleccion(e.target.checked ? new Set(pendientes.map(p => p.work_order_id)) : new Set())}/>
+                        </th>
+                      )}
+                      <th>Fecha</th><th>Placa</th><th>Servicio</th><th style={{ textAlign: 'right' }}>Monto</th><th>Factura</th>
+                    </tr></thead>
+                    <tbody>
+                      {lavados.map(l => (
+                        <tr key={l.work_order_id}>
+                          {puedeFacturar && pendientes.length > 0 && (
+                            <td>{!l.consolidated_invoice_id && (
+                              <input type="checkbox" checked={seleccion.has(l.work_order_id)} aria-label={`Facturar ${l.order_number}`}
+                                     onChange={e => setSeleccion(prev => {
+                                       const n = new Set(prev)
+                                       if (e.target.checked) n.add(l.work_order_id); else n.delete(l.work_order_id)
+                                       return n
+                                     })}/>
+                            )}</td>
+                          )}
+                          <td style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>{fechaCorta(l.created_at)}</td>
+                          <td className="font-mono" style={{ fontSize: 12.5, fontWeight: 700 }}>{l.placa_principal}</td>
+                          <td style={{ fontSize: 12.5 }}>{l.detalle ?? '—'}</td>
+                          <td className="tnum" style={{ textAlign: 'right', fontWeight: 700 }}>{money(l.total)}</td>
+                          <td>
+                            {!l.consolidated_invoice_id
+                              ? <span className="badge badge-warning">Pendiente de facturar</span>
+                              : l.dte_status === 'ACCEPTED'
+                                ? <span className="badge badge-success" title={l.sello_recepcion ?? ''}>CCF {l.numero_control}</span>
+                                : <span className="badge badge-danger">{l.ccf_interno} sin sello</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
+
             <section className="cxc-seccion">
               <div className="cxc-seccion-titulo">Movimientos</div>
               {movimientos.length === 0 ? <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Sin movimientos.</div> : (
@@ -327,7 +463,7 @@ function DetalleCxc({ cliente: c, branchId, puedeAbonar, onCerrar, onCambio }: {
                         {m.reason && <span style={{ color: 'var(--text-secondary)' }}> · {m.reason}</span>}
                       </span>
                       <span className="tnum" style={{ fontWeight: 700, color: m.event_type === 'PAYMENT' ? 'var(--color-success-text)' : undefined }}>
-                        {m.amount != null && (m.event_type === 'PAYMENT' ? '−' : m.event_type.startsWith('CHARGE') ? '+' : '')}
+                        {m.amount != null && (m.event_type === 'PAYMENT' || m.event_type === 'CHARGE_VOID' ? '−' : m.event_type === 'CHARGE' || m.event_type === 'CHARGE_OVERRIDE' ? '+' : '')}
                         {m.amount != null ? money(m.amount) : m.credit_limit != null ? `Límite ${money(m.credit_limit)}` : ''}
                       </span>
                     </div>

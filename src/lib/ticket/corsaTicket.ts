@@ -170,6 +170,16 @@ export interface TicketArgs {
   seguroLluvia?: TicketSeguroLluvia
   cortesia?: TicketCortesia
   ordenDeLavado?: TicketOrdenDeLavado
+  /**
+   * Venta al crédito de un cliente con facturación consolidada (0060): no se
+   * emite DTE por esta venta, se factura después en un CCF del período.
+   */
+  creditoDiferido?: boolean
+  /**
+   * El ticket del CCF consolidado: sin cabecera de lavado, sólo cuántos
+   * lavados y de qué período. El detalle por carro va en el CCF.
+   */
+  consolidado?: { lavados: number; desde: string; hasta: string }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -221,10 +231,11 @@ function marcaAspirado(aspirado: boolean): string {
 // ─── Generador ───────────────────────────────────────────────
 
 export function buildCorsaTicketHTML(args: TicketArgs): string {
-  const { emisor: e, venta: v, operacion: op, dte: d = {}, cliente: cli, atendio, redencion, seguroLluvia, cortesia, ordenDeLavado } = args
+  const { emisor: e, venta: v, operacion: op, dte: d = {}, cliente: cli, atendio, redencion, seguroLluvia, cortesia, ordenDeLavado, creditoDiferido, consolidado } = args
 
   const programa = resolveServiceProgram(op.servicio)
-  const tipoLabel = (d.tipoDte && DTE_LABELS[d.tipoDte])
+  const tipoLabel = creditoDiferido ? 'VENTA AL CRÉDITO'
+    : (d.tipoDte && DTE_LABELS[d.tipoDte])
     ?? (d.numeroControl ? 'DTE' : 'TICKET DE VENTA')
 
   const fechaEmision = d.fhProcesamiento
@@ -329,7 +340,12 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
   // configuración fiscal está incompleta: no es ni será un documento
   // tributario, y el papel lo dice en vez de prometer una transmisión.
   const sinValidezFiscal = !d.numeroControl && !e.nit
-  const dteBlock = sinValidezFiscal
+  const dteBlock = creditoDiferido
+    ? `<div class="dte-block dte-pending">
+         <div class="dte-title">Venta al crédito</div>
+         <div class="dte-pending-text">Cargada a la cuenta del cliente. Se factura en el CCF consolidado del período.</div>
+       </div>`
+    : sinValidezFiscal
     ? `<div class="dte-block dte-pending">
          <div class="dte-title">Comprobante interno</div>
          <div class="dte-pending-text">Sin validez fiscal</div>
@@ -598,7 +614,7 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
 </head>
 <body>
   <div class="ticket">
-    ${cortesia ? '' : opBlock}
+    ${cortesia || consolidado ? '' : opBlock}
 
     <div class="brand-block">
       ${LOGO_SVG}
@@ -618,6 +634,8 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
 
     ${dteBlock}
     ${fechaEmision ? `<div class="fecha-row">Emisión: ${esc(fechaEmision)}</div>` : ''}
+    ${consolidado ? `<div class="kv-block"><div class="kv-row"><span class="k">Lavados</span><span class="v">${consolidado.lavados}</span></div>
+      <div class="kv-row"><span class="k">Período</span><span class="v">${esc(consolidado.desde)} – ${esc(consolidado.hasta)}</span></div></div>` : ''}
 
     <hr class="sep"/>
     ${clienteBlock}

@@ -17,6 +17,8 @@ export interface CreditoDisponible {
   saldo?: number
   disponible?: number
   dias?: number
+  /** Facturación consolidada (0060): al crédito no se emite DTE por venta. */
+  consolidado?: boolean
 }
 
 export async function creditoDisponible(customerId: string): Promise<CreditoDisponible> {
@@ -30,6 +32,7 @@ export async function creditoDisponible(customerId: string): Promise<CreditoDisp
     saldo: d.saldo != null ? Number(d.saldo) : undefined,
     disponible: d.disponible != null ? Number(d.disponible) : undefined,
     dias: d.dias != null ? Number(d.dias) : undefined,
+    consolidado: d.consolidado === true,
   }
 }
 
@@ -163,6 +166,10 @@ export const EVENTO_ETIQUETA: Record<string, string> = {
   PAYMENT: 'Abono',
   BLOCKED: 'Cuenta bloqueada',
   UNBLOCKED: 'Cuenta desbloqueada',
+  CHARGE_VOID: 'Venta al crédito anulada',
+  CONSOLIDATED_ON: 'Facturación consolidada activada',
+  CONSOLIDATED_OFF: 'Facturación consolidada desactivada',
+  CONSOLIDATED_CCF: 'CCF consolidado',
 }
 
 /** La cuenta de crédito de un cliente, para su ficha (requiere corporate.read). */
@@ -172,11 +179,12 @@ export interface CuentaCredito {
   credit_days: number
   current_balance: number
   blocked: boolean
+  consolidated_billing: boolean
 }
 
 export async function fetchCuentaCredito(customerId: string): Promise<CuentaCredito | null> {
   const { data, error } = await db().from('corporate_accounts')
-    .select('credit_enabled, credit_limit, credit_days, current_balance, blocked')
+    .select('credit_enabled, credit_limit, credit_days, current_balance, blocked, consolidated_billing')
     .eq('customer_id', customerId).maybeSingle()
   if (error) throw error
   if (!data) return null
@@ -186,5 +194,53 @@ export async function fetchCuentaCredito(customerId: string): Promise<CuentaCred
     credit_days: Number(data.credit_days ?? 30),
     current_balance: Number(data.current_balance ?? 0),
     blocked: Boolean(data.blocked),
+    consolidated_billing: Boolean(data.consolidated_billing),
   }
+}
+
+// ── Facturación consolidada (0060) ──────────────────────────────
+
+export async function setFacturacionConsolidada(customerId: string, activa: boolean): Promise<void> {
+  const { error } = await db().rpc('credito_facturacion_consolidada', { p_customer_id: customerId, p_activa: activa })
+  if (error) throw error
+}
+
+/** Un lavado al crédito con facturación diferida (v_lavados_credito). */
+export interface LavadoCredito {
+  work_order_id: string
+  order_number: string
+  created_at: string
+  total: number
+  status: string
+  placa_principal: string
+  detalle: string | null
+  consolidated_invoice_id: string | null
+  ccf_interno: string | null
+  dte_status: string | null
+  numero_control: string | null
+  sello_recepcion: string | null
+}
+
+export async function fetchLavadosCredito(customerId: string): Promise<LavadoCredito[]> {
+  const { data, error } = await db().from('v_lavados_credito').select('*')
+    .eq('customer_id', customerId).neq('status', 'cancelled')
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return (data ?? []).map((l: any) => ({ ...l, total: Number(l.total) }))
+}
+
+export interface CcfConsolidado {
+  invoice_id: string
+  invoice_number: string
+  total: number
+  lavados: number
+  desde: string
+  hasta: string
+}
+
+/** Junta los lavados en una factura consolidada. El DTE se emite después, con la estación fiscal. */
+export async function crearCcfConsolidado(customerId: string, workOrderIds: string[]): Promise<CcfConsolidado> {
+  const { data, error } = await db().rpc('cxc_ccf_consolidado', { p_customer_id: customerId, p_work_order_ids: workOrderIds })
+  if (error) throw error
+  return { ...data, total: Number(data.total), lavados: Number(data.lavados) } as CcfConsolidado
 }
