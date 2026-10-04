@@ -1,7 +1,7 @@
 /* ============================================================
    CORSA Carwash — Design System
    Tipografía: Outfit (títulos) · Inter (interfaz)
-   Paleta: tinta #16191A · lima #DFF56B · lienzo salvia
+   Paleta: tinta #16191A · verde #2F6B4F · lima #DFF56B · lienzo salvia
    Tema: dual light/dark via data-theme="dark" en <html>
 
    SOBRE LOS NOMBRES DE LOS TOKENS: siguen diciendo --corsa-green y
@@ -10,9 +10,11 @@
    obligaría a tocar cada archivo para no cambiar nada de comportamiento.
    Lo que se cambió es su VALOR, que es lo que define el aspecto:
      --corsa-green  → la tinta, casi negra. Manda en lo estructural.
-     --corsa-orange → el lima. Es acento, nunca fondo de texto claro.
-   Por eso existe --on-accent: cualquier cosa encima del lima se escribe en
-   tinta, porque blanco sobre lima no se lee.
+     --corsa-orange → el acento: verde oscuro en claro, lima en oscuro.
+   El lima sobre blanco no se lee (POS, tablas, precios), así que en el tema
+   claro el acento es verde oscuro y encima va blanco. --on-accent dice qué
+   color lleva el texto encima del acento en cada tema. El lima queda como
+   --lima para lo que va sobre superficies casi negras (riel, cabeceras).
    ============================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Inter:wght@400;450;500;600;700&display=swap');
@@ -23,12 +25,14 @@
   --corsa-green: #16191A;
   --corsa-green-hover: #2B302E;
   --corsa-green-deep: #0B0D0E;
-  --corsa-orange: #DFF56B;
-  --corsa-orange-hover: #D3EB53;
+  --corsa-orange: #2F6B4F;
+  --corsa-orange-hover: #26583F;
+  --accent-tint: rgba(47,107,79,0.10);
+  --lima: #DFF56B;
 
   /* Qué color lleva el texto encima de cada fondo de marca. */
   --on-primary: #FFFFFF;
-  --on-accent: #16191A;
+  --on-accent: #FFFFFF;
 
   /* Status colors */
   --color-success: #2FAE73;
@@ -87,6 +91,11 @@
   --corsa-green: #DFF56B;
   --corsa-green-hover: #D3EB53;
   --on-primary: #16191A;
+  /* El verde oscuro no se ve sobre fondo oscuro: acá el acento vuelve al lima. */
+  --corsa-orange: #DFF56B;
+  --corsa-orange-hover: #D3EB53;
+  --on-accent: #16191A;
+  --accent-tint: rgba(223,245,107,0.18);
 
   --rail-bg: #0F1213;
   --heat-rgb: 223 245 107;
@@ -232,11 +241,11 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
   background: rgba(255,255,255,0.10);
   color: var(--rail-fg-active);
   font-weight: 600;
-  box-shadow: inset 3px 0 0 var(--corsa-orange);
+  box-shadow: inset 3px 0 0 var(--lima);
 }
 .sidebar-item.active-section {
   background: rgba(255,255,255,0.08);
-  box-shadow: inset 3px 0 0 var(--corsa-orange);
+  box-shadow: inset 3px 0 0 var(--lima);
   color: var(--rail-fg-active);
   font-weight: 600;
 }
@@ -271,7 +280,7 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: var(--corsa-orange);
+  background: var(--lima);
   position: absolute;
   top: 2px;
   transition: left 0.15s ease;

@@ -104,15 +104,15 @@ const KEYPAD_KEYS = ['1','2','3','4','5','6','7','8','9','.','0','⌫']
 /**
  * Los tres niveles, en la escala nueva.
  *
- * PRO es tinta, ELITE el lima —el acento de la marca— y SIGNATURE un verde
- * profundo: es el único punto de la interfaz donde hacía falta un tercer
+ * PRO es tinta, ELITE el acento de la marca (verde oscuro) y SIGNATURE un
+ * dorado oscuro: es el único punto de la interfaz donde hacía falta un tercer
  * color, porque los tres tienen que distinguirse entre sí de un vistazo y el
  * gris no alcanza para el más caro.
  */
 const TIER_COLORS = {
   pro:       { accent: 'var(--corsa-green)' },
   elite:     { accent: 'var(--corsa-orange)' },
-  signature: { accent: '#2F6B4F' },
+  signature: { accent: '#8A6414' },
 }
 
 type OrderMode = 'normal' | 'flotilla' | 'membresia'
@@ -918,7 +918,7 @@ function CobroModal({
             </div>
           ) : ventaDiferida ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ fontSize: 13, background: 'rgba(223,245,107,0.35)', border: '1.5px solid var(--corsa-orange)', padding: '12px 14px', borderRadius: 12, color: 'var(--text-primary)' }}>
+              <div style={{ fontSize: 13, background: 'var(--accent-tint)', border: '1.5px solid var(--corsa-orange)', padding: '12px 14px', borderRadius: 12, color: 'var(--text-primary)' }}>
                 <div style={{ fontWeight: 800, marginBottom: 4 }}>Venta al crédito · facturación consolidada</div>
                 Este cliente recibe un solo CCF por período. Esta venta se carga a su cuenta por cobrar
                 sin emitir documento ahora; se factura después desde Cuentas por cobrar.
@@ -979,7 +979,7 @@ function CobroModal({
                         padding: '6px 10px', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-body)',
                         fontSize: 12.5, fontWeight: 600, textAlign: 'left',
                         border: `1.5px solid ${sel ? 'var(--corsa-orange)' : 'var(--border)'}`,
-                        background: sel ? 'rgba(223,245,107,0.35)' : 'var(--surface)', color: 'var(--text-primary)',
+                        background: sel ? 'var(--accent-tint)' : 'var(--surface)', color: 'var(--text-primary)',
                       }}>
                       {displayName(m)}
                       <div style={{ fontSize: 10.5, fontWeight: 400, color: 'var(--text-secondary)' }}>
@@ -1977,7 +1977,7 @@ export function POSPage() {
 
       {/* ── Fleet selected info ── */}
       {mode === 'flotilla' && fleetVehicle && fleetCompany && (
-        <div style={{ background: 'rgba(223,245,107,0.35)', border: '1.5px solid var(--corsa-orange)', borderRadius: 16, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+        <div style={{ background: 'var(--accent-tint)', border: '1.5px solid var(--corsa-orange)', borderRadius: 16, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
           <div style={{ width: 42, height: 42, borderRadius: 14, background: 'var(--corsa-orange)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--on-accent)" strokeWidth="1.8" strokeLinecap="round"><path d="M5 17H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1l2-4h10l2 4h1a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg>
           </div>
@@ -2103,7 +2103,7 @@ export function POSPage() {
             <div className="card" style={{ padding: 10 }}>
               <div className="panel-section-label" style={{ marginBottom: 6 }}>Servicios adicionales</div>
               <button id="addon-aspirado" onClick={() => setWithAspirado(v => !v)}
-                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '7px 12px', borderRadius: 12, border: `2px solid ${withAspirado ? 'var(--corsa-orange)' : 'var(--border)'}`, background: withAspirado ? 'rgba(223,245,107,0.35)' : 'var(--surface)', cursor: 'pointer', transition: 'all 0.12s', textAlign: 'left' }}>
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '7px 12px', borderRadius: 12, border: `2px solid ${withAspirado ? 'var(--corsa-orange)' : 'var(--border)'}`, background: withAspirado ? 'var(--accent-tint)' : 'var(--surface)', cursor: 'pointer', transition: 'all 0.12s', textAlign: 'left' }}>
                 <div style={{ width: 20, height: 20, borderRadius: 4, flexShrink: 0, border: `2px solid ${withAspirado ? 'var(--corsa-orange)' : 'var(--border)'}`, background: withAspirado ? 'var(--corsa-orange)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {withAspirado && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--on-accent)" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
                 </div>
@@ -2208,7 +2208,7 @@ export function POSPage() {
                 <div style={{
                   marginTop: 10, padding: '11px 14px', borderRadius: 12,
                   border: `2px solid ${canjeandoSeguro ? 'var(--corsa-green)' : 'var(--corsa-orange)'}`,
-                  background: canjeandoSeguro ? 'rgba(22,25,26,0.05)' : 'rgba(223,245,107,0.35)',
+                  background: canjeandoSeguro ? 'rgba(22,25,26,0.05)' : 'var(--accent-tint)',
                 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
                     Seguro de lluvia vigente · {polizaVigente.plate}

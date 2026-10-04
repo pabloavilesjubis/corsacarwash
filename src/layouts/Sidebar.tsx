@@ -230,7 +230,7 @@ function SidebarLink({ to, icon, label, exact = false }: {
 function SectionActive({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
     <div className="sidebar-item active-section" style={{ cursor: 'default' }}>
-      <span className="sidebar-icon" style={{ color: 'var(--corsa-orange)' }}>{icon}</span>
+      <span className="sidebar-icon" style={{ color: 'var(--lima)' }}>{icon}</span>
       <span>{label}</span>
     </div>
   )

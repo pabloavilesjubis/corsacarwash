@@ -70,7 +70,7 @@ function etiquetaHora(h: number): string {
 const CAT_COLORS: Record<number, { color: string; tint: string; bar: string }> = {
   0: { color: 'var(--corsa-green)', tint: 'var(--color-success-tint)', bar: 'var(--corsa-green)' },
   1: { color: 'var(--color-success-text)', tint: 'var(--color-success-tint)', bar: 'var(--color-success)' },
-  2: { color: 'var(--corsa-orange)', tint: 'rgba(223,245,107,0.35)', bar: 'var(--corsa-orange)' },
+  2: { color: 'var(--corsa-orange)', tint: 'var(--accent-tint)', bar: 'var(--corsa-orange)' },
   3: { color: 'var(--color-warning-text)', tint: 'var(--color-warning-tint)', bar: '#F0A93A' },
   4: { color: 'var(--color-danger-text)', tint: 'var(--color-danger-tint)', bar: 'var(--color-danger)' },
 }
@@ -725,12 +725,12 @@ function WeekSummaryTable({ items }: { items: DailySummary[] }) {
             alignItems: 'center',
             padding: '8px 0',
             borderBottom: i < items.length - 1 ? '1px solid var(--border)' : 'none',
-            background: d.is_today ? 'rgba(223,245,107,0.22)' : 'transparent',
+            background: d.is_today ? 'var(--accent-tint)' : 'transparent',
           }}
         >
           <div style={{ flex: 1, fontSize: 13, fontWeight: d.is_today ? 700 : 500, color: d.is_today ? 'var(--corsa-orange)' : 'var(--text-primary)' }}>
             {d.label}
-            {d.is_today && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 600, color: 'var(--corsa-orange)', background: 'rgba(223,245,107,0.35)', padding: '1px 5px', borderRadius: 3 }}>hoy</span>}
+            {d.is_today && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 600, color: 'var(--corsa-orange)', background: 'var(--accent-tint)', padding: '1px 5px', borderRadius: 3 }}>hoy</span>}
           </div>
           <div style={{ width: 60, textAlign: 'center', fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{d.total_orders}</div>
           <div style={{ width: 100, textAlign: 'right', fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{fmtShort(d.gross_revenue)}</div>
