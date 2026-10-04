@@ -7,16 +7,12 @@ import { CustomerFormPanel } from '../components/CustomerFormPanel'
 import { CargaMasivaClientes } from '../components/CargaMasivaClientes'
 import { GruposEmpresarialesModal } from '../components/GruposEmpresarialesModal'
 import { QrRegistroModal } from '../components/QrRegistroModal'
-import { VehiculosClienteModal } from '../components/VehiculosClienteModal'
+import { FichaCliente } from '../components/clientes/FichaCliente'
+import { infoFiscalPendiente, requiereCcf } from '../lib/fiscal/receptor'
 import {
   searchCustomers,
-  getCustomerVehicles,
-  getCustomerMetrics,
-  getMembershipPlans,
-  updateCustomer,
   type CustomerWithStats,
 } from '../services/customers.service'
-import type { Vehicle } from '../types'
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -50,188 +46,6 @@ function classifySegment(c: CustomerWithStats): FilterType {
   if (days > 45) return 'riesgo'
   if (days <= 7) return 'frecuente'
   return 'nuevo'
-}
-
-// ─── Side Panel ─────────────────────────────────────────────
-
-function ViewPanel({
-  customer,
-  onClose,
-  onUpdated,
-  onEdit,
-  orgId,
-}: {
-  customer: CustomerWithStats
-  onClose: () => void
-  onUpdated: () => void
-  onEdit: () => void
-  orgId: string
-}) {
-  const [vehicles, setVehicles] = useState<Vehicle[]>([])
-  const [metrics, setMetrics] = useState<any>(null)
-  const [plans, setPlans] = useState<any[]>([])
-  const [modalVehiculos, setModalVehiculos] = useState(false)
-
-  const displayName = getDisplayName(customer)
-  const ms = getMembershipStyle(customer.membership_status)
-
-  useEffect(() => {
-    Promise.all([
-      getCustomerVehicles(customer.id),
-      getCustomerMetrics(customer.id),
-      getMembershipPlans(orgId),
-    ]).then(([v, m, p]) => {
-      setVehicles(v)
-      setMetrics(m)
-      setPlans(p)
-    }).catch(() => {})
-  }, [customer.id, orgId])
-
-  const recargarVehiculos = async () => {
-    setVehicles(await getCustomerVehicles(customer.id).catch(() => []))
-    onUpdated()
-  }
-
-  /** Guarda un campo suelto; si la base lo rechaza, avisa y restaura. */
-  const quickEdit = async (
-    field: 'email' | 'phone',
-    value: string,
-    input: HTMLInputElement,
-  ) => {
-    const current = customer[field] ?? ''
-    if (value === current) return
-    try {
-      await updateCustomer(customer.id, { [field]: value || null })
-      onUpdated()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : ''
-      toast.error(
-        /ccf_requires_fiscal_data/.test(message)
-          ? 'Este cliente emite CCF: no puede quedarse sin teléfono ni correo'
-          : 'No se pudo guardar el cambio'
-      )
-      input.value = current
-    }
-  }
-
-  const idLine = customer.customer_type === 'individual'
-    ? customer.dui ? `DUI ${customer.dui}` : 'Sin DUI registrado'
-    : customer.nit ? `NIT ${customer.nit}` : 'Sin NIT registrado'
-
-  return (
-    <div className="side-panel">
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>{displayName}</div>
-          <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{idLine}</div>
-          {/* El POS lee esto para decidir qué documento emitir. */}
-          <span
-            className={`badge ${customer.fiscal_document_type === 'ccf' ? 'badge-green' : 'badge-neutral'}`}
-            style={{ marginTop: 6, display: 'inline-block' }}
-          >
-            {customer.fiscal_document_type === 'ccf' ? 'Crédito fiscal' : 'Consumidor final'}
-          </span>
-        </div>
-        <button className="panel-close" onClick={onClose} aria-label="Cerrar panel">×</button>
-      </div>
-
-      <button className="btn btn-ghost" onClick={onEdit}>Editar ficha</button>
-
-      {/* Email / Phone — edición rápida.
-          Un cliente marcado como CCF tiene un CHECK en la base que exige
-          teléfono y correo; vaciarlos acá falla. Antes el error se tragaba en
-          silencio y el input seguía mostrando el valor nuevo sin haberse
-          guardado, así que ahora se avisa y se restaura el valor real. */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <input
-          className="corsa-input"
-          defaultValue={customer.email ?? ''}
-          placeholder="Email"
-          onBlur={e => quickEdit('email', e.target.value, e.target)}
-        />
-        <input
-          className="corsa-input"
-          defaultValue={customer.phone ?? ''}
-          placeholder="Teléfono"
-          onBlur={e => quickEdit('phone', e.target.value, e.target)}
-        />
-      </div>
-
-      {/* Metrics */}
-      {metrics && (
-        <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
-          {metrics.total_orders} visitas · {metrics.lifetime_value ? `US$${parseFloat(metrics.lifetime_value).toFixed(2)} acumulado` : ''} · última visita{' '}
-          {metrics.days_since_last_visit != null ? (metrics.days_since_last_visit === 0 ? 'hoy' : metrics.days_since_last_visit === 1 ? 'hace 1 día' : `hace ${metrics.days_since_last_visit} días`) : 'sin visitas'}
-        </div>
-      )}
-
-      <div className="panel-divider"/>
-
-      {/* Vehicles */}
-      <div>
-        <div className="panel-section-label">Vehículos</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {vehicles.map(v => (
-            <div key={v.id} className="panel-row">
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
-                {v.plate ?? '—'}
-              </span>
-              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                {[v.brand, v.model, v.year].filter(Boolean).join(' ') || '—'}
-              </span>
-            </div>
-          ))}
-          {vehicles.length === 0 && (
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Sin vehículos registrados</div>
-          )}
-        </div>
-
-        {/* Alta y transferencia en el modal general: sólo los carros de este
-            cliente, con su tamaño (que es la tarifa del POS). */}
-        <button
-          id="btn-vehiculos-cliente"
-          onClick={() => setModalVehiculos(true)}
-          style={{ marginTop: 8, width: '100%', textAlign: 'center', fontSize: 12.5, fontWeight: 600, color: 'var(--corsa-green)', border: '1px solid var(--border)', borderRadius: 10, padding: 7, cursor: 'pointer', background: 'transparent' }}
-        >
-          Agregar vehículo
-        </button>
-        {modalVehiculos && (
-          <VehiculosClienteModal orgId={orgId} customerId={customer.id} customerName={displayName}
-            onCerrar={() => setModalVehiculos(false)} onCambio={recargarVehiculos}/>
-        )}
-      </div>
-
-      <div className="panel-divider"/>
-
-      {/* Membership */}
-      <div>
-        <div className="panel-section-label">Membresía</div>
-        {customer.membership_status !== 'none' ? (
-          <div className="membership-indicator" style={{ background: ms.tint }}>
-            <div className="membership-dot" style={{ background: ms.color }}/>
-            <div style={{ fontSize: 12.5, fontWeight: 600, color: ms.color }}>
-              {customer.membership_plan ?? ms.label}
-            </div>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {plans.slice(0, 3).map(p => (
-              <div key={p.id} className="plan-row">
-                <div>
-                  <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-primary)' }}>{p.name}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{p.billing_cycle}</div>
-                </div>
-                <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
-                  US${parseFloat(p.price).toFixed(2)}/mes
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  )
 }
 
 // ─── Main Customers Page ─────────────────────────────────────
@@ -429,7 +243,8 @@ export function CustomersPage() {
                       <span style={{ fontSize: 11, fontWeight: 600, color: ms.color, background: ms.tint, padding: '3px 8px', borderRadius: 4 }}>
                         {c.membership_plan ? `${c.membership_plan} · ${ms.label}` : ms.label}
                       </span>
-                      {c.fiscal_document_type === 'ccf' && <span className="badge badge-green">CCF</span>}
+                      {requiereCcf(c) && <span className="badge badge-green">CCF</span>}
+                      {infoFiscalPendiente(c).length > 0 && <span className="pendiente-fiscal">Información fiscal pendiente</span>}
                       <span style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
                         {segLabels[segment] ?? segment}
                       </span>
@@ -462,7 +277,10 @@ export function CustomersPage() {
                       <td style={{ flex: undefined, width: undefined }}>
                         <div style={{ display: 'flex', flexDirection: 'column', maxWidth: 200 }}>
                           <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }} className="truncate">{name}</div>
-                          <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>{segLabel}</div>
+                          {infoFiscalPendiente(c).length > 0
+                            ? <span className="pendiente-fiscal" style={{ marginTop: 3, alignSelf: 'flex-start' }}
+                                    title={`Falta: ${infoFiscalPendiente(c).join(', ')}`}>Información fiscal pendiente</span>
+                            : <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>{segLabel}</div>}
                         </div>
                       </td>
                       <td>
@@ -470,8 +288,8 @@ export function CustomersPage() {
                         <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{c.phone ?? '—'}</div>
                       </td>
                       <td>
-                        <span className={`badge ${c.fiscal_document_type === 'ccf' ? 'badge-green' : 'badge-neutral'}`}>
-                          {c.fiscal_document_type === 'ccf' ? 'CCF' : 'Consumidor final'}
+                        <span className={`badge ${requiereCcf(c) ? 'badge-green' : 'badge-neutral'}`}>
+                          {requiereCcf(c) ? 'CCF' : 'Consumidor final'}
                         </span>
                       </td>
                       <td style={{ textAlign: 'center', fontSize: 13, fontWeight: 600 }}>
@@ -500,12 +318,12 @@ export function CustomersPage() {
         {/* Side panel */}
         {panel && (
           panel.type === 'view' && selectedCustomer ? (
-            <ViewPanel
+            <FichaCliente
               customer={selectedCustomer}
-              onClose={() => setPanel(null)}
-              onUpdated={() => loadCustomers(search)}
-              onEdit={() => setPanel({ type: 'edit', customerId: selectedCustomer.id })}
               orgId={orgId}
+              onCerrar={() => setPanel(null)}
+              onActualizado={() => loadCustomers(search)}
+              onEditar={() => setPanel({ type: 'edit', customerId: selectedCustomer.id })}
             />
           ) : panel.type === 'new' || (panel.type === 'edit' && selectedCustomer) ? (
             <CustomerFormPanel

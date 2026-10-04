@@ -191,7 +191,24 @@ export function fcfReceptorStatus(c: ReceptorSource | null, total: number): Rece
   ])
 }
 
-/** El documento que el cliente tiene configurado; por defecto, ticket. */
+/** ¿Con qué documento se le factura? Toda persona jurídica, CCF (regla de CORSA). */
+export function requiereCcf(c: ReceptorSource | null): boolean {
+  return c?.customer_type === 'company' || c?.fiscal_document_type === 'ccf'
+}
+
+/**
+ * El documento por defecto al cobrarle. Una empresa va siempre a CCF aunque
+ * su ficha diga otra cosa: si le faltan datos, el modal de cobro dice cuáles.
+ */
 export function preferredDocType(c: ReceptorSource | null): 'ticket' | 'ccf' {
-  return c?.fiscal_document_type === 'ccf' ? 'ccf' : 'ticket'
+  return requiereCcf(c) ? 'ccf' : 'ticket'
+}
+
+/**
+ * Lo que le falta a un cliente para emitirle su documento: a quien va a CCF,
+ * los datos del CCF; al resto, nada (un ticket sale aunque falten datos, salvo
+ * sobre el umbral del MH, que se valida al cobrar). Lista vacía = completo.
+ */
+export function infoFiscalPendiente(c: ReceptorSource): string[] {
+  return requiereCcf(c) ? ccfReceptorStatus(c).missing : []
 }

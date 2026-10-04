@@ -10,6 +10,7 @@ import { PuenteNotificaciones } from './components/PuenteNotificaciones'
 
 // Lazy-loaded pages
 const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })))
+const CxcPage = lazy(() => import('./pages/CxcPage').then(m => ({ default: m.CxcPage })))
 const RegistroPage = lazy(() => import('./pages/RegistroPage').then(m => ({ default: m.RegistroPage })))
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })))
 const CustomersPage = lazy(() => import('./pages/CustomersPage').then(m => ({ default: m.CustomersPage })))
@@ -121,7 +122,7 @@ export default function App() {
                 <Route path="/pos"         element={<ScreenGuard permission="screens.pos"><POSPage/></ScreenGuard>}/>
                 <Route path="/orders"      element={<ScreenGuard permission="screens.orders"><OrdersPage/></ScreenGuard>}/>
                 <Route path="/analytics"   element={<ScreenGuard permission="screens.analytics"><PlaceholderPage/></ScreenGuard>}/>
-                <Route path="/receivables" element={<ScreenGuard permission="screens.receivables"><PlaceholderPage/></ScreenGuard>}/>
+                <Route path="/receivables" element={<ScreenGuard permission="screens.receivables"><CxcPage/></ScreenGuard>}/>
                 <Route path="/payables"    element={<ScreenGuard permission="screens.payables"><PlaceholderPage/></ScreenGuard>}/>
                 <Route path="/fleets"      element={<ScreenGuard permission="screens.fleets"><FlotillasPage/></ScreenGuard>}/>
                 <Route path="/memberships" element={<ScreenGuard permission="screens.memberships"><PlaceholderPage/></ScreenGuard>}/>

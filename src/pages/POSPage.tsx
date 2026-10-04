@@ -29,6 +29,7 @@ import {
 import { cargarEmisor, emisorParaTicket, MARCA } from '../lib/fiscal/emisor'
 import { lookupVoucher, redeemVoucher, type VoucherLookup } from '../services/vouchers.service'
 import { darCortesia, fetchPolizaVigente, tiempoRestante, type RainPolicy } from '../services/rain.service'
+import { creditoDisponible, type CreditoDisponible } from '../services/credito.service'
 import { ModalCortesiaSeguro, imprimirTicketCortesia } from '../components/pos/CortesiaSeguro'
 import { cargarAcuerdoGrupo } from '../lib/grupos/grupos'
 import type { AcuerdoFlotilla } from '../lib/flotillas/precios'
@@ -1089,8 +1090,14 @@ export function POSPage() {
   const { profile, currentBranch, hasPermission } = useAuth()
   const esMovil = useEsMovil()
   const puedeCanjearCupon = hasPermission('vouchers.redeem')
+  // Crédito del cliente en caja (0058). «Crédito emp.» sólo existe si lo
+  // tiene habilitado; el cupo lo vuelve a verificar la venta en la base.
+  const [creditoCaja, setCreditoCaja] = useState<CreditoDisponible | null>(null)
+  // La ficha completa de la empresa de la flotilla: el cobro la usa como
+  // receptor (una empresa va a CCF con sus datos).
+  const [clienteFlotilla, setClienteFlotilla] = useState<CustomerResult | null>(null)
   const metodosPago = PAYMENT_METHODS.filter(
-    pm => pm.id !== 'cupon' || puedeCanjearCupon
+    pm => (pm.id !== 'cupon' || puedeCanjearCupon) && (pm.id !== 'credito' || creditoCaja?.habilitado === true)
   )
   const branchId = (currentBranch as any)?.id ?? null
   // El alta rápida necesita la organización: los clientes y los vehículos se
@@ -1658,6 +1665,28 @@ export function POSPage() {
   const clienteDeOrden = mode === 'flotilla' ? fleetCompany?.customer_id ?? null : customer?.id ?? null
   useEffect(() => { setCarrito([]) }, [clienteDeOrden, mode])
 
+  useEffect(() => {
+    const id = mode === 'flotilla' ? fleetCompany?.customer_id : null
+    if (!id) { setClienteFlotilla(null); return }
+    let vivo = true
+    ;(supabase as any).from('customers').select(CUSTOMER_COLUMNS).eq('id', id).maybeSingle()
+      .then(({ data }: any) => { if (vivo) setClienteFlotilla(data ?? null) })
+    return () => { vivo = false }
+  }, [mode, fleetCompany?.customer_id])
+
+  // El crédito del cliente en caja: sin cliente o sin crédito, no hay «Crédito emp.».
+  useEffect(() => {
+    if (!clienteDeOrden) { setCreditoCaja(null); return }
+    let vivo = true
+    creditoDisponible(clienteDeOrden)
+      .then(c => { if (vivo) setCreditoCaja(c) })
+      .catch(() => { if (vivo) setCreditoCaja(null) })
+    return () => { vivo = false }
+  }, [clienteDeOrden])
+  useEffect(() => {
+    if (selectedPayment === 'credito' && !creditoCaja?.habilitado) setSelectedPayment('efectivo')
+  }, [creditoCaja, selectedPayment])
+
   /**
    * ¿Este carro ya tiene seguro vigente?
    *
@@ -1736,6 +1765,17 @@ export function POSPage() {
                 </button>
               ))}
             </div>
+            {selectedPayment === 'credito' && creditoCaja?.habilitado && (
+              <div style={{
+                marginTop: 8, fontSize: 12, padding: '8px 10px', borderRadius: 10,
+                background: total > (creditoCaja.disponible ?? 0) ? 'var(--color-danger-tint)' : 'var(--subtle-bg)',
+                color: total > (creditoCaja.disponible ?? 0) ? 'var(--color-danger-text)' : 'var(--text-secondary)',
+              }}>
+                Crédito disponible {fmt(creditoCaja.disponible ?? 0)} de {fmt(creditoCaja.limite ?? 0)}
+                {' · '}vence a {creditoCaja.dias ?? 30} días
+                {total > (creditoCaja.disponible ?? 0) && <div style={{ fontWeight: 700, marginTop: 2 }}>No alcanza el cupo para esta venta.</div>}
+              </div>
+            )}
           </div>
 
           {/* Teclado: el monto recibido en efectivo, o el número del cupón. */}
@@ -2319,7 +2359,7 @@ export function POSPage() {
       {/* Modal de cobro */}
       {showBillingModal && (
         <CobroModal
-          customer={customer}
+          customer={mode === 'flotilla' ? clienteFlotilla : customer}
           grupo={mode === 'normal' ? grupo : null}
           sinServicio={!svc && !multi}
           total={total}
