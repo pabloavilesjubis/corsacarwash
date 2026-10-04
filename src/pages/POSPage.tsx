@@ -2340,8 +2340,14 @@ export function POSPage() {
               {((svc && (!multi || lineaActual)) || soloAdicionales) && (<>
               {!svc ? (
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>Sólo adicionales</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>Sin lavado · se cobran aparte</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Sólo adicionales{vehiculoActual?.plate && <span className="font-mono" style={{ marginLeft: 6 }}>· {vehiculoActual.plate}</span>}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: vehiculoActual?.plate ? 'var(--text-secondary)' : 'var(--color-warning-text)' }}>
+                    {vehiculoActual?.plate
+                      ? `Sin lavado · ${[vehiculoActual.brand, vehiculoActual.model].filter(Boolean).join(' ') || 'la placa va en la factura'}`
+                      : 'Sin lavado · elegí el vehículo para que la placa salga en la factura'}
+                  </div>
                 </div>
               ) : (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

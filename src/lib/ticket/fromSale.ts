@@ -161,6 +161,8 @@ export function buildTicketArgsFromPos(
   dte: DteDeVenta | null = null,
 ): TicketArgs {
   const sinLavado = Boolean(result.solo_adicionales ?? extras.soloAdicionales)
+  // Sin lavado, cada línea dice a qué carro fue el adicional (0066).
+  const conPlaca = sinLavado && extras.placa ? ` · Placa ${extras.placa}` : ''
   const tipo = result.doc_type === 'ccf' ? '03' : '01'
   const total = Number(result.total || 0)
   const diferida = Boolean(result.facturacion_diferida)
@@ -190,12 +192,12 @@ export function buildTicketArgsFromPos(
           cantidad: 1, precioUnitario: base, subtotal: base,
         }]),
         ...(result.with_aspirado
-          ? [{ nombre: 'Aspirado de interiores', cantidad: 1, precioUnitario: aspirado, subtotal: aspirado }]
+          ? [{ nombre: `Aspirado de interiores${conPlaca}`, cantidad: 1, precioUnitario: aspirado, subtotal: aspirado }]
           : []),
         // Una cortesía no se cobró: no va como línea, sólo como el bloque del seguro.
         ...(result.rain_policy && !result.rain_policy.courtesy
           ? [{
-              nombre: 'Seguro de lluvia',
+              nombre: `Seguro de lluvia${conPlaca}`,
               cantidad: 1,
               precioUnitario: Number(result.rain_policy.price || 0),
               subtotal: Number(result.rain_policy.price || 0),
