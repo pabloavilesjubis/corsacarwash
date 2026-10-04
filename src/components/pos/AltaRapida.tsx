@@ -328,9 +328,12 @@ export function ModalNuevoCliente({ orgId, onCreado, onCancelar }: {
 
 // ─── Alta de vehículo para un cliente existente ───────────────
 
-export function ModalNuevoVehiculo({ orgId, clienteId, onCreado, onCancelar, onPlacaDeOtro, textoGuardar }: {
+export function ModalNuevoVehiculo({ orgId, clienteId, grupoId, onCreado, onCancelar, onPlacaDeOtro, textoGuardar, titulo }: {
   orgId: string
-  clienteId: string
+  /** Null con grupoId: el carro queda del grupo empresarial, sin cliente (0067). */
+  clienteId: string | null
+  grupoId?: string | null
+  titulo?: string
   onCreado: (vehiculo: VehiculoPos) => void
   onCancelar: () => void
   /** Si viene, una placa de otro cliente se ofrece transferir en vez de sólo avisar (Clientes). */
@@ -372,6 +375,7 @@ export function ModalNuevoVehiculo({ orgId, clienteId, onCreado, onCancelar, onP
 
       const v = await addVehicleToCustomer({
         customer_id: clienteId,
+        business_group_id: clienteId ? null : grupoId ?? null,
         organization_id: orgId,
         plate: placa,
         brand: marca.trim() || null,
@@ -388,7 +392,7 @@ export function ModalNuevoVehiculo({ orgId, clienteId, onCreado, onCancelar, onP
   }
 
   return (
-    <Dialogo titulo="Agregar vehículo" onCerrar={onCancelar}>
+    <Dialogo titulo={titulo ?? 'Agregar vehículo'} onCerrar={onCancelar}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
         <Campo label="Placa" ancho="1 1 48%">
           <input className="corsa-input font-mono" value={placa} autoFocus

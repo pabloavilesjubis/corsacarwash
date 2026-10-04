@@ -5,17 +5,101 @@
  * renombrarlo y negociar sus precios. Unir un cliente también se puede desde
  * su ficha; acá se ve el grupo entero, que es lo que el cajero va a ver en caja.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { EditorPrecios } from './EditorPrecios'
+import { editarVehiculo, eliminarVehiculo, fetchTamanosVehiculo, type TamanoVehiculo } from '../services/customers.service'
 import { lineasDesde, SERVICIOS_FLOTILLA, type AcuerdoFlotilla, type LineasEditables } from '../lib/flotillas/precios'
 import {
   asignarGrupo, asignarVehiculo, cargarAcuerdoGrupo, cargarMiembros, cargarVehiculosSinCliente, crearGrupo, guardarAcuerdoGrupo, listarGrupos,
   nombreMiembro, problemaDeLineasGrupo, renombrarGrupo, type GrupoEmpresarial, type MiembroGrupo, type VehiculoSinCliente,
 } from '../lib/grupos/grupos'
+
+/** Una fila de la lista de vehículos del grupo: se ve, se edita o se da de baja. */
+function FilaVehiculoGrupo({ v, tamanos, puedeEditar, cliente, onCambio }: {
+  v: { id: string; plate: string; brand?: string | null; model?: string | null; color?: string | null; vehicle_type_id?: string | null }
+  tamanos: { id: string; tamano: TamanoVehiculo; nombre: string }[]
+  puedeEditar: boolean
+  cliente: ReactNode
+  onCambio: () => void
+}) {
+  const [editando, setEditando] = useState(false)
+  const [f, setF] = useState({ plate: v.plate, brand: v.brand ?? '', model: v.model ?? '', color: v.color ?? '', tipo: v.vehicle_type_id ?? '' })
+  const [ocupado, setOcupado] = useState(false)
+  const tam = tamanos.find(t => t.id === v.vehicle_type_id)?.tamano ?? '—'
+
+  const guardar = async () => {
+    if (!f.plate.trim()) { toast.error('La placa no puede quedar vacía'); return }
+    setOcupado(true)
+    try {
+      await editarVehiculo(v.id, { plate: f.plate, brand: f.brand.trim() || null, model: f.model.trim() || null, color: f.color.trim() || null, vehicle_type_id: f.tipo || null })
+      toast.success(`Vehículo ${f.plate.toUpperCase()} actualizado`)
+      setEditando(false); onCambio()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo guardar')
+    }
+    setOcupado(false)
+  }
+  const eliminar = async () => {
+    if (!window.confirm(`¿Eliminar el vehículo ${v.plate} del grupo?\n\nDeja de aparecer en caja y en los listados. Sus lavados y facturas anteriores se conservan.`)) return
+    setOcupado(true)
+    try {
+      await eliminarVehiculo(v.id)
+      toast.success(`Vehículo ${v.plate} eliminado`)
+      onCambio()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo eliminar')
+    }
+    setOcupado(false)
+  }
+
+  if (editando) {
+    const inp = { padding: '3px 7px', fontSize: 12 }
+    return (
+      <tr>
+        <td><input className="corsa-input font-mono" style={{ ...inp, width: 100 }} value={f.plate} onChange={e => setF({ ...f, plate: e.target.value.toUpperCase() })} autoFocus/></td>
+        <td style={{ display: 'flex', gap: 4 }}>
+          <input className="corsa-input" style={{ ...inp, width: 90 }} placeholder="Marca" value={f.brand} onChange={e => setF({ ...f, brand: e.target.value })}/>
+          <input className="corsa-input" style={{ ...inp, width: 90 }} placeholder="Modelo" value={f.model} onChange={e => setF({ ...f, model: e.target.value })}/>
+        </td>
+        <td><input className="corsa-input" style={{ ...inp, width: 80 }} placeholder="Color" value={f.color} onChange={e => setF({ ...f, color: e.target.value })}/></td>
+        <td>
+          <select className="corsa-input" style={{ ...inp, width: 56 }} value={f.tipo} onChange={e => setF({ ...f, tipo: e.target.value })}>
+            {!f.tipo && <option value="">—</option>}
+            {tamanos.map(t => <option key={t.id} value={t.id}>{t.tamano}</option>)}
+          </select>
+        </td>
+        <td>{cliente}</td>
+        <td style={{ textAlign: 'right' }}>
+          <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+            <button className="ventas-chip" onClick={() => setEditando(false)} disabled={ocupado}>Cancelar</button>
+            <button className="ventas-chip" style={{ fontWeight: 800 }} onClick={guardar} disabled={ocupado}>{ocupado ? 'Guardando…' : 'Guardar'}</button>
+          </div>
+        </td>
+      </tr>
+    )
+  }
+  return (
+    <tr>
+      <td className="font-mono" style={{ fontWeight: 700 }}>{v.plate}</td>
+      <td>{[v.brand, v.model].filter(Boolean).join(' ') || '—'}</td>
+      <td>{v.color || '—'}</td>
+      <td style={{ fontWeight: 700 }}>{tam}</td>
+      <td>{cliente}</td>
+      {puedeEditar && (
+        <td style={{ textAlign: 'right' }}>
+          <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+            <button className="ventas-chip" onClick={() => setEditando(true)} disabled={ocupado}>Editar</button>
+            <button className="ventas-chip peligro" onClick={eliminar} disabled={ocupado}>Eliminar</button>
+          </div>
+        </td>
+      )}
+    </tr>
+  )
+}
 
 function fmt(n: number) { return 'US$' + n.toFixed(2) }
 
@@ -43,6 +127,8 @@ export function GruposEmpresarialesModal({ orgId, onCerrar, onCambio }: {
   const [asignando, setAsignando] = useState<string | null>(null)
   const [verClientes, setVerClientes] = useState(false)
   const [verVehiculos, setVerVehiculos] = useState(false)
+  const [tamanos, setTamanos] = useState<{ id: string; tamano: TamanoVehiculo; nombre: string }[]>([])
+  useEffect(() => { fetchTamanosVehiculo(orgId).then(setTamanos).catch(() => setTamanos([])) }, [orgId])
   const [acuerdo, setAcuerdo] = useState<AcuerdoFlotilla | null>(null)
   const [cargando, setCargando] = useState(false)
   const [nuevo, setNuevo] = useState('')
@@ -274,33 +360,24 @@ export function GruposEmpresarialesModal({ orgId, onCerrar, onCambio }: {
                   ) : (
                     <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'auto', maxHeight: 360 }}>
                       <table className="corsa-table ventas-tabla" style={{ border: 'none' }}>
-                        <thead><tr><th>Placa</th><th>Vehículo</th><th>Color</th><th>Cliente</th></tr></thead>
+                        <thead><tr><th>Placa</th><th>Vehículo</th><th>Color</th><th>Tam.</th><th>Cliente</th>{puedeEditar && <th/>}</tr></thead>
                         <tbody>
-                          {sinCliente.map(v => (
-                            <tr key={v.id}>
-                              <td className="font-mono" style={{ fontWeight: 700 }}>{v.plate}</td>
-                              <td>{[v.brand, v.model].filter(Boolean).join(' ') || '—'}</td>
-                              <td>{v.color || '—'}</td>
-                              <td>
-                                {puedeEditar ? (
-                                  <select className="corsa-input" style={{ width: 210, padding: '3px 8px', fontSize: 12, color: 'var(--color-warning-text)' }} value=""
+                          {[
+                            ...sinCliente.map(v => ({ v, dueno: null as MiembroGrupo | null })),
+                            ...miembros.flatMap(m => m.vehiculos.map(v => ({ v, dueno: m as MiembroGrupo | null }))),
+                          ].map(({ v, dueno }) => (
+                            <FilaVehiculoGrupo key={v.id} v={v} tamanos={tamanos} puedeEditar={puedeEditar}
+                              onCambio={() => { if (elegido) cargarDetalle(elegido); onCambio() }}
+                              cliente={dueno ? <span className="cliente" title={nombreMiembro(dueno)}>{nombreMiembro(dueno)}</span>
+                                : puedeEditar ? (
+                                  <select className="corsa-input" style={{ width: 190, padding: '3px 8px', fontSize: 12, color: 'var(--color-warning-text)' }} value=""
                                           disabled={asignando === v.id || miembros.length === 0}
                                           onChange={e => { if (e.target.value) asignar(v, e.target.value) }}>
                                     <option value="">{miembros.length ? 'Sin cliente · asignar a…' : 'Agregá clientes al grupo'}</option>
                                     {miembros.map(m => <option key={m.id} value={m.id}>{nombreMiembro(m)}</option>)}
                                   </select>
-                                ) : <span style={{ color: 'var(--color-warning-text)' }}>Sin cliente</span>}
-                              </td>
-                            </tr>
+                                ) : <span style={{ color: 'var(--color-warning-text)' }}>Sin cliente</span>}/>
                           ))}
-                          {miembros.flatMap(m => m.vehiculos.map(v => (
-                            <tr key={v.id}>
-                              <td className="font-mono" style={{ fontWeight: 700 }}>{v.plate}</td>
-                              <td>{[v.brand, v.model].filter(Boolean).join(' ') || '—'}</td>
-                              <td>{v.color || '—'}</td>
-                              <td className="cliente" title={nombreMiembro(m)}>{nombreMiembro(m)}</td>
-                            </tr>
-                          )))}
                         </tbody>
                       </table>
                     </div>

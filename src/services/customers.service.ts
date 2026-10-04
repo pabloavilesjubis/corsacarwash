@@ -146,7 +146,7 @@ export async function getMembershipPlans(organizationId: string) {
   return data ?? []
 }
 
-export async function checkPlateConflict(plate: string, currentCustomerId: string) {
+export async function checkPlateConflict(plate: string, currentCustomerId: string | null) {
   // Igual que la columna generada (0008): mayúsculas, sólo letras y números.
   // Con espacios o guiones «P 123-456» no encontraba «P123456» y se duplicaba.
   const normalized = plate.toUpperCase().replace(/[^A-Z0-9]/g, '')
@@ -157,7 +157,7 @@ export async function checkPlateConflict(plate: string, currentCustomerId: strin
     .eq('active', true)
     // Un carro del grupo sin cliente (0067) también es «de otro»: `neq` solo
     // deja afuera los null, y la placa se duplicaba.
-    .or(`customer_id.is.null,customer_id.neq.${currentCustomerId}`)
+    .or(currentCustomerId ? `customer_id.is.null,customer_id.neq.${currentCustomerId}` : 'id.not.is.null')
     .limit(1)
     .maybeSingle()
   if (error) throw error
@@ -197,7 +197,9 @@ export async function fetchVehicleTypes(organizationId: string) {
 }
 
 export async function addVehicleToCustomer(payload: {
-  customer_id: string
+  /** Null con business_group_id: un carro del grupo sin cliente todavía (0067). */
+  customer_id: string | null
+  business_group_id?: string | null
   organization_id: string
   plate: string
   brand?: string | null
@@ -220,6 +222,7 @@ export async function addVehicleToCustomer(payload: {
     .from('vehicles')
     .insert([{
       customer_id: payload.customer_id,
+      ...(payload.business_group_id ? { business_group_id: payload.business_group_id } : {}),
       organization_id: payload.organization_id,
       vehicle_type_id: tipo,
       plate: payload.plate.toUpperCase().trim(),
@@ -408,4 +411,31 @@ export async function insertarVehiculosEnLote(
     onAvance?.(Math.min(i + 50, filas.length))
   }
   return { creados, fallidos }
+}
+
+/** Corrige los datos de un carro. Una placa que ya usa otro carro activo no se acepta. */
+export async function editarVehiculo(id: string, patch: {
+  plate: string; brand: string | null; model: string | null; color: string | null; vehicle_type_id?: string | null
+}): Promise<void> {
+  const normalizada = patch.plate.toUpperCase().replace(/[^A-Z0-9]/g, '')
+  if (!normalizada) throw new Error('La placa no puede quedar vacía')
+  const { data: otro } = await (supabase as any).from('vehicles').select('id')
+    .eq('normalized_plate', normalizada).eq('active', true).neq('id', id).limit(1).maybeSingle()
+  if (otro) throw new Error(`La placa ${patch.plate.toUpperCase()} ya está registrada en otro vehículo`)
+  const { error } = await (supabase as any).from('vehicles').update({
+    plate: patch.plate.toUpperCase().trim(), brand: patch.brand, model: patch.model, color: patch.color,
+    ...(patch.vehicle_type_id ? { vehicle_type_id: patch.vehicle_type_id } : {}),
+    updated_at: new Date().toISOString(),
+  }).eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+/**
+ * Da de baja un carro. No se borra: tiene lavados, facturas y pólizas que lo
+ * referencian. Inactivo deja de aparecer en caja y en los listados.
+ */
+export async function eliminarVehiculo(id: string): Promise<void> {
+  const { error } = await (supabase as any).from('vehicles')
+    .update({ active: false, updated_at: new Date().toISOString() }).eq('id', id)
+  if (error) throw new Error(error.message)
 }

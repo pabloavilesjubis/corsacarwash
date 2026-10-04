@@ -1133,17 +1133,32 @@ function PlacasDelGrupo({ grupo, clienteId, elegido, onElegir }: {
   elegido: VehiculoPos | null
   onElegir: (v: VehiculoPos) => void
 }) {
+  const [busca, setBusca] = useState('')
   // Los demás miembros con carros y, al final, los carros del grupo sin cliente.
-  const otros: { id: string; nombre: string; vehiculos: VehiculoPos[] }[] = [
+  const todos: { id: string; nombre: string; vehiculos: VehiculoPos[] }[] = [
     ...grupo.miembros.filter(m => m.id !== clienteId && m.vehiculos.length > 0)
       .map(m => ({ id: m.id, nombre: displayName(m), vehiculos: m.vehiculos })),
     ...(grupo.sinCliente.length ? [{ id: 'sin-cliente', nombre: 'Del grupo · sin cliente asignado', vehiculos: grupo.sinCliente }] : []),
   ]
-  if (otros.length === 0) return null
+  if (todos.length === 0) return null
+  // Buscar por placa (sin importar espacios ni guiones), por marca/modelo o
+  // por el cliente: si el nombre coincide, se ven todos sus carros.
+  const q = busca.trim().toLowerCase()
+  const qPlaca = q.toUpperCase().replace(/[^A-Z0-9]/g, '')
+  const otros = !q ? todos : todos.map(m => {
+    if (m.nombre.toLowerCase().includes(q)) return m
+    return { ...m, vehiculos: m.vehiculos.filter(v =>
+      (qPlaca && v.plate.toUpperCase().replace(/[^A-Z0-9]/g, '').includes(qPlaca))
+      || [v.brand, v.model].filter(Boolean).join(' ').toLowerCase().includes(q)) }
+  }).filter(m => m.vehiculos.length > 0)
+  const total = todos.reduce((t, m) => t + m.vehiculos.length, 0)
   return (
     <div className="card" style={{ padding: 12, marginTop: 10 }}>
-      <div className="panel-section-label" style={{ marginBottom: 6 }}>Placas de {grupo.name}</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div className="panel-section-label" style={{ marginBottom: 6 }}>Placas de {grupo.name} ({total})</div>
+      <input id="grupo-buscar-placa" className="corsa-input" value={busca} onChange={e => setBusca(e.target.value)}
+             placeholder="Buscar placa o cliente…" style={{ padding: '6px 10px', fontSize: 12.5, marginBottom: 8 }}/>
+      {otros.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Ninguna placa coincide.</div>}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 420, overflowY: 'auto' }}>
         {otros.map(m => (
           <div key={m.id}>
             <div style={{ fontSize: 11.5, color: m.id === 'sin-cliente' ? 'var(--color-warning-text)' : 'var(--text-secondary)', marginBottom: 4 }}>{m.nombre}</div>
@@ -1213,6 +1228,7 @@ export function POSPage() {
   // sus clientes se le factura (y a cuál se le carga si es al crédito).
   const [grupoDirecto, setGrupoDirecto] = useState<{ id: string; name: string } | null>(null)
   const [facturarA, setFacturarA] = useState<CustomerResult | null>(null)
+  const [altaVehiculoGrupo, setAltaVehiculoGrupo] = useState(false)
   // Varios carros en una orden (0057): los ya agregados. El que se está
   // configurando en pantalla es el siguiente.
   const [carrito, setCarrito] = useState<LineaOrden[]>([])
@@ -2144,10 +2160,14 @@ export function POSPage() {
                     ))}
                   </select>
                 </label>
-                {facturarA && (
-                  <button className="btn btn-ghost btn-sm" style={{ marginTop: 8, width: '100%', justifyContent: 'center' }}
-                          onClick={() => setAltaVehiculo(true)}>+ Agregar vehículo a {displayName(facturarA)}</button>
-                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                  {facturarA && (
+                    <button className="btn btn-ghost btn-sm" style={{ justifyContent: 'center' }}
+                            onClick={() => setAltaVehiculo(true)}>+ Vehículo a {displayName(facturarA)}</button>
+                  )}
+                  <button id="grupo-nuevo-vehiculo" className="btn btn-ghost btn-sm" style={{ justifyContent: 'center' }}
+                          onClick={() => setAltaVehiculoGrupo(true)}>+ Vehículo del grupo (sin cliente)</button>
+                </div>
               </div>
               {grupo && (
                 <PlacasDelGrupo grupo={grupo} clienteId="" elegido={vehiculoElegido} onElegir={setVehiculoElegido}/>
@@ -2551,6 +2571,22 @@ export function POSPage() {
             if (customer) setVehiculos(prev => [...prev, v])
             // Con un grupo, el carro nuevo aparece entre las placas del grupo.
             else if (grupoDirecto) cargarGrupoPos(grupoDirecto.id).then(g => setGrupo(g)).catch(() => {})
+            setVehiculoElegido(v)
+          }}
+        />
+      )}
+
+      {altaVehiculoGrupo && orgId && grupoDirecto && (
+        <ModalNuevoVehiculo
+          orgId={orgId}
+          clienteId={null}
+          grupoId={grupoDirecto.id}
+          titulo={`Vehículo de ${grupoDirecto.name}`}
+          textoGuardar="Agregar y usar"
+          onCancelar={() => setAltaVehiculoGrupo(false)}
+          onCreado={v => {
+            setAltaVehiculoGrupo(false)
+            cargarGrupoPos(grupoDirecto.id).then(g => setGrupo(g)).catch(() => {})
             setVehiculoElegido(v)
           }}
         />
