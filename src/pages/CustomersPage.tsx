@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useEsMovil } from '../hooks/useEsMovil'
 import { CustomerFormPanel } from '../components/CustomerFormPanel'
 import { CargaMasivaClientes } from '../components/CargaMasivaClientes'
+import { CargaMasivaVehiculos } from '../components/CargaMasivaVehiculos'
 import { GruposEmpresarialesModal } from '../components/GruposEmpresarialesModal'
 import { QrRegistroModal } from '../components/QrRegistroModal'
 import { FichaCliente } from '../components/clientes/FichaCliente'
@@ -61,6 +62,7 @@ export function CustomersPage() {
   const { profile, hasPermission, currentBranch } = useAuth()
   const orgId = (profile as any)?.organization_id ?? ''
   const [cargaMasiva, setCargaMasiva] = useState(false)
+  const [cargaVehiculos, setCargaVehiculos] = useState(false)
   const [grupos, setGrupos] = useState(false)
   const [qrRegistro, setQrRegistro] = useState(false)
 
@@ -123,6 +125,11 @@ export function CustomersPage() {
               Carga masiva
             </button>
           )}
+          {hasPermission('vehicles.create') && !esMovil && (
+            <button id="btn-carga-vehiculos" className="btn btn-ghost btn-sm" onClick={() => setCargaVehiculos(true)}>
+              Carga de vehículos
+            </button>
+          )}
           <button id="btn-new-customer" className="btn btn-primary btn-sm" onClick={() => setPanel({ type: 'new' })}>
             + Nuevo cliente
           </button>
@@ -156,6 +163,14 @@ export function CustomersPage() {
       {grupos && orgId && (
         <GruposEmpresarialesModal orgId={orgId} onCerrar={() => setGrupos(false)}
                                   onCambio={() => loadCustomers(search)}/>
+      )}
+
+      {cargaVehiculos && orgId && (
+        <CargaMasivaVehiculos
+          orgId={orgId}
+          onCerrar={() => setCargaVehiculos(false)}
+          onImportado={() => loadCustomers(search)}
+        />
       )}
 
       {cargaMasiva && orgId && (

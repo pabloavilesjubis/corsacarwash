@@ -345,3 +345,60 @@ export async function insertarClientesEnLote(
   }
   return { creados, fallidos }
 }
+
+// ─── Carga masiva de vehículos ──────────────────────────────
+
+/** Las placas ya registradas, con su dueño, para no duplicarlas. En páginas de 1000. */
+export async function fetchPlacasExistentes(organizationId: string): Promise<{ normalized_plate: string; cliente: string }[]> {
+  const todas: { normalized_plate: string; cliente: string }[] = []
+  for (let desde = 0; ; desde += 1000) {
+    const { data, error } = await (supabase as any)
+      .from('vehicles')
+      .select('normalized_plate, customers(customer_type, first_name, last_name, trade_name, legal_name)')
+      .eq('organization_id', organizationId)
+      .eq('active', true)
+      .neq('normalized_plate', '')
+      .range(desde, desde + 999)
+    if (error) throw error
+    for (const v of data ?? []) {
+      const c = v.customers ?? {}
+      const cliente = c.customer_type === 'individual'
+        ? `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim()
+        : (c.trade_name || c.legal_name || '')
+      todas.push({ normalized_plate: v.normalized_plate, cliente: cliente || 'otro cliente' })
+    }
+    if (!data || data.length < 1000) return todas
+  }
+}
+
+/**
+ * Inserta los vehículos en lotes de 50; si un lote falla, fila por fila, para
+ * que un carro malo no deje afuera a los demás y el error quede en su fila.
+ */
+export async function insertarVehiculosEnLote(
+  organizationId: string,
+  filas: { fila: number; customer_id: string; plate: string; brand: string | null; model: string | null; color: string | null; year: number | null; vehicle_type_id: string }[],
+  onAvance?: (n: number) => void,
+): Promise<{ creados: number; fallidos: { fila: number; error: string }[] }> {
+  const registro = (f: typeof filas[number]) => ({
+    organization_id: organizationId, customer_id: f.customer_id, vehicle_type_id: f.vehicle_type_id,
+    plate: f.plate.toUpperCase().trim(), brand: f.brand, model: f.model, color: f.color, year: f.year, active: true,
+  })
+  let creados = 0
+  const fallidos: { fila: number; error: string }[] = []
+  for (let i = 0; i < filas.length; i += 50) {
+    const lote = filas.slice(i, i + 50)
+    const { error } = await (supabase as any).from('vehicles').insert(lote.map(registro))
+    if (!error) {
+      creados += lote.length
+    } else {
+      for (const f of lote) {
+        const { error: e } = await (supabase as any).from('vehicles').insert([registro(f)])
+        if (e) fallidos.push({ fila: f.fila, error: e.message })
+        else creados++
+      }
+    }
+    onAvance?.(Math.min(i + 50, filas.length))
+  }
+  return { creados, fallidos }
+}
