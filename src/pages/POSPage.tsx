@@ -2,6 +2,8 @@
  * CORSA Carwash — POS Nueva orden
  * Modos: Normal · Flotilla Corporativa · Membresía
  * Servicios: PRO · ÉLITE · SIGNATURE  (S / M / L)
+ * Flotilla: los servicios que la flotilla negoció (PRO, ÉLITE y/o SIGNATURE),
+ *           a su precio (fleet_service_prices, 0050)
  * Add-on: Aspirado de interiores — $3 de lista, o el precio negociado si la
  *          flotilla tiene uno cargado (fleet_pricing)
  * Modal de cobro: Ticket (FCF) o CCF
@@ -31,6 +33,7 @@ import {
   ModalNuevoCliente, ModalNuevoVehiculo, SelectorVehiculos, type VehiculoPos,
 } from '../components/pos/AltaRapida'
 import { formatearFechaHora } from '../utils/fecha'
+import { cargarAcuerdos, PRECIOS_LISTA, type CodigoServicio } from '../lib/flotillas/precios'
 
 /**
  * Cuánto espera el POS el sello antes de imprimir sin él. Hacienda suele
@@ -52,17 +55,17 @@ const SERVICES = [
   {
     id: 'pro', name: 'PRO', tier: 'pro' as const,
     description: 'Elimina toda suciedad y brinda brillo excepcional en minutos',
-    prices: { S: 9, M: 11, L: 12 },
+    prices: PRECIOS_LISTA.PRO,
   },
   {
     id: 'elite', name: 'ÉLITE', tier: 'elite' as const,
     description: 'PRO + acabado superior con acondicionador de pintura',
-    prices: { S: 12, M: 14, L: 15 },
+    prices: PRECIOS_LISTA.ELITE,
   },
   {
     id: 'signature', name: 'SIGNATURE', tier: 'signature' as const,
     description: 'Experiencia completa con acondicionador de pintura y cera protectora',
-    prices: { S: 15, M: 17, L: 18 },
+    prices: PRECIOS_LISTA.SIGNATURE,
     recommended: true,
   },
 ]
@@ -146,15 +149,20 @@ interface CustomerResult {
   ar_overdue?: boolean; ar_amount?: number
 }
 
+type ServicioId = 'pro' | 'elite' | 'signature'
+
 interface FleetCompany {
   customer_id: string
   fleet_id: string
   fleet_name: string
   trade_name: string
   nit: string | null
-  elite_price_s: number
-  elite_price_m: number
-  elite_price_l: number
+  /**
+   * Los servicios que la flotilla negoció, a su precio por tamaño. En modo
+   * flotilla el POS ofrece sólo éstos. Una flotilla sin ninguno cargado se
+   * cobra como antes de 0050: ÉLITE a tarifa de lista.
+   */
+  precios: Partial<Record<ServicioId, Record<SizeId, number>>>
   /** El aspirado se negocia aparte y a precio único, sin importar el tamaño. */
   aspirado_enabled: boolean
   aspirado_price: number | null
@@ -226,38 +234,38 @@ function FleetModal({ onVehicleSelected, onCancel }: FleetModalProps) {
     ;(async () => {
       setLoading(true)
       try {
-        // Precios desde fleet_pricing (0031); antes había que parsear el JSON
-        // que se guardaba en fleet_contracts.terms.
         const { data: fleets } = await (supabase as any)
           .from('fleets')
           .select(`id, name, customer_id,
-                   customers(id, trade_name, legal_name, nit),
-                   fleet_pricing(elite_per_size, elite_price, elite_price_s, elite_price_m, elite_price_l, aspirado_enabled, aspirado_price)`)
+                   customers(id, customer_type, trade_name, legal_name, first_name, last_name, nit)`)
           .eq('organization_id', orgId)
           .eq('active', true)
 
+        // Precios por servicio (0050) y aspirado, de todas las flotillas juntas.
+        const acuerdos = await cargarAcuerdos((fleets ?? []).map((f: any) => f.id))
+
         setCompanies((fleets ?? []).map((f: any) => {
           const c = f.customers ?? {}
-          const fp = Array.isArray(f.fleet_pricing) ? f.fleet_pricing[0] : f.fleet_pricing
-          // Sin acuerdo cargado se usan los precios de lista del catálogo.
-          const lista = SERVICES.find(x => x.tier === 'elite')!.prices
-          const prices = !fp
-            ? { s: lista.S, m: lista.M, l: lista.L }
-            : fp.elite_per_size
-              ? { s: fp.elite_price_s, m: fp.elite_price_m, l: fp.elite_price_l }
-              : { s: fp.elite_price, m: fp.elite_price, l: fp.elite_price }
+          const acuerdo = acuerdos.get(f.id)
+          const precios: FleetCompany['precios'] = {}
+          for (const codigo of ['PRO', 'ELITE', 'SIGNATURE'] as CodigoServicio[]) {
+            const p = acuerdo?.servicios[codigo]
+            if (p) precios[codigo.toLowerCase() as ServicioId] = p
+          }
+          if (Object.keys(precios).length === 0) precios.elite = PRECIOS_LISTA.ELITE
 
           return {
             customer_id: c.id,
             fleet_id: f.id,
             fleet_name: f.name,
-            trade_name: c.trade_name ?? c.legal_name ?? '—',
+            // Una flotilla puede estar a nombre de una persona natural.
+            trade_name: c.customer_type === 'individual'
+              ? (c.trade_name || `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim() || '—')
+              : (c.trade_name ?? c.legal_name ?? '—'),
             nit: c.nit,
-            elite_price_s: prices.s,
-            elite_price_m: prices.m,
-            elite_price_l: prices.l,
-            aspirado_enabled: fp?.aspirado_enabled ?? false,
-            aspirado_price: fp?.aspirado_price ?? null,
+            precios,
+            aspirado_enabled: acuerdo?.aspirado.activo ?? false,
+            aspirado_price: acuerdo?.aspirado.precio ?? null,
           }
         }))
       } catch { /* */ }
@@ -299,7 +307,7 @@ function FleetModal({ onVehicleSelected, onCancel }: FleetModalProps) {
           <div>
             <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 19, color: 'var(--text-primary)' }}>Seleccionar vehículo de flotilla</div>
             <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 2 }}>
-              El servicio será <strong>ÉLITE</strong> con el precio negociado de la empresa
+              Se cobran los servicios y precios que negoció la flotilla
             </div>
           </div>
           <button onClick={onCancel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 22 }}>×</button>
@@ -345,9 +353,14 @@ function FleetModal({ onVehicleSelected, onCancel }: FleetModalProps) {
                   <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>
                     {c.nit ? `NIT ${c.nit}` : 'Sin NIT'}
                   </div>
-                  <div style={{ fontSize: 11.5, color: 'var(--corsa-orange)', marginTop: 4, fontWeight: 600 }}>
-                    ÉLITE: S${c.elite_price_s} · M${c.elite_price_m} · L${c.elite_price_l}
-                  </div>
+                  {SERVICES.filter(sv => c.precios[sv.id as ServicioId]).map(sv => {
+                    const p = c.precios[sv.id as ServicioId]!
+                    return (
+                      <div key={sv.id} style={{ fontSize: 11.5, color: 'var(--corsa-orange)', marginTop: 3, fontWeight: 600 }}>
+                        {sv.name}: {p.S === p.M && p.M === p.L ? `$${p.M}` : `S$${p.S} · M$${p.M} · L$${p.L}`}
+                      </div>
+                    )
+                  })}
                 </div>
               ))}
             </div>
@@ -981,13 +994,15 @@ export function POSPage() {
   const [submitting, setSubmitting] = useState(false)
 
   // Derived prices
-  const svc = SERVICES.find(s => s.id === (mode === 'flotilla' ? 'elite' : selectedService))!
-  const fleetPrices: Record<SizeId, number> = {
-    S: fleetCompany?.elite_price_s ?? 12,
-    M: fleetCompany?.elite_price_m ?? 14,
-    L: fleetCompany?.elite_price_l ?? 15,
-  }
-  const servicePrice = mode === 'flotilla' ? (fleetPrices[selectedSize] ?? svc.prices[selectedSize]) : svc.prices[selectedSize]
+  // En flotilla sólo se ofrecen los servicios negociados; si el elegido no
+  // está entre ellos (se cambió de flotilla), manda el primero que sí.
+  const serviciosFlotilla = SERVICES.filter(s => fleetCompany?.precios[s.id as ServicioId])
+  const servicioEfectivo = mode === 'flotilla' && !serviciosFlotilla.some(s => s.id === selectedService)
+    ? (serviciosFlotilla[0]?.id ?? 'elite')
+    : selectedService
+  const svc = SERVICES.find(s => s.id === servicioEfectivo)!
+  const fleetPrices: Record<SizeId, number> = fleetCompany?.precios[svc.id as ServicioId] ?? svc.prices
+  const servicePrice = mode === 'flotilla' ? fleetPrices[selectedSize] : svc.prices[selectedSize]
   // En flotilla manda el precio negociado; si no hay acuerdo, la tarifa de lista.
   const usaAspiradoFlotilla = mode === 'flotilla'
     && Boolean(fleetCompany?.aspirado_enabled)
@@ -1082,6 +1097,8 @@ export function POSPage() {
   const handleFleetVehicleSelected = (company: FleetCompany, vehicle: FleetVehicle) => {
     setFleetCompany(company)
     setFleetVehicle(vehicle)
+    // ÉLITE si la flotilla lo negoció (es lo habitual); si no, su primer servicio.
+    setSelectedService(company.precios.elite ? 'elite' : (SERVICES.find(s => company.precios[s.id as ServicioId])?.id ?? 'elite'))
     setShowFleetModal(false)
     // Si el acuerdo de la flotilla incluye aspirado, viene marcado: es parte
     // del servicio contratado y olvidarlo significa no cobrarlo. El cajero
@@ -1463,7 +1480,7 @@ export function POSPage() {
             icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="1" y="7" width="14" height="10"/><path d="M15 10h4l3 3v4h-7z"/><circle cx="6" cy="18" r="1.6"/><circle cx="17.5" cy="18" r="1.6"/></svg>,
             label: 'Flotilla Corp.',
             corto: 'Flotilla',
-            sub: 'Precio especial ÉLITE negociado',
+            sub: 'Servicios a precio negociado',
             color: 'var(--corsa-orange)',
           },
           {
@@ -1585,18 +1602,18 @@ export function POSPage() {
               </div>
             </div>
 
-            {/* Services (ÉLITE fixed for flotilla) */}
+            {/* Servicios: en flotilla, sólo los negociados y a su precio */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {SERVICES.filter(s => mode === 'flotilla' ? s.id === 'elite' : true).map(s => {
+              {(mode === 'flotilla' ? serviciosFlotilla : SERVICES).map(s => {
                 const tc2 = TIER_COLORS[s.tier]
-                const isSel = (mode === 'flotilla' ? 'elite' : selectedService) === s.id
-                const isFleet = mode === 'flotilla' && s.id === 'elite'
-                const displayPrices = isFleet ? fleetPrices : s.prices
+                const isSel = servicioEfectivo === s.id
+                const isFleet = mode === 'flotilla'
+                const displayPrices = isFleet ? (fleetCompany?.precios[s.id as ServicioId] ?? s.prices) : s.prices
                 return (
                   <div key={s.id} id={`svc-${s.id}`}
-                    onClick={() => mode !== 'flotilla' && setSelectedService(s.id)}
-                    role={mode !== 'flotilla' ? 'button' : undefined} tabIndex={mode !== 'flotilla' ? 0 : undefined}
-                    style={{ border: `2px solid ${isSel ? tc2.accent : 'var(--border)'}`, borderRadius: 14, padding: '10px 12px', background: isSel ? `${tc2.accent}09` : 'var(--surface)', cursor: mode !== 'flotilla' ? 'pointer' : 'default', transition: 'all 0.12s', position: 'relative' }}
+                    onClick={() => setSelectedService(s.id)}
+                    role="button" tabIndex={0}
+                    style={{ border: `2px solid ${isSel ? tc2.accent : 'var(--border)'}`, borderRadius: 14, padding: '10px 12px', background: isSel ? `${tc2.accent}09` : 'var(--surface)', cursor: 'pointer', transition: 'all 0.12s', position: 'relative' }}
                   >
                     {s.recommended && mode !== 'flotilla' && (
                       <div style={{ position: 'absolute', top: -8, left: 12, background: '#8B5A2B', color: '#fff', fontSize: 9.5, fontWeight: 700, letterSpacing: '0.06em', padding: '2px 7px', borderRadius: 6 }}>RECOMENDADO</div>

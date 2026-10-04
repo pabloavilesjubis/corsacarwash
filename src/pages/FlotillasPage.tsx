@@ -1,6 +1,7 @@
 /**
- * CORSA Carwash — Flotillas Corporativas
- * Gestión de empresas · vehículos de flota · precios especiales
+ * CORSA Carwash — Flotillas
+ * Clientes con flotilla (empresas o personas naturales) · vehículos de flota ·
+ * precios negociados por servicio (PRO, ÉLITE, SIGNATURE) y aspirado
  */
 
 import { useState, useEffect, useCallback } from 'react'
@@ -10,6 +11,10 @@ import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import { useEsMovil } from '../hooks/useEsMovil'
 import { hoyLocal } from '../utils/fecha'
+import {
+  cargarAcuerdos, guardarAcuerdo, lineasDesde, problemaDeBase, problemaDeLineas, SERVICIOS_FLOTILLA,
+  type AcuerdoFlotilla, type LineasEditables,
+} from '../lib/flotillas/precios'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -18,6 +23,8 @@ interface FleetCompany {
   customer_type: string
   trade_name: string | null
   legal_name: string | null
+  first_name: string | null
+  last_name: string | null
   nit: string | null
   email: string | null
   phone: string | null
@@ -32,12 +39,8 @@ interface FleetCompany {
   fleet_id: string | null
   fleet_name: string | null
   fleet_code: string | null
-  // special price (ÉLITE)
-  elite_price_s: number | null
-  elite_price_m: number | null
-  elite_price_l: number | null
-  aspirado_enabled: boolean
-  aspirado_price: number | null
+  // Precios negociados (0050)
+  acuerdo: AcuerdoFlotilla
   vehicle_count: number
 }
 
@@ -57,8 +60,162 @@ interface FleetVehicle {
 
 function fmt(n: number) { return 'US$' + n.toFixed(2) }
 
+/**
+ * El nombre del titular de la flotilla. Una persona natural no tiene nombre
+ * comercial ni razón social: sin esto aparecía en blanco o como «(sin nombre)».
+ */
+function nombreTitular(c: { customer_type: string; trade_name: string | null; legal_name: string | null; first_name?: string | null; last_name?: string | null }): string {
+  if (c.customer_type === 'individual') {
+    const n = `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim()
+    return c.trade_name || n || '(sin nombre)'
+  }
+  return c.trade_name || c.legal_name || '(sin nombre)'
+}
+
 function initials(name: string): string {
   return name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
+}
+
+// ─── Editor de precios negociados ─────────────────────────────
+
+/**
+ * Las tres líneas que una flotilla puede negociar, cada una con su precio
+ * (único o por tamaño), más el aspirado. Se usa al crear y al editar.
+ */
+function EditorPrecios({ lineas, setLineas, aspirado, setAspirado }: {
+  lineas: LineasEditables
+  setLineas: (f: (l: LineasEditables) => LineasEditables) => void
+  aspirado: { activo: boolean; precio: string }
+  setAspirado: (a: { activo: boolean; precio: string }) => void
+}) {
+  const cambiar = (codigo: keyof LineasEditables, campo: string, valor: string | boolean) =>
+    setLineas(l => ({ ...l, [codigo]: { ...l[codigo], [campo]: valor } }))
+
+  const montoInput = (valor: string, onChange: (v: string) => void, label?: string) => (
+    <div className="field" style={{ flex: 1, minWidth: 0 }}>
+      {label && <label>{label}</label>}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>$</span>
+        <input className="corsa-input" type="number" step="0.50" min="0" value={valor} onChange={e => onChange(e.target.value)}/>
+      </div>
+    </div>
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {SERVICIOS_FLOTILLA.map(({ codigo, nombre }) => {
+        const l = lineas[codigo]
+        return (
+          <div key={codigo} style={{ border: `1.5px solid ${l.activo ? 'var(--corsa-green)' : 'var(--border)'}`, borderRadius: 12, padding: '10px 12px', background: l.activo ? 'var(--surface)' : 'var(--subtle-bg)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', flex: 1 }}>
+                <input type="checkbox" id={`linea-${codigo}`} checked={l.activo}
+                       onChange={e => cambiar(codigo, 'activo', e.target.checked)}
+                       style={{ accentColor: 'var(--corsa-green)' }}/>
+                <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 15, color: l.activo ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{nombre}</span>
+              </label>
+              {l.activo && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer', fontSize: 12.5, color: 'var(--text-secondary)' }}>
+                  <input type="checkbox" checked={l.porTamano}
+                         onChange={e => cambiar(codigo, 'porTamano', e.target.checked)}
+                         style={{ accentColor: 'var(--corsa-green)' }}/>
+                  Precio por tamaño
+                </label>
+              )}
+            </div>
+            {l.activo && (
+              <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+                {l.porTamano ? (<>
+                  {montoInput(l.S, v => cambiar(codigo, 'S', v), 'S · Pequeño')}
+                  {montoInput(l.M, v => cambiar(codigo, 'M', v), 'M · Mediano')}
+                  {montoInput(l.L, v => cambiar(codigo, 'L', v), 'L · Grande')}
+                </>) : (
+                  <div style={{ maxWidth: 200, flex: 1 }}>{montoInput(l.unico, v => cambiar(codigo, 'unico', v), 'Cualquier tamaño')}</div>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
+
+      <div style={{ marginTop: 4 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
+          <input type="checkbox" checked={aspirado.activo}
+                 onChange={e => setAspirado({ ...aspirado, activo: e.target.checked })}
+                 style={{ accentColor: 'var(--corsa-green)' }}/>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Incluir aspirado de interiores</span>
+        </label>
+        {aspirado.activo && (
+          <div style={{ marginTop: 10, maxWidth: 200 }}>
+            {montoInput(aspirado.precio, v => setAspirado({ ...aspirado, precio: v }), 'Aspirado · cualquier tamaño')}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Editar precios de una flotilla existente ─────────────────
+
+function EditarPreciosModal({ fleetId, titulo, acuerdo, onGuardado, onCancel }: {
+  fleetId: string
+  titulo: string
+  acuerdo: AcuerdoFlotilla
+  onGuardado: () => void
+  onCancel: () => void
+}) {
+  const [lineas, setLineas] = useState<LineasEditables>(() => lineasDesde(acuerdo))
+  const [aspirado, setAspirado] = useState({
+    activo: acuerdo.aspirado.activo,
+    precio: (acuerdo.aspirado.precio ?? 2.5).toFixed(2),
+  })
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
+    document.addEventListener('keydown', h)
+    return () => document.removeEventListener('keydown', h)
+  }, [onCancel])
+
+  const guardar = async () => {
+    const problema = problemaDeLineas(lineas, aspirado)
+    if (problema) { toast.error(problema); return }
+    setSaving(true)
+    try {
+      await guardarAcuerdo(fleetId, lineas, aspirado)
+      toast.success('Precios actualizados ✓')
+      onGuardado()
+    } catch (err: any) {
+      toast.error(err?.message ?? 'No se pudieron guardar los precios')
+    }
+    setSaving(false)
+  }
+
+  return createPortal(
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 20 }}
+      onClick={e => { if (e.target === e.currentTarget) onCancel() }}>
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.2)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 22px', borderBottom: '1px solid var(--border)' }}>
+          <div>
+            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18 }}>Precios negociados</div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 2 }}>{titulo}</div>
+          </div>
+          <button onClick={onCancel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 22 }}>×</button>
+        </div>
+        <div style={{ padding: '18px 22px' }}>
+          <EditorPrecios lineas={lineas} setLineas={setLineas} aspirado={aspirado} setAspirado={setAspirado}/>
+        </div>
+        <div style={{ padding: '14px 22px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button onClick={onCancel} className="btn btn-ghost">Cancelar</button>
+          <div className="clip-btn-wrap" style={{ opacity: saving ? 0.6 : 1 }}>
+            <div className="clip-btn-corner"/>
+            <button className="clip-btn" onClick={guardar} disabled={saving}>{saving ? 'Guardando…' : 'Guardar precios'}</button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
 }
 
 // ─── Create Company Modal ─────────────────────────────────────
@@ -75,15 +232,16 @@ interface ExistingCustomer {
   customer_type: string
   trade_name: string | null
   legal_name: string | null
+  first_name: string | null
+  last_name: string | null
+  dui: string | null
   nit: string | null
   email: string | null
   phone: string | null
   address: string | null
 }
 
-function customerLabel(c: ExistingCustomer): string {
-  return c.trade_name || c.legal_name || '(sin nombre)'
-}
+const customerLabel = (c: ExistingCustomer) => nombreTitular(c)
 
 function CreateCompanyModal({ orgId, onCreated, onCancel }: CreateCompanyModalProps) {
   // Origen del cliente: buscarlo en el sistema o darlo de alta acá.
@@ -96,18 +254,22 @@ function CreateCompanyModal({ orgId, onCreated, onCancel }: CreateCompanyModalPr
   const [buscando, setBuscando] = useState(false)
   const [elegido, setElegido] = useState<ExistingCustomer | null>(null)
 
+  // Una flotilla puede estar a nombre de una persona natural, no sólo de
+  // una empresa: un dueño con varios carros de trabajo.
+  const [tipoNuevo, setTipoNuevo] = useState<'company' | 'individual'>('company')
   const [form, setForm] = useState({
     trade_name: '', legal_name: '', nit: '',
+    first_name: '', last_name: '', dui: '',
     email: '', phone: '', address: '',
     fleet_name: '', fleet_code: '',
   })
-  const [elitePerSize, setElitePerSize] = useState(false)
-  const [elitePrice, setElitePrice] = useState('10.00')
-  const [eliteS, setEliteS] = useState('8.00')
-  const [eliteM, setEliteM] = useState('10.00')
-  const [eliteL, setEliteL] = useState('11.00')
-  const [aspirado, setAspirado] = useState(false)
-  const [aspiradoPrice, setAspiradoPrice] = useState('2.50')
+  // ÉLITE arranca activo: es lo que negocian casi todas. PRO y SIGNATURE se
+  // suman si la flotilla los pidió.
+  const [lineas, setLineas] = useState<LineasEditables>(() => {
+    const l = lineasDesde(null)
+    return { ...l, ELITE: { ...l.ELITE, activo: true } }
+  })
+  const [aspirado, setAspirado] = useState({ activo: false, precio: '2.50' })
   const [saving, setSaving] = useState(false)
 
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
@@ -130,7 +292,7 @@ function CreateCompanyModal({ orgId, onCreated, onCancel }: CreateCompanyModalPr
       const term = query.trim()
       const { data } = await (supabase as any)
         .from('customers')
-        .select('id, customer_type, trade_name, legal_name, nit, email, phone, address')
+        .select('id, customer_type, trade_name, legal_name, first_name, last_name, dui, nit, email, phone, address')
         .or(`trade_name.ilike.%${term}%,legal_name.ilike.%${term}%,nit.ilike.%${term}%,first_name.ilike.%${term}%,last_name.ilike.%${term}%`)
         .eq('active', true)
         .limit(8)
@@ -140,32 +302,33 @@ function CreateCompanyModal({ orgId, onCreated, onCancel }: CreateCompanyModalPr
     return () => clearTimeout(t)
   }, [query, origen, elegido])
 
-  const nombreEmpresa = elegido ? customerLabel(elegido) : form.trade_name.trim()
+  const nombreEmpresa = elegido
+    ? customerLabel(elegido)
+    : tipoNuevo === 'individual'
+      ? `${form.first_name.trim()} ${form.last_name.trim()}`.trim()
+      : (form.trade_name.trim() || form.legal_name.trim())
 
   const handleSave = async () => {
     if (origen === 'existente' && !elegido) {
       toast.error('Elegí el cliente o creá uno nuevo')
       return
     }
-    if (origen === 'nuevo' && !form.trade_name.trim() && !form.legal_name.trim()) {
+    if (origen === 'nuevo' && tipoNuevo === 'company' && !form.trade_name.trim() && !form.legal_name.trim()) {
       toast.error('Ingresá el nombre de la empresa')
       return
     }
-    const precioUnico = parseFloat(elitePrice)
-    if (!elitePerSize && !(precioUnico >= 0)) {
-      toast.error('Ingresá el precio ÉLITE negociado')
+    if (origen === 'nuevo' && tipoNuevo === 'individual' && !form.first_name.trim()) {
+      toast.error('Ingresá el nombre de la persona')
       return
     }
-    if (elitePerSize && [eliteS, eliteM, eliteL].some(v => !(parseFloat(v) >= 0))) {
-      toast.error('Completá los tres precios por tamaño')
-      return
-    }
-    if (aspirado && !(parseFloat(aspiradoPrice) >= 0)) {
-      toast.error('Ingresá el precio del aspirado')
-      return
-    }
+    const problema = problemaDeLineas(lineas, aspirado)
+    if (problema) { toast.error(problema); return }
 
     setSaving(true)
+    // Se pregunta ANTES de crear el cliente y la flotilla: si la base no puede
+    // guardar los precios pedidos, no tiene que quedar una flotilla a medias.
+    const deBase = await problemaDeBase(lineas)
+    if (deBase) { toast.error(deBase); setSaving(false); return }
     try {
       const db = supabase as any
       let customerId = elegido?.id
@@ -178,9 +341,20 @@ function CreateCompanyModal({ orgId, onCreated, onCancel }: CreateCompanyModalPr
           .from('customers')
           .insert({
             organization_id: orgId,
-            customer_type: 'company',
-            trade_name: form.trade_name.trim() || null,
-            legal_name: form.legal_name.trim() || null,
+            customer_type: tipoNuevo,
+            ...(tipoNuevo === 'company'
+              ? {
+                  trade_name: form.trade_name.trim() || null,
+                  // customers_company_has_legal_name: una empresa necesita
+                  // razón social; si sólo se escribió el nombre comercial, va
+                  // ése.
+                  legal_name: form.legal_name.trim() || form.trade_name.trim(),
+                }
+              : {
+                  first_name: form.first_name.trim(),
+                  last_name: form.last_name.trim() || null,
+                  dui: form.dui.trim() || null,
+                }),
             nit: form.nit.trim() || null,
             email: form.email.trim() || null,
             phone: form.phone.trim() || null,
@@ -241,18 +415,8 @@ function CreateCompanyModal({ orgId, onCreated, onCancel }: CreateCompanyModalPr
       })
       if (contractErr) throw contractErr
 
-      // Los precios van a fleet_pricing (0031), no serializados en terms.
-      const { error: priceErr } = await db.from('fleet_pricing').insert({
-        fleet_id: fleet.id,
-        elite_per_size: elitePerSize,
-        elite_price: elitePerSize ? null : parseFloat(elitePrice),
-        elite_price_s: elitePerSize ? parseFloat(eliteS) : null,
-        elite_price_m: elitePerSize ? parseFloat(eliteM) : null,
-        elite_price_l: elitePerSize ? parseFloat(eliteL) : null,
-        aspirado_enabled: aspirado,
-        aspirado_price: aspirado ? parseFloat(aspiradoPrice) : null,
-      })
-      if (priceErr) throw priceErr
+      // Un precio por servicio negociado (0050), más el aspirado.
+      await guardarAcuerdo(fleet.id, lineas, aspirado)
 
       toast.success(`Flotilla ${baseNombre} creada ✓`)
       onCreated()
@@ -328,14 +492,35 @@ function CreateCompanyModal({ orgId, onCreated, onCancel }: CreateCompanyModalPr
               )
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div className="field" style={{ gridColumn: '1/-1' }}>
-                  <label>Nombre comercial *</label>
-                  <input className="corsa-input" value={form.trade_name} onChange={e => set('trade_name', e.target.value)} placeholder="Ej: Distribuidora La Central"/>
+                <div className="filter-pills" style={{ gridColumn: '1/-1' }}>
+                  <button className={`filter-pill${tipoNuevo === 'company' ? ' active' : ''}`}
+                          onClick={() => setTipoNuevo('company')}>Empresa</button>
+                  <button className={`filter-pill${tipoNuevo === 'individual' ? ' active' : ''}`}
+                          onClick={() => setTipoNuevo('individual')}>Persona natural</button>
                 </div>
-                <div className="field">
-                  <label>Razón social</label>
-                  <input className="corsa-input" value={form.legal_name} onChange={e => set('legal_name', e.target.value)} placeholder="S.A. de C.V."/>
-                </div>
+                {tipoNuevo === 'company' ? (<>
+                  <div className="field" style={{ gridColumn: '1/-1' }}>
+                    <label>Nombre comercial *</label>
+                    <input className="corsa-input" value={form.trade_name} onChange={e => set('trade_name', e.target.value)} placeholder="Ej: Distribuidora La Central"/>
+                  </div>
+                  <div className="field">
+                    <label>Razón social</label>
+                    <input className="corsa-input" value={form.legal_name} onChange={e => set('legal_name', e.target.value)} placeholder="S.A. de C.V."/>
+                  </div>
+                </>) : (<>
+                  <div className="field">
+                    <label>Nombres *</label>
+                    <input className="corsa-input" value={form.first_name} onChange={e => set('first_name', e.target.value)} placeholder="Juan Carlos"/>
+                  </div>
+                  <div className="field">
+                    <label>Apellidos</label>
+                    <input className="corsa-input" value={form.last_name} onChange={e => set('last_name', e.target.value)} placeholder="Pérez López"/>
+                  </div>
+                  <div className="field">
+                    <label>DUI</label>
+                    <input className="corsa-input" value={form.dui} onChange={e => set('dui', e.target.value)} placeholder="01234567-8"/>
+                  </div>
+                </>)}
                 <div className="field">
                   <label>NIT</label>
                   <input className="corsa-input" value={form.nit} onChange={e => set('nit', e.target.value)} placeholder="0614-010101-000-0"/>
@@ -381,65 +566,11 @@ function CreateCompanyModal({ orgId, onCreated, onCancel }: CreateCompanyModalPr
 
           {/* ── Precios ── */}
           <div>
-            {seccion('Precio negociado ÉLITE', 'var(--corsa-orange)')}
-
-            <label style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12, cursor: 'pointer' }}>
-              <input type="checkbox" checked={elitePerSize}
-                     onChange={e => setElitePerSize(e.target.checked)}
-                     style={{ accentColor: 'var(--corsa-green)' }}/>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-                Valor personalizado por tamaño
-              </span>
-            </label>
-
-            {elitePerSize ? (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-                {[
-                  { label: 'S · Pequeño', v: eliteS, set: setEliteS },
-                  { label: 'M · Mediano', v: eliteM, set: setEliteM },
-                  { label: 'L · Grande',  v: eliteL, set: setEliteL },
-                ].map(f => (
-                  <div key={f.label} className="field">
-                    <label>{f.label}</label>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>$</span>
-                      <input className="corsa-input" type="number" step="0.50" min="0"
-                             value={f.v} onChange={e => f.set(e.target.value)}/>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="field">
-                <label>Precio para cualquier tamaño</label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, maxWidth: 200 }}>
-                  <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>$</span>
-                  <input className="corsa-input" type="number" step="0.50" min="0"
-                         value={elitePrice} onChange={e => setElitePrice(e.target.value)}/>
-                </div>
-              </div>
-            )}
-
-            <div style={{ marginTop: 16 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
-                <input type="checkbox" checked={aspirado}
-                       onChange={e => setAspirado(e.target.checked)}
-                       style={{ accentColor: 'var(--corsa-green)' }}/>
-                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-                  Incluir aspirado de interiores
-                </span>
-              </label>
-              {aspirado && (
-                <div className="field" style={{ marginTop: 10 }}>
-                  <label>Precio del aspirado · cualquier tamaño</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, maxWidth: 200 }}>
-                    <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>$</span>
-                    <input className="corsa-input" type="number" step="0.50" min="0"
-                           value={aspiradoPrice} onChange={e => setAspiradoPrice(e.target.value)}/>
-                  </div>
-                </div>
-              )}
+            {seccion('Servicios y precios negociados', 'var(--corsa-orange)')}
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: -6, marginBottom: 12 }}>
+              Activá los servicios que la flotilla negoció. En el POS sólo se ofrecen ésos, a estos precios.
             </div>
+            <EditorPrecios lineas={lineas} setLineas={setLineas} aspirado={aspirado} setAspirado={setAspirado}/>
           </div>
         </div>
 
@@ -637,6 +768,7 @@ export function FlotillasPage() {
   const [loadingVeh, setLoadingVeh] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showAddVehicle, setShowAddVehicle] = useState(false)
+  const [editandoPrecios, setEditandoPrecios] = useState(false)
   const [search, setSearch] = useState('')
 
   const loadCompanies = useCallback(async () => {
@@ -653,7 +785,7 @@ export function FlotillasPage() {
         .select(`
           id, name, code, active, customer_id,
           customers!inner(
-            id, customer_type, trade_name, legal_name, nit, email, phone, address,
+            id, customer_type, trade_name, legal_name, first_name, last_name, nit, email, phone, address,
             corporate_accounts(id, credit_limit, credit_status, current_balance, blocked)
           )
         `)
@@ -663,70 +795,47 @@ export function FlotillasPage() {
       if (error) throw error
       if (!rows) { setLoading(false); return }
 
-      const result: FleetCompany[] = await Promise.all(
-        rows.map(async (row: any) => {
-          const c = row.customers ?? {}
-          const acc = c.corporate_accounts?.[0]
-          const fleet = { id: row.id, name: row.name, code: row.code }
-          let vehicleCount = 0
-          let prices = { s: null as number | null, m: null as number | null, l: null as number | null }
-          let aspiradoEnabled = false
-          let aspiradoPrice: number | null = null
+      // Los acuerdos de todas las flotillas en una consulta, y los conteos de
+      // vehículos en otra: antes eran dos consultas POR flotilla.
+      const ids = rows.map((r: any) => r.id as string)
+      const [acuerdos, conteos] = await Promise.all([
+        cargarAcuerdos(ids),
+        (supabase as any).from('fleet_vehicles').select('fleet_id').in('fleet_id', ids).eq('active', true),
+      ])
+      const vehiculosPor = new Map<string, number>()
+      for (const v of conteos.data ?? []) vehiculosPor.set(v.fleet_id, (vehiculosPor.get(v.fleet_id) ?? 0) + 1)
 
-          if (fleet) {
-            const { count } = await (supabase as any)
-              .from('fleet_vehicles')
-              .select('*', { count: 'exact', head: true })
-              .eq('fleet_id', fleet.id)
-              .eq('active', true)
-            vehicleCount = count ?? 0
-
-            // Precios desde fleet_pricing (0031). Antes había que parsear el
-            // JSON guardado en fleet_contracts.terms, un campo de texto libre.
-            const { data: fp } = await (supabase as any)
-              .from('fleet_pricing')
-              .select('elite_per_size, elite_price, elite_price_s, elite_price_m, elite_price_l, aspirado_enabled, aspirado_price')
-              .eq('fleet_id', fleet.id)
-              .maybeSingle()
-
-            if (fp) {
-              prices = fp.elite_per_size
-                ? { s: fp.elite_price_s, m: fp.elite_price_m, l: fp.elite_price_l }
-                // Precio único: el mismo para los tres tamaños.
-                : { s: fp.elite_price, m: fp.elite_price, l: fp.elite_price }
-              aspiradoEnabled = fp.aspirado_enabled
-              aspiradoPrice = fp.aspirado_price
-            }
-          }
-
-          return {
-            id: c.id,
-            customer_type: c.customer_type,
-            trade_name: c.trade_name,
-            legal_name: c.legal_name,
-            nit: c.nit,
-            email: c.email,
-            phone: c.phone,
-            address: c.address ?? null,
-            account_id: acc?.id ?? null,
-            credit_limit: acc?.credit_limit ?? 0,
-            credit_status: acc?.credit_status ?? 'active',
-            current_balance: acc?.current_balance ?? 0,
-            blocked: acc?.blocked ?? false,
-            fleet_id: fleet?.id ?? null,
-            fleet_name: fleet?.name ?? null,
-            fleet_code: fleet?.code ?? null,
-            aspirado_enabled: aspiradoEnabled,
-            aspirado_price: aspiradoPrice,
-            elite_price_s: prices.s,
-            elite_price_m: prices.m,
-            elite_price_l: prices.l,
-            vehicle_count: vehicleCount,
-          } as FleetCompany
-        })
-      )
+      const result: FleetCompany[] = rows.map((row: any) => {
+        const c = row.customers ?? {}
+        const acc = c.corporate_accounts?.[0]
+        return {
+          id: c.id,
+          customer_type: c.customer_type,
+          trade_name: c.trade_name,
+          legal_name: c.legal_name,
+          first_name: c.first_name ?? null,
+          last_name: c.last_name ?? null,
+          nit: c.nit,
+          email: c.email,
+          phone: c.phone,
+          address: c.address ?? null,
+          account_id: acc?.id ?? null,
+          credit_limit: acc?.credit_limit ?? 0,
+          credit_status: acc?.credit_status ?? 'active',
+          current_balance: acc?.current_balance ?? 0,
+          blocked: acc?.blocked ?? false,
+          fleet_id: row.id,
+          fleet_name: row.name,
+          fleet_code: row.code,
+          acuerdo: acuerdos.get(row.id)!,
+          vehicle_count: vehiculosPor.get(row.id) ?? 0,
+        }
+      })
 
       setCompanies(result)
+      // El detalle abierto se refresca con lo recién leído (p. ej. después de
+      // editar los precios), en vez de quedarse con la copia vieja.
+      setSelected(prev => prev ? (result.find(x => x.fleet_id === prev.fleet_id) ?? null) : prev)
     } catch (err: any) {
       // Antes el catch era mudo: la consulta rota no dejaba rastro y la
       // pantalla simplemente aparecía vacía.
@@ -769,8 +878,9 @@ export function FlotillasPage() {
 
   const filteredCompanies = search.trim()
     ? companies.filter(c =>
-        (c.trade_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
+        nombreTitular(c).toLowerCase().includes(search.toLowerCase()) ||
         (c.legal_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
+        (c.fleet_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
         (c.nit ?? '').includes(search)
       )
     : companies
@@ -787,16 +897,16 @@ export function FlotillasPage() {
       <div className="page-header">
         <div className="page-header-left">
           <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 34, letterSpacing: '-0.025em', margin: 0, color: 'var(--text-primary)' }}>
-            Flotillas corporativas
+            Flotillas
           </h1>
           <div className="page-header-sub">
-            {companies.length} empresa{companies.length !== 1 ? 's' : ''} · {companies.reduce((s, c) => s + c.vehicle_count, 0)} vehículos en flota
+            {companies.length} flotilla{companies.length !== 1 ? 's' : ''} · {companies.reduce((s, c) => s + c.vehicle_count, 0)} vehículos en flota
           </div>
         </div>
         <div className="clip-btn-wrap">
           <div className="clip-btn-corner"/>
           <button id="btn-new-fleet" className="clip-btn" onClick={() => setShowCreateModal(true)}>
-            + Nueva empresa
+            + Nueva flotilla
           </button>
         </div>
       </div>
@@ -812,7 +922,7 @@ export function FlotillasPage() {
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Buscar empresa o NIT…"
+              placeholder="Buscar flotilla, titular o NIT…"
               style={{ border: 'none', outline: 'none', fontSize: 13.5, flex: 1, background: 'transparent', color: 'var(--text-primary)', fontFamily: 'var(--font-body)' }}
             />
           </div>
@@ -821,40 +931,43 @@ export function FlotillasPage() {
             <div className="loading-center"><div className="spinner"/><span>Cargando…</span></div>
           ) : filteredCompanies.length === 0 ? (
             <div className="empty-state">
-              <div className="empty-state-title">No hay empresas registradas</div>
-              <div className="empty-state-sub">Crea la primera empresa de flotilla con el botón de arriba.</div>
+              <div className="empty-state-title">No hay flotillas registradas</div>
+              <div className="empty-state-sub">Crea la primera flotilla con el botón de arriba.</div>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {filteredCompanies.map(c => (
                 <div
-                  key={c.id}
+                  key={c.fleet_id ?? c.id}
                   onClick={() => selectCompany(c)}
                   style={{
                     background: 'var(--surface)',
-                    border: `1px solid ${selected?.id === c.id ? 'var(--corsa-green)' : 'var(--border)'}`,
+                    border: `1px solid ${selected?.fleet_id === c.fleet_id ? 'var(--corsa-green)' : 'var(--border)'}`,
                     borderRadius: 12, padding: '12px 14px', cursor: 'pointer',
                     transition: 'all 0.12s',
-                    borderLeft: selected?.id === c.id ? '4px solid var(--corsa-green)' : '1px solid var(--border)',
+                    borderLeft: selected?.fleet_id === c.fleet_id ? '4px solid var(--corsa-green)' : '1px solid var(--border)',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 12, background: selected?.id === c.id ? 'var(--corsa-green)' : 'var(--subtle-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: selected?.id === c.id ? '#fff' : 'var(--text-primary)', flexShrink: 0 }}>
-                      {initials(c.trade_name ?? c.legal_name ?? '?')}
+                    <div style={{ width: 36, height: 36, borderRadius: 12, background: selected?.fleet_id === c.fleet_id ? 'var(--corsa-green)' : 'var(--subtle-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: selected?.fleet_id === c.fleet_id ? '#fff' : 'var(--text-primary)', flexShrink: 0 }}>
+                      {initials(nombreTitular(c))}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {c.trade_name ?? c.legal_name}
+                        {nombreTitular(c)}
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 1 }}>
-                        {c.nit ? `NIT ${c.nit}` : 'Sin NIT'} · {c.vehicle_count} vehículo{c.vehicle_count !== 1 ? 's' : ''}
+                        {c.customer_type === 'individual' ? 'Persona' : (c.nit ? `NIT ${c.nit}` : 'Sin NIT')} · {c.vehicle_count} vehículo{c.vehicle_count !== 1 ? 's' : ''}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: 'var(--corsa-orange)', fontWeight: 600, marginTop: 2 }}>
+                        {SERVICIOS_FLOTILLA.filter(sv => c.acuerdo.servicios[sv.codigo]).map(sv => sv.nombre).join(' · ') || 'Sin precios negociados'}
                       </div>
                     </div>
                     {c.blocked ? (
                       <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-danger-text)', background: 'var(--color-danger-tint)', padding: '2px 6px', borderRadius: 4 }}>Bloqueada</span>
-                    ) : c.aspirado_enabled ? (
+                    ) : c.acuerdo.aspirado.activo ? (
                       <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', background: 'var(--subtle-bg)', padding: '2px 6px', borderRadius: 4 }}>
-                        + aspirado {c.aspirado_price != null ? fmt(c.aspirado_price) : ''}
+                        + aspirado {c.acuerdo.aspirado.precio != null ? fmt(c.acuerdo.aspirado.precio) : ''}
                       </span>
                     ) : (
                       <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-success-text)', background: 'var(--color-success-tint)', padding: '2px 6px', borderRadius: 4 }}>Activa</span>
@@ -875,9 +988,12 @@ export function FlotillasPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
                 <div>
                   <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 20, color: 'var(--text-primary)' }}>
-                    {selected.trade_name ?? selected.legal_name}
+                    {nombreTitular(selected)}
                   </div>
-                  {selected.legal_name && selected.trade_name && (
+                  {selected.fleet_name && selected.fleet_name !== nombreTitular(selected) && (
+                    <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>Flotilla: {selected.fleet_name}</div>
+                  )}
+                  {selected.customer_type === 'company' && selected.legal_name && selected.trade_name && (
                     <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>{selected.legal_name}</div>
                   )}
                   <div style={{ display: 'flex', gap: 16, marginTop: 10, flexWrap: 'wrap' }}>
@@ -893,44 +1009,47 @@ export function FlotillasPage() {
                     ahí para cuando se habilite el crédito. */}
               </div>
 
-              {/* Special prices */}
-              {(selected.elite_price_s || selected.elite_price_m || selected.elite_price_l || selected.aspirado_enabled) && (
-                <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--corsa-orange)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Precio especial ÉLITE</div>
-                  <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                    {/* Con precio único los tres tamaños coinciden: mostrar tres
-                        veces la misma cifra sugeriría una tarifa escalonada que
-                        no existe. */}
-                    {(selected.elite_price_s === selected.elite_price_m
-                      && selected.elite_price_m === selected.elite_price_l)
-                      ? (
-                        <div style={{ textAlign: 'center' }}>
-                          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--corsa-orange)', fontVariantNumeric: 'tabular-nums' }}>
-                            {selected.elite_price_s != null ? `$${selected.elite_price_s}` : '—'}
-                          </div>
-                          <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Cualquier tamaño</div>
+              {/* Precios negociados */}
+              <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--corsa-orange)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Precios negociados</div>
+                  {selected.fleet_id && (
+                    <button id="btn-editar-precios" className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 12.5 }}
+                            onClick={() => setEditandoPrecios(true)}>Editar precios</button>
+                  )}
+                </div>
+                {SERVICIOS_FLOTILLA.every(sv => !selected.acuerdo.servicios[sv.codigo]) ? (
+                  <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Sin servicios negociados: en el POS no se le puede cobrar como flotilla.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {SERVICIOS_FLOTILLA.filter(sv => selected.acuerdo.servicios[sv.codigo]).map(sv => {
+                      const p = selected.acuerdo.servicios[sv.codigo]!
+                      // Con precio único los tres tamaños coinciden: mostrar tres
+                      // veces la misma cifra sugeriría una tarifa escalonada.
+                      const unico = !selected.acuerdo.porTamano[sv.codigo]
+                      return (
+                        <div key={sv.codigo} style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap' }}>
+                          <div style={{ width: 96, fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 15 }}>{sv.nombre}</div>
+                          {unico ? (
+                            <div><span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, color: 'var(--corsa-orange)', fontVariantNumeric: 'tabular-nums' }}>{fmt(p.M)}</span>
+                              <span style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginLeft: 6 }}>cualquier tamaño</span></div>
+                          ) : (['S', 'M', 'L'] as const).map(t => (
+                            <div key={t}><span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, color: 'var(--corsa-orange)', fontVariantNumeric: 'tabular-nums' }}>{fmt(p[t])}</span>
+                              <span style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginLeft: 4 }}>{t}</span></div>
+                          ))}
                         </div>
                       )
-                      : [['S · Pequeños', selected.elite_price_s], ['M · Medianos', selected.elite_price_m], ['L · Grandes', selected.elite_price_l]].map(([label, price]) => (
-                        <div key={String(label)} style={{ textAlign: 'center' }}>
-                          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--corsa-orange)', fontVariantNumeric: 'tabular-nums' }}>
-                            {price ? `$${price}` : '—'}
-                          </div>
-                          <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{label}</div>
-                        </div>
-                      ))}
-
-                    {selected.aspirado_enabled && (
-                      <div style={{ textAlign: 'center', paddingLeft: 16, borderLeft: '1px solid var(--border)' }}>
-                        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
-                          {selected.aspirado_price != null ? `$${selected.aspirado_price}` : '—'}
-                        </div>
-                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Aspirado · cualquier tamaño</div>
+                    })}
+                    {selected.acuerdo.aspirado.activo && (
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 16 }}>
+                        <div style={{ width: 96, fontWeight: 700, fontSize: 13 }}>Aspirado</div>
+                        <div><span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, fontVariantNumeric: 'tabular-nums' }}>{selected.acuerdo.aspirado.precio != null ? fmt(selected.acuerdo.aspirado.precio) : '—'}</span>
+                          <span style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginLeft: 6 }}>cualquier tamaño</span></div>
                       </div>
                     )}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
             {/* Vehicles */}
@@ -1006,8 +1125,8 @@ export function FlotillasPage() {
           <div style={{ flex: 1, minWidth: esMovil ? 0 : 320 }}>
             <div className="empty-state" style={{ paddingTop: 60 }}>
               <div style={{ fontSize: 40, marginBottom: 12 }}>🏢</div>
-              <div className="empty-state-title">Selecciona una empresa</div>
-              <div className="empty-state-sub">Haz clic en una empresa de la lista para ver sus vehículos y detalles.</div>
+              <div className="empty-state-title">Selecciona una flotilla</div>
+              <div className="empty-state-sub">Haz clic en una flotilla de la lista para ver sus vehículos y precios.</div>
             </div>
           </div>
         )}
@@ -1019,6 +1138,15 @@ export function FlotillasPage() {
           orgId={orgId}
           onCreated={() => { setShowCreateModal(false); loadCompanies() }}
           onCancel={() => setShowCreateModal(false)}
+        />
+      )}
+      {editandoPrecios && selected?.fleet_id && (
+        <EditarPreciosModal
+          fleetId={selected.fleet_id}
+          titulo={selected.fleet_name ?? nombreTitular(selected)}
+          acuerdo={selected.acuerdo}
+          onGuardado={() => { setEditandoPrecios(false); loadCompanies() }}
+          onCancel={() => setEditandoPrecios(false)}
         />
       )}
       {showAddVehicle && selected?.fleet_id && (
