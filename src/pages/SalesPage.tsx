@@ -667,6 +667,11 @@ export function SalesPage() {
                         ? <span className="badge badge-orange">Venta de {s.voucher_quantity ?? ''} cupones</span>
                         : s.order_kind === 'voucher_redemption'
                           ? <span className="badge badge-neutral">Canje de cupón</span>
+                          : s.order_kind === 'addon_sale'
+                            ? <>
+                                {(s.items ?? []).map(i => i.descripcion).join(' + ') || '—'}
+                                <span className="badge badge-neutral" style={{ marginLeft: 6 }}>sin lavado</span>
+                              </>
                           : <>
                               {s.service_name ?? '—'}
                               {s.with_aspirado && (

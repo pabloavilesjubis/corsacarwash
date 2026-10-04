@@ -1217,7 +1217,6 @@ export function POSPage() {
     ? Number(fleetCompany!.aspirado_price)
     : usaAspiradoGrupo ? Number(acuerdoGrupo!.aspirado.precio)
     : ADDON_ASPIRADO.price
-  const aspiradoPrice = withAspirado && svc ? aspiradoUnit : 0
 
   /**
    * A quién se le puede vender el seguro.
@@ -1253,6 +1252,18 @@ export function POSPage() {
   const puedeDarCortesia = hasPermission('rain.courtesy')
   const cortesiaActiva = conCortesia && puedeVenderSeguro && !canjeandoSeguro && !seguroActivo && puedeDarCortesia && !multi
   const seguroPrice = seguroActivo ? ADDON_SEGURO.price : 0
+
+  /**
+   * Adicionales sueltos (0063): el aspirado o el seguro que el cliente no
+   * llevó con su lavado y paga después. Es una venta como cualquier otra
+   * —documento, crédito, CCF consolidado— pero sin lavado.
+   *
+   * Suelto, el aspirado nunca sale gratis: el $0 de una flotilla es porque va
+   * incluido en su lavado; sin lavado se cobra la tarifa de lista.
+   */
+  const soloAdicionales = !svc && !multi && !canjeandoSeguro && (withAspirado || seguroActivo)
+  const aspiradoCobrado = soloAdicionales && aspiradoUnit <= 0 ? ADDON_ASPIRADO.price : aspiradoUnit
+  const aspiradoPrice = withAspirado && (svc || soloAdicionales) ? aspiradoCobrado : 0
 
   // Un lavado cobrado con el seguro no se cobra: es el derecho que ya se pagó.
   const totalUnCarro = canjeandoSeguro && !multi ? 0 : servicePrice + aspiradoPrice + seguroPrice
@@ -1504,7 +1515,8 @@ export function POSPage() {
       // el cobro fallaba y ninguna venta llegaba a guardarse.
       const { data, error } = await (supabase as any).rpc('pos_register_sale', {
         p_branch_id:       branchId,
-        p_service_code:    svc!.tier.toUpperCase(),
+        // Sin lavado (0063): sólo los adicionales.
+        p_service_code:    svc ? svc.tier.toUpperCase() : null,
         p_size:            selectedSize,
         p_total:           total,
         p_payment_method:  selectedPayment,
@@ -1591,6 +1603,7 @@ export function POSPage() {
             : undefined,
           metodoPago: PAYMENT_METHODS.find(p => p.id === selectedPayment)?.label,
           aspiradoPrecio: aspiradoPrice,
+          soloAdicionales,
           branchName: (currentBranch as any)?.name,
         }, dte))
       } catch (e) {
@@ -1627,7 +1640,7 @@ export function POSPage() {
     setSubmitting(false)
   }, [branchId, emiteDte, mode, fleetCompany, fleetVehicle, customer, svc, selectedSize, total, selectedPayment,
       withAspirado, aspiradoPrice, currentBranch, seguroActivo, seguroPrice,
-      canjeandoSeguro, polizaVigente, vehiculoElegido, cortesiaActiva, vehiculoId, multi, cobrarVariosCarros])
+      canjeandoSeguro, polizaVigente, vehiculoElegido, cortesiaActiva, vehiculoId, multi, cobrarVariosCarros, soloAdicionales])
 
   // Con cupón el botón sólo se habilita si el cupón existe y está sin usar:
   // canjear uno ya utilizado o inexistente falla en el servidor, y es mejor
@@ -1740,8 +1753,9 @@ export function POSPage() {
   // basta con que la orden esté armada.
   // Sin servicio sólo se puede abrir el cobro para canjear un cupón (el cupón
   // trae su servicio), o dar la cortesía sola, que no pasa por el cobro.
-  const soloCortesia = !svc && !multi && cortesiaActiva
+  const soloCortesia = !svc && !multi && cortesiaActiva && !soloAdicionales
   const canCharge = multi ? lineasOrden.length > 0
+    : soloAdicionales ? (mode === 'flotilla' ? !!fleetVehicle : true)
     : !svc ? (soloCortesia || (mode === 'normal' && puedeCanjearCupon))
     : mode === 'flotilla' ? !!fleetVehicle : true
 
@@ -1772,6 +1786,11 @@ export function POSPage() {
     setSubmitting(false)
   }
 
+  // Un cupón trae su lavado: no paga adicionales sueltos.
+  useEffect(() => {
+    if (soloAdicionales && selectedPayment === 'cupon') setSelectedPayment('efectivo')
+  }, [soloAdicionales, selectedPayment])
+
   const abrirCobro = () => {
     // Cada cobro empieza con el monto en blanco: el de la venta anterior no
     // tiene nada que ver con éste.
@@ -1792,7 +1811,7 @@ export function POSPage() {
           <div>
             <div className="panel-section-label" style={{ marginBottom: 10 }}>Método de pago</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
-              {metodosPago.map(pm => (
+              {metodosPago.filter(pm => !(soloAdicionales && pm.id === 'cupon')).map(pm => (
                 <button key={pm.id} id={`pay-${pm.id}`} onClick={() => elegirPago(pm.id)}
                   style={{ padding: '8px 4px', borderRadius: 10, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', border: `1px solid ${selectedPayment === pm.id ? 'var(--corsa-green)' : 'var(--border)'}`, background: selectedPayment === pm.id ? 'var(--corsa-green)' : 'var(--surface)', color: selectedPayment === pm.id ? '#fff' : 'var(--text-primary)', cursor: 'pointer', transition: 'all 0.12s' }}>
                   {pm.label}
@@ -2111,7 +2130,7 @@ export function POSPage() {
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{ADDON_ASPIRADO.label}</div>
                   <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 1 }}>
                     Sin importar tamaño del vehículo
-                    {usaAspiradoFlotilla && (
+                    {usaAspiradoFlotilla && (svc || multi) && (
                       <span style={{ color: 'var(--corsa-orange)' }}> · Incluido en el plan de la flotilla</span>
                     )}
                     {!usaAspiradoFlotilla && mode === 'normal' && usaAspiradoGrupo && (
@@ -2123,7 +2142,7 @@ export function POSPage() {
                     mostraba la tarifa de lista aunque la flotilla tuviera otra
                     negociada, y sólo el resumen reflejaba el precio real. */}
                 <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 15, color: withAspirado ? 'var(--corsa-orange)' : 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
-                  +{fmt(aspiradoUnit)}
+                  +{fmt(!svc && !multi && aspiradoUnit <= 0 ? ADDON_ASPIRADO.price : aspiradoUnit)}
                 </div>
               </button>
 
@@ -2265,12 +2284,18 @@ export function POSPage() {
               {multi && lineaActual && (
                 <div className="font-mono" style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text-primary)', marginBottom: -6 }}>{lineaActual.vehiculo.plate}</div>
               )}
-              {!svc && !multi && (
+              {!svc && !multi && !soloAdicionales && (
                 <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', padding: '6px 0' }}>
-                  Sin servicio. Elegí uno para cobrar{cortesiaActiva ? ', o da la cortesía sin cobro.' : '.'}
+                  Sin servicio. Elegí un lavado o un adicional para cobrar{cortesiaActiva ? ', o da la cortesía sin cobro.' : '.'}
                 </div>
               )}
-              {svc && (!multi || lineaActual) && (<>
+              {((svc && (!multi || lineaActual)) || soloAdicionales) && (<>
+              {!svc ? (
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>Sólo adicionales</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>Sin lavado · se cobran aparte</div>
+                </div>
+              ) : (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{svc.name} · {selectedSize}</div>
@@ -2284,6 +2309,7 @@ export function POSPage() {
                 </div>
                 <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 17, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{fmt(servicePrice)}</div>
               </div>
+              )}
               {withAspirado && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px solid var(--border)' }}>
                   <div style={{ fontSize: 13, color: 'var(--text-primary)' }}>Aspirado</div>
@@ -2343,7 +2369,7 @@ export function POSPage() {
                       disabled={!canCharge || submitting}>
                 {submitting ? 'Procesando…'
                   : soloCortesia ? 'Dar cortesía (sin cobro)'
-                  : !svc && !multi ? (canCharge ? 'Canjear cupón' : 'Elegí un servicio')
+                  : !svc && !multi && !soloAdicionales ? (canCharge ? 'Canjear cupón' : 'Elegí un servicio')
                   : `Cobrar ${fmt(total)}`}
               </button>
             </div>
@@ -2395,7 +2421,7 @@ export function POSPage() {
         <CobroModal
           customer={mode === 'flotilla' ? clienteFlotilla : customer}
           grupo={mode === 'normal' ? grupo : null}
-          sinServicio={!svc && !multi}
+          sinServicio={!svc && !multi && !soloAdicionales}
           ventaDiferida={selectedPayment === 'credito' && creditoCaja?.consolidado === true}
           faltaPlaca={!multi && !vehiculoActual}
           total={total}

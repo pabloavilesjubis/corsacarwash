@@ -99,6 +99,8 @@ export interface TicketOperacion {
   vehiculo?: string
   /** Correlativo visible de la orden de trabajo. */
   ordenNumero?: string
+  /** Sólo adicionales (0063): no hay programa que activar en la máquina. */
+  sinLavado?: boolean
 }
 
 /**
@@ -263,7 +265,10 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
     <div class="op-grid">
       <div class="op-cell">
         <div class="op-label">Servicio</div>
-        ${programa
+        ${op.sinLavado
+          ? `<div class="op-number op-number-unknown">—</div>
+             <div class="op-sub">Sin lavado</div>`
+          : programa
           ? `<div class="op-number">${programa.program}</div>
              <div class="op-sub">${esc(programa.label)}</div>`
           // Sin tier reconocido no se inventa un número: mandaría al operario

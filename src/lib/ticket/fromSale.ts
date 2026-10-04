@@ -131,6 +131,8 @@ export interface PosSaleResult {
   } | null
   /** Al crédito con facturación consolidada (0060): sin factura ni DTE. */
   facturacion_diferida?: boolean
+  /** Sólo adicionales, sin lavado (0063): service_name y size vienen null. */
+  solo_adicionales?: boolean
   /** Póliza consumida por esta venta, si el lavado se cobró con un seguro. */
   rain_redeemed: {
     id: string
@@ -152,10 +154,13 @@ export function buildTicketArgsFromPos(
     metodoPago?: string
     atendio?: string
     aspiradoPrecio?: number
+    /** Sin lavado: el ticket no imprime línea ni programa de servicio. */
+    soloAdicionales?: boolean
     branchName?: string
   } = {},
   dte: DteDeVenta | null = null,
 ): TicketArgs {
+  const sinLavado = Boolean(result.solo_adicionales ?? extras.soloAdicionales)
   const tipo = result.doc_type === 'ccf' ? '03' : '01'
   const total = Number(result.total || 0)
   const diferida = Boolean(result.facturacion_diferida)
@@ -169,20 +174,21 @@ export function buildTicketArgsFromPos(
   return {
     emisor: emisorDelTicket(emisor, extras.branchName, dte),
     operacion: {
-      servicio: result.service_name,
+      servicio: sinLavado ? '' : result.service_name,
       aspirado: result.with_aspirado,
       placa: extras.placa,
       vehiculo: extras.vehiculo,
       ordenNumero: result.order_number,
+      sinLavado,
     },
     venta: {
       id: result.order_id,
       fecha: result.issued_at,
       lineas: [
-        {
+        ...(sinLavado ? [] : [{
           nombre: `${result.service_name} ${result.size}`,
           cantidad: 1, precioUnitario: base, subtotal: base,
-        },
+        }]),
         ...(result.with_aspirado
           ? [{ nombre: 'Aspirado de interiores', cantidad: 1, precioUnitario: aspirado, subtotal: aspirado }]
           : []),
