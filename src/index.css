@@ -1430,6 +1430,11 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 .ventas-kpi.clic:hover { background: var(--subtle-bg); }
 .ventas-kpi.activo { background: var(--subtle-bg); box-shadow: inset 0 -2px 0 var(--corsa-green); }
 .clientes-tabla tbody tr { cursor: pointer; }
+.grupo-desplegable {
+  display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: none; padding: 6px 0;
+  font-family: var(--font-body); font-size: 13px; font-weight: 700; color: var(--text-primary); cursor: pointer; text-align: left;
+}
+.grupo-desplegable .flecha { width: 12px; color: var(--text-secondary); }
 .ventas-correo { display: inline-block; width: 9px; height: 9px; border-radius: 50%; border: none; padding: 0; cursor: pointer; vertical-align: middle; }
 @media (max-width: 1100px) {
   .ventas-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }

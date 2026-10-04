@@ -41,6 +41,8 @@ export function GruposEmpresarialesModal({ orgId, onCerrar, onCambio }: {
   const [miembros, setMiembros] = useState<MiembroGrupo[]>([])
   const [sinCliente, setSinCliente] = useState<VehiculoSinCliente[]>([])
   const [asignando, setAsignando] = useState<string | null>(null)
+  const [verClientes, setVerClientes] = useState(false)
+  const [verVehiculos, setVerVehiculos] = useState(false)
   const [acuerdo, setAcuerdo] = useState<AcuerdoFlotilla | null>(null)
   const [cargando, setCargando] = useState(false)
   const [nuevo, setNuevo] = useState('')
@@ -80,6 +82,7 @@ export function GruposEmpresarialesModal({ orgId, onCerrar, onCambio }: {
   }, [elegido, cargarDetalle])
 
   const grupo = grupos.find(g => g.id === elegido) ?? null
+  const totalVehiculos = sinCliente.length + miembros.reduce((t, m) => t + m.vehiculos.length, 0)
 
   const crear = async () => {
     if (!nuevo.trim()) return
@@ -217,70 +220,91 @@ export function GruposEmpresarialesModal({ orgId, onCerrar, onCambio }: {
                 )}
               </div>
 
-              {/* Miembros */}
+              {/* Clientes del grupo: desplegable */}
               <div>
-                <div className="panel-section-label" style={{ marginBottom: 6 }}>Clientes del grupo</div>
-                {cargando && <div className="spinner" style={{ width: 16, height: 16 }}/>}
-                {!cargando && miembros.length === 0 && (
-                  <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>Sin clientes todavía. Agregalos abajo o desde la ficha de cada cliente.</div>
-                )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {miembros.map(m => (
-                    <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 10 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13.5, fontWeight: 600 }}>{nombreMiembro(m)}</div>
-                        <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2, display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                          {m.nit ? `NIT ${m.nit}` : m.dui ? `DUI ${m.dui}` : 'Sin documento'}
-                          {m.vehiculos.map(v => (
-                            <span key={v.id} className="font-mono" style={{ fontWeight: 700, padding: '0 5px', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text-primary)' }}>{v.plate}</span>
-                          ))}
+                <button type="button" className="grupo-desplegable" onClick={() => setVerClientes(v => !v)} aria-expanded={verClientes}>
+                  <span className="flecha">{verClientes ? '▾' : '▸'}</span>
+                  Clientes del grupo ({miembros.length})
+                </button>
+                {verClientes && (<>
+                  {cargando && <div className="spinner" style={{ width: 16, height: 16 }}/>}
+                  {!cargando && miembros.length === 0 && (
+                    <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>Sin clientes todavía. Agregalos abajo o desde la ficha de cada cliente.</div>
+                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {miembros.map(m => (
+                      <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 8 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600 }} className="truncate">{nombreMiembro(m)}</div>
+                          <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                            {m.nit ? `NIT ${m.nit}` : m.dui ? `DUI ${m.dui}` : 'Sin documento'} · {m.vehiculos.length} {m.vehiculos.length === 1 ? 'vehículo' : 'vehículos'}
+                          </div>
                         </div>
+                        {puedeEditar && (
+                          <button className="btn btn-ghost btn-sm" style={{ color: 'var(--color-danger-text)' }}
+                                  onClick={() => cambiarMiembro(m.id, null, `${nombreMiembro(m)} salió del grupo`)}>
+                            Quitar
+                          </button>
+                        )}
                       </div>
-                      {puedeEditar && (
-                        <button className="btn btn-ghost" style={{ color: 'var(--color-danger-text)' }}
-                                onClick={() => cambiarMiembro(m.id, null, `${nombreMiembro(m)} salió del grupo`)}>
-                          Quitar
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                {sinCliente.length > 0 && (
-                  <div style={{ marginTop: 12 }}>
-                    <div className="panel-section-label" style={{ marginBottom: 6, color: 'var(--color-warning-text)' }}>
-                      Vehículos sin cliente ({sinCliente.length})
-                    </div>
-                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                      Quedaron del grupo en una carga masiva. En caja se ven con cualquier cliente del grupo; asignales su dueño cuando lo sepas.
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      {sinCliente.map(v => (
-                        <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 10px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12.5 }}>
-                          <span className="font-mono" style={{ fontWeight: 700, minWidth: 90 }}>{v.plate}</span>
-                          <span style={{ flex: 1, minWidth: 0, color: 'var(--text-secondary)' }} className="truncate">
-                            {[v.brand, v.model, v.color].filter(Boolean).join(' · ') || '—'}
-                          </span>
-                          {puedeEditar && (
-                            <select className="corsa-input" style={{ width: 220, padding: '4px 8px', fontSize: 12 }} value=""
-                                    disabled={asignando === v.id || miembros.length === 0}
-                                    onChange={e => { if (e.target.value) asignar(v, e.target.value) }}>
-                              <option value="">{miembros.length ? 'Asignar a…' : 'Agregá clientes al grupo'}</option>
-                              {miembros.map(m => <option key={m.id} value={m.id}>{nombreMiembro(m)}</option>)}
-                            </select>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                    ))}
                   </div>
-                )}
-                {puedeEditar && (
-                  <AgregarMiembro excluir={miembros.map(m => m.id)}
-                    onElegir={(c, grupoActual) => {
-                      if (grupoActual && grupoActual !== grupo.id &&
-                          !window.confirm(`${c} ya está en otro grupo. Un cliente sólo puede estar en uno: ¿moverlo a ${grupo.name}?`)) return
-                      return true
-                    }}
-                    onAgregar={(id, nombre) => cambiarMiembro(id, grupo.id, `${nombre} se unió a ${grupo.name}`)}/>
+                  {puedeEditar && (
+                    <AgregarMiembro excluir={miembros.map(m => m.id)}
+                      onElegir={(c, grupoActual) => {
+                        if (grupoActual && grupoActual !== grupo.id &&
+                            !window.confirm(`${c} ya está en otro grupo. Un cliente sólo puede estar en uno: ¿moverlo a ${grupo.name}?`)) return
+                        return true
+                      }}
+                      onAgregar={(id, nombre) => cambiarMiembro(id, grupo.id, `${nombre} se unió a ${grupo.name}`)}/>
+                  )}
+                </>)}
+              </div>
+
+              {/* Vehículos del grupo: desplegable con el detalle y el dueño */}
+              <div>
+                <button type="button" className="grupo-desplegable" onClick={() => setVerVehiculos(v => !v)} aria-expanded={verVehiculos}>
+                  <span className="flecha">{verVehiculos ? '▾' : '▸'}</span>
+                  Vehículos ({totalVehiculos})
+                  {sinCliente.length > 0 && <span className="badge badge-warning" style={{ marginLeft: 8 }}>{sinCliente.length} sin cliente</span>}
+                </button>
+                {verVehiculos && (
+                  totalVehiculos === 0 ? (
+                    <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>El grupo no tiene vehículos registrados.</div>
+                  ) : (
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'auto', maxHeight: 360 }}>
+                      <table className="corsa-table ventas-tabla" style={{ border: 'none' }}>
+                        <thead><tr><th>Placa</th><th>Vehículo</th><th>Color</th><th>Cliente</th></tr></thead>
+                        <tbody>
+                          {sinCliente.map(v => (
+                            <tr key={v.id}>
+                              <td className="font-mono" style={{ fontWeight: 700 }}>{v.plate}</td>
+                              <td>{[v.brand, v.model].filter(Boolean).join(' ') || '—'}</td>
+                              <td>{v.color || '—'}</td>
+                              <td>
+                                {puedeEditar ? (
+                                  <select className="corsa-input" style={{ width: 210, padding: '3px 8px', fontSize: 12, color: 'var(--color-warning-text)' }} value=""
+                                          disabled={asignando === v.id || miembros.length === 0}
+                                          onChange={e => { if (e.target.value) asignar(v, e.target.value) }}>
+                                    <option value="">{miembros.length ? 'Sin cliente · asignar a…' : 'Agregá clientes al grupo'}</option>
+                                    {miembros.map(m => <option key={m.id} value={m.id}>{nombreMiembro(m)}</option>)}
+                                  </select>
+                                ) : <span style={{ color: 'var(--color-warning-text)' }}>Sin cliente</span>}
+                              </td>
+                            </tr>
+                          ))}
+                          {miembros.flatMap(m => m.vehiculos.map(v => (
+                            <tr key={v.id}>
+                              <td className="font-mono" style={{ fontWeight: 700 }}>{v.plate}</td>
+                              <td>{[v.brand, v.model].filter(Boolean).join(' ') || '—'}</td>
+                              <td>{v.color || '—'}</td>
+                              <td className="cliente" title={nombreMiembro(m)}>{nombreMiembro(m)}</td>
+                            </tr>
+                          )))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )
                 )}
               </div>
             </>)}
