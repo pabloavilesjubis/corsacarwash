@@ -628,6 +628,46 @@ export function printCorsaTicket(args: TicketArgs, ventana?: Window | null): voi
   w.document.close()
 }
 
+/**
+ * Imprime el ticket sin mostrar nada: un iframe invisible con el ticket, y
+ * `print()` desde la app.
+ *
+ * El cajero no ve ninguna ventana. Para que tampoco aparezca el diálogo de
+ * impresión, Chrome de la PC de caja tiene que abrirse con `--kiosk-printing`:
+ * así manda el trabajo directo a la impresora predeterminada (la 3nstar). Sin
+ * ese flag, Chrome muestra su vista previa encima de la misma pantalla.
+ *
+ * Se espera a que carguen las imágenes (logo, QR del DTE) antes de imprimir:
+ * un QR a medio cargar sale en blanco en el papel.
+ */
+export async function imprimirTicketEnSegundoPlano(args: TicketArgs): Promise<void> {
+  const iframe = document.createElement('iframe')
+  iframe.setAttribute('aria-hidden', 'true')
+  iframe.tabIndex = -1
+  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none'
+  document.body.appendChild(iframe)
+  const w = iframe.contentWindow
+  const d = iframe.contentDocument
+  if (!w || !d) { iframe.remove(); throw new Error('No se pudo preparar la impresión del ticket') }
+
+  // Sin el auto-print del ticket: imprime la app, una sola vez.
+  d.open()
+  d.write(buildCorsaTicketPreviewHTML(args))
+  d.close()
+
+  const imagenes = Array.from(d.images).filter(img => !img.complete)
+  await Promise.race([
+    Promise.all(imagenes.map(img => new Promise<void>(ok => { img.onload = img.onerror = () => ok() }))),
+    new Promise<void>(ok => setTimeout(ok, 3000)),
+  ])
+
+  const quitar = () => setTimeout(() => iframe.remove(), 1000)
+  w.addEventListener('afterprint', quitar, { once: true })
+  setTimeout(() => iframe.isConnected && iframe.remove(), 120_000)
+  w.focus()
+  w.print()
+}
+
 /** Misma salida, con el auto-print desactivado — para previsualizar en iframe. */
 export function buildCorsaTicketPreviewHTML(args: TicketArgs): string {
   return buildCorsaTicketHTML(args).replace(

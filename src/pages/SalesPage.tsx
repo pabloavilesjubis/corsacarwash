@@ -11,11 +11,12 @@ import toast from 'react-hot-toast'
 import { useAuth } from '../hooks/useAuth'
 import { useEsMovil } from '../hooks/useEsMovil'
 import {
-  fetchSales, summarize, dateRange, fetchDtePayload, fetchDteDeVenta,
+  fetchSales, summarize, dateRange, fetchDteDeVenta,
   type DteDeVenta, type Sale, type SalesFilters,
 } from '../services/sales.service'
 import { printFactura } from '../lib/fiscal/facturaDocument'
-import { abrirVentanaTicket, printCorsaTicket } from '../lib/ticket/corsaTicket'
+import { imprimirTicketEnSegundoPlano } from '../lib/ticket/corsaTicket'
+import { emitirConFirmaLocal, fetchJsonDelDte, descargarJson } from '../services/fiscal.service'
 import { buildTicketArgsFromSale } from '../lib/ticket/fromSale'
 import { emisorParaTicket, exigirEmisor } from '../lib/fiscal/emisor'
 import { formatearFechaHora } from '../utils/fecha'
@@ -45,6 +46,12 @@ const ICONS = {
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 4h16v5a3 3 0 0 0 0 6v5H4v-5a3 3 0 0 0 0-6z"/>
       <line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="14" x2="15" y2="14"/>
+    </svg>
+  ),
+  sello: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      <polyline points="9 12 11 14 15 10"/>
     </svg>
   ),
   json: (
@@ -300,18 +307,15 @@ export function SalesPage() {
     }
   }
 
-  // La ventana se abre antes del await: después, el navegador ya no lo
-  // considera respuesta al clic y la bloquea.
+  // En segundo plano, sin ventanas: sale directo por la impresora predeterminada.
   const reimprimir = async (s: Sale) => {
-    const ventana = abrirVentanaTicket(s.order_id)
     try {
       // El emisor es el de la sucursal donde se vendió, no el de la que está
       // abierta ahora: es el que va dentro de su DTE.
       const dte = await dteDe(s)
       const emisor = await emisorParaTicket(s.branch_id, !!dte)
-      printCorsaTicket(buildTicketArgsFromSale(s, emisor, s.branch_name || (currentBranch as any)?.name, dte), ventana)
+      await imprimirTicketEnSegundoPlano(buildTicketArgsFromSale(s, emisor, s.branch_name || (currentBranch as any)?.name, dte))
     } catch (err) {
-      ventana?.close()
       toast.error(err instanceof Error ? err.message : 'No se pudo abrir el ticket')
     }
   }
@@ -330,23 +334,54 @@ export function SalesPage() {
     }
   }
 
-  const descargarJson = async (s: Sale) => {
+  /** El JSON del DTE como lo entrega Hacienda: documento + firmaElectronica + selloRecibido. */
+  const tieneJson = (s: Sale) => !!s.fiscal_document_id && (s.dte_status === 'ACCEPTED' || s.dte_status === 'INVALIDATED')
+
+  const descargarJsonDte = async (s: Sale) => {
     if (!s.fiscal_document_id) return
     try {
-      const doc = await fetchDtePayload(s.fiscal_document_id)
-      const contenido = JSON.stringify(
-        { estado: doc.status, enviado: doc.payload, respuesta: doc.response },
-        null, 2
-      )
-      const url = URL.createObjectURL(new Blob([contenido], { type: 'application/json' }))
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `dte-${s.invoice_number || s.order_number}.json`
-      a.click()
-      URL.revokeObjectURL(url)
-    } catch {
-      toast.error('No se pudo obtener el JSON del DTE')
+      const { json, numeroControl } = await fetchJsonDelDte(s.fiscal_document_id)
+      descargarJson(`${numeroControl ?? `dte-${s.invoice_number || s.order_number}`}.json`, json)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo obtener el JSON del DTE')
     }
+  }
+
+  /**
+   * Emitir el DTE de una venta ya cobrada que salió sin él. Firma LOCAL: hay
+   * que estar en la PC de facturación, con la estación fiscal lista. Si el
+   * documento ya existía (preparado o pendiente) se retoma el MISMO; nunca se
+   * pide otro número para la misma venta.
+   */
+  const puedeEmitir = (s: Sale) =>
+    hasPermission('fiscal.issue') && !!s.invoice_id && s.order_kind !== 'voucher_redemption' &&
+    ['no_emitido', 'CREATED', 'RETRY_PENDING'].includes(s.dte_status)
+
+  const [emitiendo, setEmitiendo] = useState<string | null>(null)
+  const emitirDte = async (s: Sale) => {
+    if (!s.invoice_id || emitiendo) return
+    const tipo = s.invoice_type === 'credito_fiscal' ? 'Crédito Fiscal (CCF)' : 'Factura Consumidor Final (FCF)'
+    if (!window.confirm(`Se emitirá ante Hacienda la ${tipo} de la venta ${s.order_number} por ${money(Number(s.total))}.\n\n` +
+                        'Es un documento tributario real y usa el siguiente correlativo. ¿Continuar?')) return
+    setEmitiendo(s.order_id)
+    const espera = toast.loading('Firmando en la estación fiscal y transmitiendo a Hacienda…')
+    try {
+      const r = await emitirConFirmaLocal(s.invoice_id, { manual: true })
+      if (r.estado === 'ACCEPTED') {
+        toast.success(`DTE sellado por Hacienda: ${r.numeroControl ?? ''}`, { id: espera, duration: 8000 })
+        if (r.documentoId) {
+          const { json, numeroControl } = await fetchJsonDelDte(r.documentoId)
+          descargarJson(`${numeroControl ?? r.numeroControl ?? 'dte'}.json`, json)
+        }
+      } else {
+        toast.error(`DTE ${r.estado === 'REJECTED' ? 'rechazado' : 'pendiente'}: ${r.mensaje ?? 'revisalo en Contabilidad'}`,
+          { id: espera, duration: 12000 })
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo emitir el DTE', { id: espera, duration: 12000 })
+    }
+    setEmitiendo(null)
+    load()
   }
 
   const exportarCsv = () => {
@@ -388,10 +423,15 @@ export function SalesPage() {
               title={s.order_kind === 'voucher_redemption' ? 'Un canje no genera documento fiscal' : undefined}>
         Ver factura (PDF carta)
       </button>
+      {puedeEmitir(s) && (
+        <button className="btn btn-primary" onClick={() => emitirDte(s)} disabled={emitiendo !== null}>
+          {emitiendo === s.order_id ? 'Emitiendo…' : 'Emitir DTE con Hacienda'}
+        </button>
+      )}
       <button className="btn btn-ghost"
-              onClick={() => descargarJson(s)}
-              disabled={!s.has_dte_payload}
-              title={!s.has_dte_payload ? 'Se genera al transmitir el DTE al Ministerio de Hacienda' : undefined}>
+              onClick={() => descargarJsonDte(s)}
+              disabled={!tieneJson(s)}
+              title={!tieneJson(s) ? 'Se genera cuando Hacienda sella el DTE' : undefined}>
         Descargar JSON del DTE
       </button>
     </>
@@ -407,10 +447,14 @@ export function SalesPage() {
                   onClick={() => verFactura(s)}
                   disabled={s.order_kind === 'voucher_redemption'}
                   reason="un canje no genera documento fiscal"/>
+      {puedeEmitir(s) && (
+        <IconAction icon={ICONS.sello} label={emitiendo === s.order_id ? 'Emitiendo DTE…' : 'Emitir DTE con Hacienda'}
+                    onClick={() => emitirDte(s)} disabled={emitiendo !== null} reason="hay otra emisión en curso"/>
+      )}
       <IconAction icon={ICONS.json} label="JSON del DTE"
-                  onClick={() => descargarJson(s)}
-                  disabled={!s.has_dte_payload}
-                  reason="se genera al transmitir el DTE al Ministerio de Hacienda"/>
+                  onClick={() => descargarJsonDte(s)}
+                  disabled={!tieneJson(s)}
+                  reason="se genera cuando Hacienda sella el DTE"/>
     </>
   )
 

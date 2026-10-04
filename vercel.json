@@ -32,7 +32,7 @@
         },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co http://127.0.0.1:5055; frame-ancestors 'none'; object-src 'none'; base-uri 'self';"
+          "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://fiscal-corsa.airboxpipeline.com http://127.0.0.1:5055; frame-ancestors 'none'; object-src 'none'; base-uri 'self';"
         }
       ]
     },

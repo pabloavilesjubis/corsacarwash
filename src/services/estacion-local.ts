@@ -7,6 +7,7 @@
 
 export const GATEWAY_STATION_URL = 'http://127.0.0.1:5055/station'
 export const GATEWAY_HACIENDA_URL = 'http://127.0.0.1:5055/station/hacienda'
+export const GATEWAY_SIGN_URL = 'http://127.0.0.1:5055/station/sign'
 const TIMEOUT_MS = 4000
 
 export interface StationResponse {
@@ -151,6 +152,54 @@ export async function probarHacienda(fetcher: typeof fetch = fetch): Promise<Res
   } finally {
     clearTimeout(timer)
   }
+}
+
+// ── Firma de un DTE en la estación fiscal ──
+//
+// El DTE lo arma el Worker fiscal; la estación de ESTA PC lo firma con el
+// firmador oficial de Hacienda y devuelve el JWS. El Gateway revisa que sea del
+// emisor de la estación y que la producción esté habilitada.
+
+export class ErrorDeEstacion extends Error {
+  readonly codigo: string
+  constructor(mensaje: string, codigo: string) {
+    super(mensaje)
+    this.name = 'ErrorDeEstacion'
+    this.codigo = codigo
+  }
+}
+
+const MENSAJES_FIRMA: Record<string, string> = {
+  production_blocked: 'La estación fiscal no tiene habilitada la firma de producción («Habilitar firma de produccion.bat»).',
+  issuer_mismatch: 'El documento no es del emisor configurado en la estación fiscal.',
+  codigo_generacion_conflict: 'Ese código de generación ya se firmó con otro contenido.',
+  signature_rejected: 'El firmador de Hacienda rechazó el documento.',
+  signature_invalid: 'La firma devuelta no corresponde al documento.',
+  fiscal_station_unavailable: 'Estación fiscal no disponible.',
+  forbidden: 'La estación fiscal no acepta pedidos de este sitio.',
+}
+
+export async function firmarEnEstacion(dte: unknown, fetcher: typeof fetch = fetch): Promise<string> {
+  const init: RequestInit & { targetAddressSpace?: string } = {
+    method: 'POST', cache: 'no-store', credentials: 'omit', targetAddressSpace: 'loopback',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dteJson: dte }),
+    signal: AbortSignal.timeout(30_000),
+  }
+  let resp: Response
+  try {
+    resp = await fetcher(GATEWAY_SIGN_URL, init)
+  } catch {
+    throw new ErrorDeEstacion('Estación fiscal no disponible: el Gateway de esta PC no respondió.', 'SIN_ESTACION')
+  }
+  const body = await resp.json().catch(() => ({})) as Record<string, unknown>
+  const jws = typeof body.jws === 'string' ? body.jws : null
+  if (resp.ok && body.status === 'signed' && jws && jws.split('.').length === 3) return jws
+  const status = typeof body.status === 'string' ? body.status : `HTTP ${resp.status}`
+  const detalle = typeof body.error === 'string' ? body.error : null
+  throw new ErrorDeEstacion(
+    [MENSAJES_FIRMA[status] ?? `La estación fiscal no firmó (${status}).`, detalle].filter(Boolean).join(' '),
+    status)
 }
 
 /** Compara versiones x.y.z. Positivo si `a` es más nueva. */

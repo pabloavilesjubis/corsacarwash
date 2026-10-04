@@ -17,8 +17,8 @@ import {
   ccfReceptorStatus, fcfReceptorStatus, preferredDocType, type ReceptorStatus,
 } from '../lib/fiscal/receptor'
 import { FCF_IDENTIFICACION_OBLIGATORIA_DESDE } from '../lib/mh-catalogs'
-import { abrirVentanaTicket, avisoEnVentanaTicket, printCorsaTicket } from '../lib/ticket/corsaTicket'
-import { emitirDteDeVenta, posEmiteDte } from '../services/fiscal.service'
+import { imprimirTicketEnSegundoPlano } from '../lib/ticket/corsaTicket'
+import { emitirConFirmaLocal, posEmiteDte } from '../services/fiscal.service'
 import { fetchDteDeVenta, type DteDeVenta } from '../services/sales.service'
 import { buildTicketArgsFromPos, type PosSaleResult } from '../lib/ticket/fromSale'
 import { cargarEmisor, emisorParaTicket, MARCA } from '../lib/fiscal/emisor'
@@ -978,7 +978,7 @@ export function POSPage() {
         plate: customer?.vehicle?.plate,
       })
       try {
-        printCorsaTicket({
+        await imprimirTicketEnSegundoPlano({
           // El canje no tiene contenido tributario: sólo la marca.
           emisor: MARCA,
           operacion: {
@@ -1019,11 +1019,9 @@ export function POSPage() {
     // factura que registró el cobro.
     const esperarDte = emiteDte
 
-    // La ventana del ticket se abre YA, en el clic. Después de esperar el
-    // cobro y el sello —que pueden ser varios segundos— el navegador ya no lo
-    // cuenta como respuesta al clic y la bloquea.
-    const ventana = abrirVentanaTicket()
-    avisoEnVentanaTicket(ventana, 'Registrando la venta…')
+    // El ticket se imprime en segundo plano (iframe invisible), así que ya no
+    // hace falta abrir una ventana en el clic para esquivar el bloqueo de
+    // ventanas emergentes.
 
     try {
       // pos_register_sale (0030) reemplaza a create_work_order: aquella se
@@ -1059,10 +1057,11 @@ export function POSPage() {
       // esperando— con el DTE pendiente, y se reintenta desde Contabilidad.
       let dte: DteDeVenta | null = null
       if (esperarDte && sale.invoice_id) {
-        avisoEnVentanaTicket(ventana, 'Esperando el sello de Hacienda…')
-        const espera = toast.loading('Emitiendo el DTE con Hacienda…')
+        const espera = toast.loading('Firmando y emitiendo el DTE con Hacienda…')
         try {
-          const r = await emitirDteDeVenta(sale.invoice_id, ESPERA_DTE_MS)
+          // Firma LOCAL: el Worker arma, la estación fiscal de esta PC firma con
+          // el firmador de Hacienda, el Worker transmite. El ticket espera el sello.
+          const r = await emitirConFirmaLocal(sale.invoice_id, { timeoutMs: ESPERA_DTE_MS })
           if (r.estado === 'ACCEPTED') {
             dte = await fetchDteDeVenta(sale.invoice_id)
             // Un CCF cuyo total no tiene base sin IVA exacta sale un centavo
@@ -1079,14 +1078,15 @@ export function POSPage() {
         }
       }
 
-      // El ticket se abre solo: es el comprobante y a la vez la orden que lee
-      // el equipo en piso. Si el navegador bloquea la ventana emergente el
-      // cobro ya quedó registrado, así que sólo se avisa — no se revierte.
+      // El ticket se imprime solo, sin ventanas: es el comprobante y a la vez la
+      // orden que lee el equipo en piso. Con DTE sale DESPUÉS del sello de
+      // Hacienda. Si la impresión falla, el cobro ya quedó registrado: sólo se
+      // avisa, no se revierte.
       try {
         // Con DTE es un documento fiscal y exige el emisor completo; sin él,
         // el ticket sale aunque falte configuración, rotulado sin validez.
         const emisor = await emisorParaTicket(branchId, !!dte)
-        printCorsaTicket(buildTicketArgsFromPos(sale, emisor, {
+        await imprimirTicketEnSegundoPlano(buildTicketArgsFromPos(sale, emisor, {
           clienteNombre: billing.fcfName ?? (receptor ? displayName(receptor) : undefined),
           clienteDoc: receptor
             ? { tipo: receptor.nit ? 'NIT' : 'DUI', numero: receptor.nit ?? receptor.dui, nrc: receptor.nrc }
@@ -1098,7 +1098,7 @@ export function POSPage() {
           metodoPago: PAYMENT_METHODS.find(p => p.id === selectedPayment)?.label,
           aspiradoPrecio: aspiradoPrice,
           branchName: (currentBranch as any)?.name,
-        }, dte), ventana)
+        }, dte))
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'La venta se guardó, pero no se pudo abrir el ticket')
       }
@@ -1108,7 +1108,6 @@ export function POSPage() {
       setMode('normal'); setSelectedService('elite'); setSelectedSize('M')
       setWithAspirado(false); setKeypadValue('')
     } catch (err: any) {
-      ventana?.close()
       toast.error(err?.message ?? 'Error al crear la orden')
     }
     setSubmitting(false)

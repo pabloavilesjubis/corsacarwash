@@ -16,6 +16,7 @@
  */
 
 import { supabase } from '../lib/supabase'
+import { probarEstacion, firmarEnEstacion } from './estacion-local'
 
 const URL_FISCAL = (import.meta.env.VITE_FISCAL_API_URL as string | undefined)?.replace(/\/$/, '') ?? ''
 
@@ -257,6 +258,8 @@ export interface ResultadoFiscal {
   selloRecepcion?: string | null
   /** El documento ya tiene JWS: su contenido quedó fijo. */
   firmado?: boolean
+  /** Firma local: el DTE armado que la estación fiscal tiene que firmar. */
+  dte?: unknown
 }
 
 export class ErrorFiscal extends Error {
@@ -388,6 +391,83 @@ export async function posEmiteDte(branchId: string): Promise<boolean> {
     .maybeSingle()
   if (error || !data) return false
   return Boolean(data.emitir_en_pos && data.activo)
+}
+
+/**
+ * Emite el DTE de una venta con FIRMA LOCAL: el Worker arma, la estación
+ * fiscal de ESTA PC firma con el firmador de Hacienda, el Worker transmite.
+ *
+ *   1. La estación tiene que estar lista ANTES de pedir número: si la PC no
+ *      puede firmar no se reserva un correlativo que quedaría colgado.
+ *   2. /venta/preparar reserva el número, arma, valida y devuelve el DTE. Si
+ *      ya estaba armado devuelve el MISMO; si ya está sellado, lo devuelve sin
+ *      volver a transmitir.
+ *   3. La estación firma (POST 127.0.0.1:5055/station/sign).
+ *   4. /venta/firmada comprueba que el JWS sea ese documento y lo transmite.
+ *
+ * `manual`: una venta ya cobrada, desde el historial (permiso fiscal.issue);
+ * no depende de emitir_en_pos.
+ */
+export async function emitirConFirmaLocal(
+  invoiceId: string, opciones: { manual?: boolean; timeoutMs?: number } = {},
+): Promise<ResultadoFiscal> {
+  const estacion = await probarEstacion()
+  if (!estacion.detectado) {
+    throw new ErrorFiscal('Estación fiscal no disponible: abrí esto en la PC de facturación con el CORSA Gateway.', 'SIN_ESTACION')
+  }
+  const st = estacion.estado
+  if (st.firmador !== 'available') throw new ErrorFiscal('Estación fiscal no disponible: el firmador de Hacienda no responde.', 'SIN_FIRMADOR')
+  if (st.fiscalSigning !== 'available') {
+    throw new ErrorFiscal(`La firma fiscal de esta estación no está lista${st.fiscalSigningError ? `: ${st.fiscalSigningError}` : ''}.`, 'FIRMA_NO_LISTA')
+  }
+  const servicio = await fetchEstadoServicio()
+  if (servicio.ambiente === '01' && !st.allowProduction) {
+    throw new ErrorFiscal('La estación fiscal no tiene habilitada la firma de producción («Habilitar firma de produccion.bat»). No se reservó ningún número.', 'SIN_PRODUCCION')
+  }
+
+  const timeoutMs = opciones.timeoutMs ?? 60_000
+  const preparado = await llamarWorker(
+    opciones.manual ? '/v1/app/venta/preparar-manual' : '/v1/app/venta/preparar', { invoiceId }, { timeoutMs })
+  if (preparado.estado !== 'PENDIENTE_FIRMA' || !preparado.dte || !preparado.documentoId) return preparado
+
+  let jws: string
+  try {
+    jws = await firmarEnEstacion(preparado.dte)
+  } catch (e) {
+    // El documento quedó armado con su número: se retoma con el mismo botón,
+    // sin pedir otro número.
+    throw new ErrorFiscal(`${e instanceof Error ? e.message : 'No se pudo firmar.'} ` +
+      `El documento ${preparado.numeroControl ?? ''} quedó preparado; reintentá cuando la estación esté lista.`, 'SIN_FIRMA')
+  }
+  return llamarWorker('/v1/app/venta/firmada', { documentoId: preparado.documentoId, jws }, { timeoutMs })
+}
+
+/**
+ * El JSON del DTE como lo entrega Hacienda: el documento, su firma
+ * (firmaElectronica) y el sello de recepción (selloRecibido). Sólo existe una
+ * vez transmitido y aceptado.
+ */
+export async function fetchJsonDelDte(fiscalDocumentId: string): Promise<{ json: Record<string, unknown>; numeroControl: string | null }> {
+  const { data, error } = await (supabase as any)
+    .from('fiscal_documents')
+    .select('status, numero_control, json_original, signed_jws, sello_recepcion')
+    .eq('id', fiscalDocumentId)
+    .single()
+  if (error) throw error
+  if (!data?.json_original || !data?.signed_jws) throw new Error('El DTE todavía no está firmado.')
+  return {
+    json: { ...data.json_original, firmaElectronica: data.signed_jws, selloRecibido: data.sello_recepcion ?? null },
+    numeroControl: data.numero_control ?? null,
+  }
+}
+
+export function descargarJson(nombre: string, contenido: unknown): void {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(contenido, null, 2)], { type: 'application/json' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = nombre
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 export const reintentarDocumento = (documentoId: string) =>
