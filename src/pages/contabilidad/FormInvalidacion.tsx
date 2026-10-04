@@ -11,10 +11,10 @@
  * correlativo. Se corrige y se vuelve a intentar.
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import {
-  invalidar, dinero, tieneContraparte, ErrorFiscal, NOMBRE_TIPO, TIPO_ANULACION_ETIQUETA,
+  invalidar, fetchResponsableFijo, dinero, tieneContraparte, ErrorFiscal, NOMBRE_TIPO, TIPO_ANULACION_ETIQUETA,
   type DocumentoFiscal, type Persona,
 } from '../../services/fiscal.service'
 import { formatearFecha } from '../../utils/fecha'
@@ -60,6 +60,12 @@ export function FormInvalidacion({ documentos, inicial, onListo, onCancelar }: {
   const [motivo, setMotivo] = useState('')
   const [receptor, setReceptor] = useState<Persona>({ nombre: '', tipoDocumento: '13', numDocumento: '' })
   const [responsable, setResponsable] = useState<Persona>(responsableRecordado)
+  // El responsable fijo de CORSA (Configuración fiscal). Si está, no se pide:
+  // el Worker lo pone en el evento.
+  const [fijo, setFijo] = useState<Persona | null | undefined>(undefined)
+  useEffect(() => {
+    fetchResponsableFijo().then(r => setFijo(r as Persona | null)).catch(() => setFijo(null))
+  }, [])
   const [solicitante, setSolicitante] = useState<Persona>({ nombre: '', tipoDocumento: '13', numDocumento: '' })
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -102,13 +108,14 @@ export function FormInvalidacion({ documentos, inicial, onListo, onCancelar }: {
       const r = problemaDeDocumento(receptor.tipoDocumento, receptor.numDocumento)
       if (r) p.push(`Cliente: ${r}`)
     }
-    for (const [quien, per] of [['Responsable', responsable], ['Solicitante', solicitante]] as const) {
+    const personas = fijo ? [['Solicitante', solicitante]] as const : [['Responsable', responsable], ['Solicitante', solicitante]] as const
+    for (const [quien, per] of personas) {
       if (per.nombre.trim().length < 5) p.push(`${quien}: el nombre va de 5 a 100 caracteres`)
       const r = problemaDeDocumento(per.tipoDocumento, per.numDocumento)
       if (r) p.push(`${quien}: ${r}`)
     }
     return p
-  }, [doc, tipo, reemplazoId, motivo, pideReceptor, receptor, responsable, solicitante])
+  }, [doc, tipo, reemplazoId, motivo, pideReceptor, receptor, responsable, solicitante, fijo])
 
   const enviar = async () => {
     if (problemas.length > 0) { setError(problemas[0]!); return }
@@ -120,7 +127,7 @@ export function FormInvalidacion({ documentos, inicial, onListo, onCancelar }: {
 
     setEnviando(true)
     setError(null)
-    recordarResponsable(responsable)
+    if (!fijo) recordarResponsable(responsable)
     try {
       const r = await invalidar({
         idempotencyKey: llave,
@@ -129,7 +136,8 @@ export function FormInvalidacion({ documentos, inicial, onListo, onCancelar }: {
         motivoAnulacion: motivo.trim() || null,
         documentoReemplazoId: tipo === 2 ? null : reemplazoId,
         receptor: pideReceptor ? { ...receptor, nombre: receptor.nombre.trim() } : null,
-        responsable: { ...responsable, nombre: responsable.nombre.trim() },
+        // Con responsable fijo no se manda: lo pone el Worker desde la configuración.
+        responsable: fijo ? null : { ...responsable, nombre: responsable.nombre.trim() },
         solicitante: { ...solicitante, nombre: solicitante.nombre.trim() },
       })
       const desenlace = avisarResultado(r, 'La invalidación')
@@ -216,7 +224,14 @@ export function FormInvalidacion({ documentos, inicial, onListo, onCancelar }: {
       )}
 
       <Seccion titulo="Responsable de la invalidación">
-        <CamposPersona valor={responsable} onChange={setResponsable}/>
+        {fijo
+          ? <div style={{ fontSize: 13.5 }}>
+              <strong>{fijo.nombre}</strong> · {fijo.tipoDocumento === '13' ? 'DUI' : fijo.tipoDocumento === '36' ? 'NIT' : 'Doc.'} {fijo.numDocumento}
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>Fijo, de la configuración fiscal de CORSA.</div>
+            </div>
+          : fijo === undefined
+            ? <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>Cargando…</div>
+            : <CamposPersona valor={responsable} onChange={setResponsable}/>}
       </Seccion>
 
       <Seccion titulo="Quién la solicita">

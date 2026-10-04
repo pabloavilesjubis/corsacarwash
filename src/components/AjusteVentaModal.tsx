@@ -8,6 +8,7 @@
 
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
+import { fetchResponsableFijo } from '../services/fiscal.service'
 import {
   autorizacionPropia, autorizarConSuperAdmin, cambiarFormaDePago, anularVenta, fetchFormasDePago,
   type FormaDePago, type Persona,
@@ -46,6 +47,12 @@ export function AjusteVentaModal({ tipo, venta, tienePermiso, onCerrar, onHecho 
   const [contrasena, setContrasena] = useState('')
   const [sol, setSol] = useState<Persona>({ nombre: '', tipoDocumento: '13', numDocumento: '' })
   const [enviando, setEnviando] = useState(false)
+
+  const [responsable, setResponsable] = useState<{ nombre: string; tipoDocumento: string; numDocumento: string } | null | undefined>(undefined)
+  useEffect(() => {
+    if (!conDte) return
+    fetchResponsableFijo().then(setResponsable).catch(() => setResponsable(null))
+  }, [conDte])
 
   useEffect(() => {
     if (tipo !== 'pago') return
@@ -126,6 +133,14 @@ export function AjusteVentaModal({ tipo, venta, tienePermiso, onCerrar, onHecho 
 
         {conDte && (
           <>
+            <label style={etiqueta}>Responsable ante Hacienda</label>
+            <div style={{ fontSize: 13.5 }}>
+              {responsable === undefined ? 'Cargando…'
+                : responsable
+                  ? <><strong>{responsable.nombre}</strong> · {responsable.tipoDocumento === '13' ? 'DUI' : 'Doc.'} {responsable.numDocumento}
+                      <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}> (fijo)</span></>
+                  : <span style={{ color: 'var(--color-danger-text)' }}>Falta configurar el responsable fijo de las invalidaciones.</span>}
+            </div>
             <label style={etiqueta}>Quién solicita la anulación (cliente)</label>
             <input style={campo} placeholder="Nombre completo" value={sol.nombre}
                    onChange={e => setSol({ ...sol, nombre: e.target.value })}/>

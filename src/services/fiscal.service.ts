@@ -203,6 +203,23 @@ export async function fetchConfigFiscal(): Promise<ConfigFiscal[]> {
   return (data ?? []) as ConfigFiscal[]
 }
 
+/**
+ * El responsable FIJO de las invalidaciones (0048, fiscal_issuer_config). Si
+ * está configurado, el Worker lo pone en cada invalidación y la pantalla no
+ * lo pide. null si falta alguno de los tres datos.
+ */
+export async function fetchResponsableFijo(): Promise<{ nombre: string; tipoDocumento: string; numDocumento: string } | null> {
+  const { data, error } = await (supabase as any)
+    .from('fiscal_issuer_config')
+    .select('invalidacion_responsable_nombre, invalidacion_responsable_tipo_doc, invalidacion_responsable_num_doc')
+    .eq('activo', true)
+    .limit(1)
+    .maybeSingle()
+  if (error || !data) return null
+  const { invalidacion_responsable_nombre: nombre, invalidacion_responsable_tipo_doc: tipo, invalidacion_responsable_num_doc: num } = data
+  return nombre && tipo && num ? { nombre, tipoDocumento: tipo, numDocumento: num } : null
+}
+
 /** Sube, nunca baja: la base rechaza un número menor al actual. */
 export async function sembrarCorrelativo(args: {
   branchId: string
@@ -392,7 +409,7 @@ export async function invalidarConFirmaLocal(
     { token: opts.token, timeoutMs: 60_000 })
 }
 
-export const invalidar = (s: SolicitudInvalidacion) => invalidarConFirmaLocal(s)
+export const invalidar = (s: Parameters<typeof invalidarConFirmaLocal>[0]) => invalidarConFirmaLocal(s)
 
 /**
  * Emite el DTE de una venta del POS y espera la respuesta de Hacienda.
