@@ -173,7 +173,8 @@ interface FleetVehicle {
 interface BillingInfo {
   docType: 'ticket' | 'ccf'
   fcfMode?: FcfMode
-  fcfName?: string
+  /** Ticket a nombre de un cliente de la base; null o ausente = genérico. */
+  fcfCustomer?: CustomerResult | null
   ccfCustomer?: CustomerResult | null
 }
 
@@ -585,6 +586,84 @@ function ReceptorPanel({ status, title }: { status: ReceptorStatus; title: strin
   )
 }
 
+// ─── Buscador de receptor ─────────────────────────────────────
+
+/**
+ * Busca en Clientes a quién se le emite el documento. Lo usan el ticket y el
+ * CCF: antes el ticket sólo tenía un campo de texto libre, así que el nombre
+ * escrito no estaba atado a ninguna ficha y no llevaba documento ni correo.
+ */
+function BuscadorReceptor({ id, elegido, onElegir, color, placeholder }: {
+  id: string
+  elegido: CustomerResult | null
+  onElegir: (c: CustomerResult | null) => void
+  color: string
+  placeholder: string
+}) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<CustomerResult[]>([])
+  const [loading, setLoading] = useState(false)
+  const debounced = useDebounce(query, 350)
+
+  useEffect(() => {
+    if (debounced.length < 2) { setResults([]); return }
+    let vivo = true
+    setLoading(true)
+    ;(async () => {
+      // Las personas se buscan por nombre y apellido; las empresas, por
+      // nombre comercial o razón social. Las dos, por NIT o DUI.
+      const q = debounced.replace(/[,()]/g, ' ').trim()
+      const { data } = await (supabase as any).from('customers')
+        .select(CUSTOMER_COLUMNS)
+        .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,trade_name.ilike.%${q}%,legal_name.ilike.%${q}%,nit.ilike.%${q}%,dui.ilike.%${q}%`).limit(8)
+      if (!vivo) return
+      setResults(data ?? [])
+      setLoading(false)
+    })()
+    return () => { vivo = false }
+  }, [debounced])
+
+  if (elegido) return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 14, border: `1.5px solid ${color}`, background: 'var(--subtle-bg)' }}>
+      <div style={{ width: 32, height: 32, borderRadius: 10, background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: color === 'var(--corsa-orange)' ? 'var(--on-accent)' : '#fff' }}>{displayName(elegido).charAt(0)}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{displayName(elegido)}</div>
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 1 }}>{elegido.nit ? `NIT: ${elegido.nit}` : elegido.dui ? `DUI: ${elegido.dui}` : 'Sin documento en la ficha'}</div>
+      </div>
+      <button onClick={() => { onElegir(null); setQuery('') }} aria-label="Quitar cliente" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 18 }}>×</button>
+    </div>
+  )
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, border: '1px solid var(--border)', borderRadius: 12, padding: '9px 12px', background: 'var(--page-bg)' }}>
+        {loading ? <div className="spinner" style={{ width: 14, height: 14 }}/> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>}
+        <input id={id} value={query} onChange={e => setQuery(e.target.value)} placeholder={placeholder} autoFocus style={{ border: 'none', outline: 'none', fontSize: 13.5, flex: 1, background: 'transparent', color: 'var(--text-primary)', fontFamily: 'var(--font-body)' }}/>
+      </div>
+      {debounced.length >= 2 && !loading && results.length === 0 && (
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6 }}>Ningún cliente coincide. Si no existe, créalo con «+ Nuevo cliente» en la caja.</div>
+      )}
+      {results.length > 0 && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 400, overflow: 'hidden', maxHeight: 280, overflowY: 'auto' }}>
+          {results.map((c, i) => (
+            <button key={c.id} onClick={() => { onElegir(c); setResults([]) }}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left', borderBottom: i < results.length - 1 ? '1px solid var(--border)' : 'none' }}
+              onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = 'var(--subtle-bg)'}
+              onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = 'transparent'}
+            >
+              <div style={{ width: 28, height: 28, borderRadius: 10, background: 'var(--subtle-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>{displayName(c).charAt(0)}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName(c)}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>{c.nit ? `NIT ${c.nit}` : c.dui ? `DUI ${c.dui}` : ''}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Modal de cobro ───────────────────────────────────────────
 
 /**
@@ -629,28 +708,12 @@ function CobroModal({
   const [fcfMode, setFcfMode] = useState<FcfMode>(
     customer && preferredDocType(customer) === 'ticket' ? 'named' : 'generic'
   )
-  const [fcfName, setFcfName] = useState(
-    customer ? displayName(customer) : ''
+  const [fcfCliente, setFcfCliente] = useState<CustomerResult | null>(
+    customer && preferredDocType(customer) === 'ticket' ? customer : null
   )
-  const [ccfQuery, setCcfQuery] = useState('')
-  const [ccfResults, setCcfResults] = useState<CustomerResult[]>([])
   const [ccfSelected, setCcfSelected] = useState<CustomerResult | null>(
     customer && preferredDocType(customer) === 'ccf' ? customer : null
   )
-  const [ccfLoading, setCcfLoading] = useState(false)
-  const debouncedCcf = useDebounce(ccfQuery, 350)
-
-  useEffect(() => {
-    if (debouncedCcf.length < 2) { setCcfResults([]); return }
-    setCcfLoading(true)
-    ;(async () => {
-      const { data } = await (supabase as any).from('customers')
-        .select(CUSTOMER_COLUMNS)
-        .or(`trade_name.ilike.%${debouncedCcf}%,legal_name.ilike.%${debouncedCcf}%,nit.ilike.%${debouncedCcf}%,dui.ilike.%${debouncedCcf}%`).limit(8)
-      setCcfResults(data ?? [])
-      setCcfLoading(false)
-    })()
-  }, [debouncedCcf])
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
@@ -659,8 +722,8 @@ function CobroModal({
   }, [onCancel])
 
   // La caja tiene teclado: el monto se puede escribir sin tocar la pantalla.
-  // Se ignora mientras el foco está en un campo (el nombre del ticket, la
-  // búsqueda del CCF), que es donde esas teclas sí tienen que caer.
+  // Se ignora mientras el foco está en un campo (la búsqueda del cliente),
+  // que es donde esas teclas sí tienen que caer.
   const teclaRef = useRef(onTecla)
   useEffect(() => { teclaRef.current = onTecla })
   useEffect(() => {
@@ -680,9 +743,11 @@ function CobroModal({
     return () => document.removeEventListener('keydown', h)
   }, [])
 
-  // El receptor efectivo: para CCF el buscado en el modal, para ticket el de la caja.
+  // El receptor efectivo es el elegido en el modal; el de la caja sólo lo
+  // prellena. Un ticket genérico no tiene receptor.
   const ccfStatus = ccfSelected ? ccfReceptorStatus(ccfSelected) : null
-  const fcfStatus = fcfReceptorStatus(customer, total)
+  const fcfReceptor = fcfMode === 'named' ? fcfCliente : null
+  const fcfStatus = fcfReceptorStatus(fcfReceptor, total)
 
   // Antes alcanzaba con haber elegido un cliente para el CCF. Pero un cliente
   // puede tener NIT y aun así no poder recibir un CCF (sin NRC, sin actividad,
@@ -691,14 +756,20 @@ function CobroModal({
   // Con cupón no hay documento que elegir: basta con que el cupón sirva.
   const canConfirm = submitting ? false
     : pagaConCupon ? cuponValido
-    : docType === 'ticket' ? fcfStatus.ok
+    // «A nombre de…» sin cliente elegido sería un genérico disfrazado.
+    : docType === 'ticket' ? fcfStatus.ok && (fcfMode === 'generic' || Boolean(fcfCliente))
     : docType === 'ccf'  ? Boolean(ccfSelected && ccfStatus?.ok)
     : false
 
   const confirmar = () => {
     if (!canConfirm) return
     if (pagaConCupon) { onCanjear(); return }
-    if (docType) onConfirm({ docType, fcfMode: docType === 'ticket' ? fcfMode : undefined, fcfName: fcfMode === 'named' ? fcfName : undefined, ccfCustomer: docType === 'ccf' ? ccfSelected : undefined })
+    if (docType) onConfirm({
+      docType,
+      fcfMode: docType === 'ticket' ? fcfMode : undefined,
+      fcfCustomer: docType === 'ticket' ? fcfReceptor : undefined,
+      ccfCustomer: docType === 'ccf' ? ccfSelected : undefined,
+    })
   }
 
   const tituloColumna = (texto: string) => (
@@ -776,22 +847,24 @@ function CobroModal({
               <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)' }}>¿A nombre de quién?</div>
               {[
                 { id: 'generic', label: 'Consumidor final (Genérico)', sub: 'Sin datos fiscales · opción por defecto' },
-                { id: 'named',   label: 'A nombre de…', sub: '' },
+                { id: 'named',   label: 'A nombre de un cliente', sub: 'Búscalo en Clientes por nombre, DUI o NIT' },
               ].map(opt => (
-                <label key={opt.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '11px 14px', borderRadius: 14, cursor: 'pointer', border: `1.5px solid ${fcfMode === opt.id ? 'var(--corsa-green)' : 'var(--border)'}`, background: fcfMode === opt.id ? 'rgba(22,25,26,0.05)' : 'var(--surface)', transition: 'all 0.12s' }}>
+                <label key={opt.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 12px', borderRadius: 14, cursor: 'pointer', border: `1.5px solid ${fcfMode === opt.id ? 'var(--corsa-green)' : 'var(--border)'}`, background: fcfMode === opt.id ? 'rgba(22,25,26,0.05)' : 'var(--surface)', transition: 'all 0.12s' }}>
                   <input type="radio" name="fcf" checked={fcfMode === opt.id as FcfMode} onChange={() => setFcfMode(opt.id as FcfMode)} style={{ accentColor: 'var(--corsa-green)', marginTop: 2 }}/>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }}>{opt.label}</div>
-                    {opt.sub && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 1 }}>{opt.sub}</div>}
-                    {opt.id === 'named' && fcfMode === 'named' && (
-                      <input id="fcf-name" value={fcfName} onChange={e => setFcfName(e.target.value)} placeholder="Nombre completo" className="corsa-input" style={{ marginTop: 8, width: '100%' }}/>
-                    )}
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 1 }}>{opt.sub}</div>
                   </div>
                 </label>
               ))}
 
-              {/* Siempre visible: el cajero confirma los datos con el cliente
-                  antes de cobrar. Sobre el umbral del MH, además, bloquean. */}
+              {fcfMode === 'named' && (
+                <BuscadorReceptor id="fcf-search" elegido={fcfCliente} onElegir={setFcfCliente}
+                  color="var(--corsa-green)" placeholder="Nombre, DUI o NIT…"/>
+              )}
+
+              {/* El cajero confirma los datos con el cliente antes de cobrar.
+                  Sobre el umbral del MH, además, bloquean. */}
               <ReceptorPanel
                 status={fcfStatus}
                 title={total >= FCF_IDENTIFICACION_OBLIGATORIA_DESDE
@@ -805,40 +878,8 @@ function CobroModal({
           {docType === 'ccf' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)' }}>Busca al cliente para el CCF</div>
-              {ccfSelected ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderRadius: 14, border: '1.5px solid var(--corsa-orange)', background: 'rgba(223,245,107,0.30)' }}>
-                  <div style={{ width: 34, height: 34, borderRadius: 12, background: 'var(--corsa-orange)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: 'var(--on-accent)' }}>{displayName(ccfSelected).charAt(0)}</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{displayName(ccfSelected)}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 1 }}>{ccfSelected.nit ? `NIT: ${ccfSelected.nit}` : ccfSelected.dui ? `DUI: ${ccfSelected.dui}` : ''}</div>
-                  </div>
-                  <button onClick={() => { setCcfSelected(null); setCcfQuery('') }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 18 }}>×</button>
-                </div>
-              ) : (
-                <div style={{ position: 'relative' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, border: '1px solid var(--border)', borderRadius: 12, padding: '9px 12px', background: 'var(--page-bg)' }}>
-                    {ccfLoading ? <div className="spinner" style={{ width: 14, height: 14 }}/> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>}
-                    <input id="ccf-search" value={ccfQuery} onChange={e => setCcfQuery(e.target.value)} placeholder="Nombre, NIT o DUI…" autoFocus style={{ border: 'none', outline: 'none', fontSize: 13.5, flex: 1, background: 'transparent', color: 'var(--text-primary)', fontFamily: 'var(--font-body)' }}/>
-                  </div>
-                  {ccfResults.length > 0 && (
-                    <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 400, overflow: 'hidden' }}>
-                      {ccfResults.map((c, i) => (
-                        <button key={c.id} onClick={() => { setCcfSelected(c); setCcfResults([]) }}
-                          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left', borderBottom: i < ccfResults.length - 1 ? '1px solid var(--border)' : 'none' }}
-                          onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = 'var(--subtle-bg)'}
-                          onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = 'transparent'}
-                        >
-                          <div style={{ width: 28, height: 28, borderRadius: 10, background: 'var(--subtle-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>{displayName(c).charAt(0)}</div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName(c)}</div>
-                            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>{c.nit ? `NIT ${c.nit}` : c.dui ? `DUI ${c.dui}` : ''}</div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+              <BuscadorReceptor id="ccf-search" elegido={ccfSelected} onElegir={setCcfSelected}
+                color="var(--corsa-orange)" placeholder="Nombre, NIT o DUI…"/>
               {ccfSelected && ccfStatus && (
                 <ReceptorPanel status={ccfStatus} title="Datos con los que se emitirá el CCF"/>
               )}
@@ -992,8 +1033,19 @@ export function POSPage() {
   const change = Math.max(0, received - total)
 
   const pagaConCupon = selectedPayment === 'cupon'
+  // Sólo el efectivo se cuenta y da cambio. Tarjeta, transferencia, membresía
+  // y crédito cobran el total exacto: pedir un monto recibido ahí es un paso
+  // de más que el cajero llenaba con cualquier cosa.
+  const pagaEnEfectivo = selectedPayment === 'efectivo'
+  const usaTeclado = pagaEnEfectivo || pagaConCupon
+
+  const elegirPago = (id: string) => {
+    setSelectedPayment(id)
+    if (id !== 'efectivo') setKeypadValue('')
+  }
 
   const handleKeypad = (k: string) => {
+    if (!usaTeclado) return
     // Con cupón el mismo teclado escribe el número: el cajero no tiene que
     // cambiar de dispositivo ni de zona de la pantalla.
     if (pagaConCupon) {
@@ -1119,8 +1171,10 @@ export function POSPage() {
         p_customer_id:     mode === 'flotilla' ? (fleetCompany?.customer_id ?? null) : (customer?.id ?? null),
         p_vehicle_id:      mode === 'flotilla' ? (fleetVehicle?.vehicle_id ?? null) : (vehiculoElegido?.id ?? null),
         p_doc_type:        billing.docType,
-        p_fcf_name:        billing.fcfName ?? null,
-        p_ccf_customer_id: billing.ccfCustomer?.id ?? null,
+        p_fcf_name:        billing.fcfCustomer ? displayName(billing.fcfCustomer) : null,
+        // La factura queda a nombre del receptor elegido en el modal: el del
+        // CCF o el del ticket nominado (la RPC lo antepone al de la caja).
+        p_ccf_customer_id: (billing.ccfCustomer ?? billing.fcfCustomer)?.id ?? null,
         p_order_type:      mode,
         p_rain_insurance:  seguroActivo,
         p_rain_price:      seguroPrice,
@@ -1129,7 +1183,8 @@ export function POSPage() {
       if (error) throw error
 
       const sale = data as PosSaleResult
-      const receptor = billing.ccfCustomer ?? customer
+      // Un ticket genérico no lleva datos del cliente aunque haya uno en la caja.
+      const receptor = billing.ccfCustomer ?? billing.fcfCustomer ?? null
 
       // Con la sucursal emitiendo, el ticket espera el sello de Hacienda para
       // imprimir número de control, código de generación, sello y QR. El
@@ -1168,7 +1223,7 @@ export function POSPage() {
         // el ticket sale aunque falte configuración, rotulado sin validez.
         const emisor = await emisorParaTicket(branchId, !!dte)
         await imprimirTicketEnSegundoPlano(buildTicketArgsFromPos(sale, emisor, {
-          clienteNombre: billing.fcfName ?? (receptor ? displayName(receptor) : undefined),
+          clienteNombre: receptor ? displayName(receptor) : undefined,
           clienteDoc: receptor
             ? { tipo: receptor.nit ? 'NIT' : 'DUI', numero: receptor.nit ?? receptor.dui, nrc: receptor.nrc }
             : undefined,
@@ -1287,7 +1342,7 @@ export function POSPage() {
             <div className="panel-section-label" style={{ marginBottom: 10 }}>Método de pago</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
               {metodosPago.map(pm => (
-                <button key={pm.id} id={`pay-${pm.id}`} onClick={() => setSelectedPayment(pm.id)}
+                <button key={pm.id} id={`pay-${pm.id}`} onClick={() => elegirPago(pm.id)}
                   style={{ padding: '8px 4px', borderRadius: 10, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', border: `1px solid ${selectedPayment === pm.id ? 'var(--corsa-green)' : 'var(--border)'}`, background: selectedPayment === pm.id ? 'var(--corsa-green)' : 'var(--surface)', color: selectedPayment === pm.id ? '#fff' : 'var(--text-primary)', cursor: 'pointer', transition: 'all 0.12s' }}>
                   {pm.label}
                 </button>
@@ -1295,16 +1350,37 @@ export function POSPage() {
             </div>
           </div>
 
-          {/* Keypad — monto recibido, o número de cupón si se paga con cupón */}
+          {/* Teclado: el monto recibido en efectivo, o el número del cupón. */}
+          {usaTeclado && (
           <div>
             <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
               {pagaConCupon ? 'Número de cupón (6 dígitos)' : 'Monto recibido'}
             </div>
-            <div style={{ border: `1.5px solid ${pagaConCupon && voucherFound ? (voucherFound.status === 'active' ? 'var(--corsa-green)' : 'var(--color-danger-text)') : 'var(--border)'}`, borderRadius: 12, padding: '8px 12px', marginBottom: 8, fontFamily: pagaConCupon ? "'SF Mono', monospace" : 'var(--font-heading)', fontSize: 20, fontWeight: 800, letterSpacing: pagaConCupon ? 3 : 0, fontVariantNumeric: 'tabular-nums', minHeight: 42, color: 'var(--text-primary)', textAlign: pagaConCupon ? 'center' : 'left' }}>
+            <div style={{ border: `1.5px solid ${pagaConCupon && voucherFound ? (voucherFound.status === 'active' ? 'var(--corsa-green)' : 'var(--color-danger-text)') : 'var(--border)'}`, borderRadius: 12, padding: '6px 12px', marginBottom: 8, fontFamily: pagaConCupon ? "'SF Mono', monospace" : 'var(--font-heading)', fontSize: pagaConCupon ? 22 : 32, fontWeight: 800, letterSpacing: pagaConCupon ? 3 : 0, fontVariantNumeric: 'tabular-nums', lineHeight: 1.2, minHeight: 50, color: 'var(--text-primary)', textAlign: pagaConCupon ? 'center' : 'right' }}>
               {pagaConCupon
                 ? (voucherCode || <span style={{ color: 'var(--border)' }}>------</span>)
                 : (keypadValue ? `$${keypadValue}` : <span style={{ color: 'var(--border)' }}>$0.00</span>)}
             </div>
+
+            {/* El cambio, grande y pegado al monto: es lo que el cajero lee en
+                voz alta mientras cuenta los billetes. Si el monto no alcanza,
+                dice cuánto falta en lugar de un cambio de cero. */}
+            {pagaEnEfectivo && (() => {
+              const falta = received > 0 && received < total
+              return (
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  borderRadius: 12, padding: '8px 12px', marginBottom: 8,
+                  background: falta ? 'var(--color-danger-tint)' : received > 0 ? 'var(--color-success-tint)' : 'var(--subtle-bg)',
+                  color: falta ? 'var(--color-danger-text)' : received > 0 ? 'var(--color-success-text)' : 'var(--text-secondary)',
+                }}>
+                  <span style={{ fontSize: 15, fontWeight: 700 }}>{falta ? 'Falta' : 'Cambio'}</span>
+                  <span style={{ fontFamily: 'var(--font-heading)', fontSize: 32, fontWeight: 800, fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>
+                    {received > 0 ? fmt(falta ? total - received : change) : '—'}
+                  </span>
+                </div>
+              )
+            })()}
 
             {pagaConCupon && (
               <div style={{ marginBottom: 8 }}>
@@ -1345,13 +1421,14 @@ export function POSPage() {
                 <button key={k} id={`kp-${k}`} className="keypad-key" onClick={() => handleKeypad(k)}>{k}</button>
               ))}
             </div>
-            {received > 0 && !pagaConCupon && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 12.5, color: 'var(--text-secondary)' }}>
-                <span>Recibido: <strong>{fmt(received)}</strong></span>
-                {received >= total && <span style={{ color: 'var(--color-success-text)', fontWeight: 600 }}>Cambio: {fmt(change)}</span>}
-              </div>
-            )}
           </div>
+          )}
+
+          {!usaTeclado && (
+            <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', background: 'var(--subtle-bg)', padding: '10px 12px', borderRadius: 10 }}>
+              Se cobra el total exacto: {fmt(total)}.
+            </div>
+          )}
 
     </>
   )
