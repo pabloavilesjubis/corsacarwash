@@ -233,6 +233,8 @@ interface BillingInfo {
   /** Ticket a nombre de un cliente de la base; null o ausente = genérico. */
   fcfCustomer?: CustomerResult | null
   ccfCustomer?: CustomerResult | null
+  /** Al crédito de un cliente que consolida: esta venta lleva su CCF ya (0064). */
+  facturarAhora?: boolean
 }
 
 // ─── Helpers ──────────────────────────────────────────────────
@@ -776,8 +778,11 @@ interface CobroModalProps {
   grupo: GrupoPos | null
   /** La caja no tiene servicio: sólo se puede canjear un cupón (que trae el suyo). */
   sinServicio: boolean
-  /** Al crédito de un cliente con facturación consolidada (0060): no se emite documento ahora. */
-  ventaDiferida: boolean
+  /**
+   * Al crédito de un cliente con facturación consolidada (0060). El default es
+   * no emitir documento ahora; el cajero puede pedir el CCF de esta venta (0064).
+   */
+  consolida: boolean
   /** Con facturación consolidada cada lavado necesita su placa. */
   faltaPlaca: boolean
   /** Método de pago, monto y teclado: lo arma la página. */
@@ -793,7 +798,7 @@ interface CobroModalProps {
 }
 
 function CobroModal({
-  total, customer, grupo, sinServicio, ventaDiferida, faltaPlaca, pago, pagaConCupon, cuponValido, submitting, onTecla, onConfirm, onCanjear, onCancel,
+  total, customer, grupo, sinServicio, consolida, faltaPlaca, pago, pagaConCupon, cuponValido, submitting, onTecla, onConfirm, onCanjear, onCancel,
 }: CobroModalProps) {
   const esMovil = useEsMovil()
   // Si hay cliente en la caja, el modal abre resuelto: su documento preferido
@@ -811,6 +816,15 @@ function CobroModal({
   const [ccfSelected, setCcfSelected] = useState<CustomerResult | null>(
     customer && preferredDocType(customer) === 'ccf' ? customer : null
   )
+
+  // Cliente que consolida: por default la venta espera el CCF del período; si
+  // pide el CCF de ésta, se factura ya, con el cliente de la caja como receptor.
+  const [facturarAhora, setFacturarAhora] = useState(false)
+  const ventaDiferida = consolida && !facturarAhora
+  const elegirFacturarAhora = (v: boolean) => {
+    setFacturarAhora(v)
+    if (v) { setDocType('ccf'); if (customer) setCcfSelected(customer) }
+  }
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
@@ -870,6 +884,7 @@ function CobroModal({
       fcfMode: docType === 'ticket' ? fcfMode : undefined,
       fcfCustomer: docType === 'ticket' ? fcfReceptor : undefined,
       ccfCustomer: docType === 'ccf' ? ccfSelected : undefined,
+      facturarAhora: consolida && facturarAhora,
     })
   }
 
@@ -912,6 +927,26 @@ function CobroModal({
               No hay servicio en la caja. Elegí uno para cobrar, o pagá con cupón.
             </div>
           )}
+          {!pagaConCupon && consolida && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              {[
+                { ahora: false, label: 'CCF del período', sub: 'Va a CxC y se factura con los demás (consolidado)' },
+                { ahora: true,  label: 'Emitir CCF ahora', sub: 'Al crédito igual, con su CCF de esta venta' },
+              ].map(o => {
+                const sel = facturarAhora === o.ahora
+                return (
+                  <button key={String(o.ahora)} id={o.ahora ? 'credito-ccf-ahora' : 'credito-consolidado'} type="button"
+                    onClick={() => elegirFacturarAhora(o.ahora)}
+                    style={{ textAlign: 'left', padding: '9px 12px', borderRadius: 12, cursor: 'pointer',
+                      border: `1.5px solid ${sel ? 'var(--corsa-green)' : 'var(--border)'}`,
+                      background: sel ? 'rgba(22,25,26,0.05)' : 'var(--surface)', color: 'var(--text-primary)' }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 700 }}>{o.label}</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>{o.sub}</div>
+                  </button>
+                )
+              })}
+            </div>
+          )}
           {pagaConCupon ? (
             <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', background: 'var(--subtle-bg)', padding: '10px 12px', borderRadius: 10 }}>
               El canje no emite documento: el cupón se facturó el día que se vendió. Se imprime un comprobante de canje.
@@ -920,8 +955,8 @@ function CobroModal({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ fontSize: 13, background: 'var(--accent-tint)', border: '1.5px solid var(--corsa-orange)', padding: '12px 14px', borderRadius: 12, color: 'var(--text-primary)' }}>
                 <div style={{ fontWeight: 800, marginBottom: 4 }}>Venta al crédito · facturación consolidada</div>
-                Este cliente recibe un solo CCF por período. Esta venta se carga a su cuenta por cobrar
-                sin emitir documento ahora; se factura después desde Cuentas por cobrar.
+                Se carga a su cuenta por cobrar sin emitir documento ahora; entra en el CCF del período
+                desde Cuentas por cobrar. Si el cliente pide el CCF de esta venta, elegí «Emitir CCF ahora».
               </div>
               {faltaPlaca && (
                 <div style={{ fontSize: 12.5, color: 'var(--color-danger-text)', background: 'var(--color-danger-tint)', padding: '10px 12px', borderRadius: 10, fontWeight: 600 }}>
@@ -1438,6 +1473,8 @@ export function POSPage() {
         p_fcf_name:        billing.fcfCustomer ? displayName(billing.fcfCustomer) : null,
         p_ccf_customer_id: (billing.ccfCustomer ?? billing.fcfCustomer)?.id ?? null,
         p_order_type:      mode,
+        // Sólo cuando se pide (0064): así las ventas de siempre no dependen de esa migración.
+        ...(billing.facturarAhora ? { p_facturar_ahora: true } : {}),
       })
       if (error) throw error
       const sale = data as PosSaleMultiResult
@@ -1533,6 +1570,8 @@ export function POSPage() {
         p_rain_insurance:  seguroActivo,
         p_rain_price:      seguroPrice,
         p_rain_policy_id:  canjeandoSeguro ? (polizaVigente?.id ?? null) : null,
+        // Sólo cuando se pide (0064): así las ventas de siempre no dependen de esa migración.
+        ...(billing.facturarAhora ? { p_facturar_ahora: true } : {}),
       })
       if (error) throw error
 
@@ -2422,7 +2461,7 @@ export function POSPage() {
           customer={mode === 'flotilla' ? clienteFlotilla : customer}
           grupo={mode === 'normal' ? grupo : null}
           sinServicio={!svc && !multi && !soloAdicionales}
-          ventaDiferida={selectedPayment === 'credito' && creditoCaja?.consolidado === true}
+          consolida={selectedPayment === 'credito' && creditoCaja?.consolidado === true}
           faltaPlaca={!multi && !vehiculoActual}
           total={total}
           pago={bloqueDeCobro}
