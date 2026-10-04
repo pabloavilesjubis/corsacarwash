@@ -382,7 +382,8 @@ export interface SolicitudInvalidacion {
   documentoReemplazoId: string | null
   receptor: (Persona & { telefono?: string | null; correo?: string | null }) | null
   responsable: Persona
-  solicitante: Persona
+  /** Null: el Worker usa el responsable fijo (CORSA pide sus propias anulaciones). */
+  solicitante: Persona | null
 }
 
 /**

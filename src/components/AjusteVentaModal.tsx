@@ -11,7 +11,7 @@ import toast from 'react-hot-toast'
 import { fetchResponsableFijo } from '../services/fiscal.service'
 import {
   autorizacionPropia, autorizarConSuperAdmin, cambiarFormaDePago, anularVenta, fetchFormasDePago,
-  type FormaDePago, type Persona,
+  type FormaDePago,
 } from '../services/ajustes-venta.service'
 
 export type TipoAjuste = 'anular' | 'pago'
@@ -45,7 +45,6 @@ export function AjusteVentaModal({ tipo, venta, tienePermiso, onCerrar, onHecho 
   const [motivo, setMotivo] = useState('')
   const [correo, setCorreo] = useState('')
   const [contrasena, setContrasena] = useState('')
-  const [sol, setSol] = useState<Persona>({ nombre: '', tipoDocumento: '13', numDocumento: '' })
   const [enviando, setEnviando] = useState(false)
 
   const [responsable, setResponsable] = useState<{ nombre: string; tipoDocumento: string; numDocumento: string } | null | undefined>(undefined)
@@ -59,8 +58,10 @@ export function AjusteVentaModal({ tipo, venta, tienePermiso, onCerrar, onHecho 
     fetchFormasDePago().then(setFormas).catch(() => toast.error('No se pudieron cargar las formas de pago'))
   }, [tipo])
 
-  const solicitanteOk = !conDte || (sol.nombre.trim().length >= 5 && sol.numDocumento.trim().length >= 5)
-  const listo = !enviando && solicitanteOk && (tipo === 'anular' || !!codigo) &&
+  // La anulación la pide y la firma CORSA: el responsable fijo es también quien
+  // la solicita. Sin responsable configurado no se puede invalidar.
+  const responsableOk = !conDte || !!responsable
+  const listo = !enviando && responsableOk && (tipo === 'anular' || !!codigo) &&
     (tienePermiso || (correo.trim() !== '' && contrasena !== ''))
 
   const confirmar = async () => {
@@ -76,8 +77,7 @@ export function AjusteVentaModal({ tipo, venta, tienePermiso, onCerrar, onHecho 
         try {
           const r = await anularVenta(aut,
             { orderId: venta.order_id, fiscalDocumentId: venta.fiscal_document_id, dteStatus: venta.dte_status },
-            motivo.trim() || null,
-            conDte ? { ...sol, nombre: sol.nombre.trim(), numDocumento: sol.numDocumento.trim() } : null)
+            motivo.trim() || null)
           toast.success(`Venta ${venta.order_number} anulada${r.invalidado ? ' y DTE invalidado ante Hacienda' : ''}`, { id: espera })
         } catch (e) {
           if (espera) toast.dismiss(espera)
@@ -141,20 +141,8 @@ export function AjusteVentaModal({ tipo, venta, tienePermiso, onCerrar, onHecho 
                       <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}> (fijo)</span></>
                   : <span style={{ color: 'var(--color-danger-text)' }}>Falta configurar el responsable fijo de las invalidaciones.</span>}
             </div>
-            <label style={etiqueta}>Quién solicita la anulación (cliente)</label>
-            <input style={campo} placeholder="Nombre completo" value={sol.nombre}
-                   onChange={e => setSol({ ...sol, nombre: e.target.value })}/>
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-              <select style={{ ...campo, width: 120 }} value={sol.tipoDocumento}
-                      onChange={e => setSol({ ...sol, tipoDocumento: e.target.value as Persona['tipoDocumento'] })}>
-                <option value="13">DUI</option>
-                <option value="36">NIT</option>
-                <option value="03">Pasaporte</option>
-                <option value="02">Carné de residente</option>
-                <option value="37">Otro</option>
-              </select>
-              <input style={campo} placeholder="Número de documento" value={sol.numDocumento}
-                     onChange={e => setSol({ ...sol, numDocumento: e.target.value })}/>
+            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4 }}>
+              Es también quien solicita la anulación ante Hacienda.
             </div>
           </>
         )}

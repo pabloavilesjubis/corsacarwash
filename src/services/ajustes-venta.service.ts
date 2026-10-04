@@ -95,28 +95,26 @@ export interface Persona { nombre: string; tipoDocumento: '13' | '36' | '02' | '
 
 /**
  * Anula la venta. Si tiene DTE sellado, primero lo invalida ante Hacienda con
- * firma local; `solicitante` es quien pide la anulación (y, en una FCF de
- * mostrador, también se identifica como receptor, como exige Hacienda).
+ * firma local. Quién la solicita (y, en una FCF de mostrador, el receptor que
+ * exige Hacienda) es el responsable fijo de CORSA: lo pone el Worker.
  */
 export async function anularVenta(
   aut: Autorizacion,
   venta: { orderId: string; fiscalDocumentId: string | null; dteStatus: string },
   motivo: string | null,
-  solicitante: Persona | null,
 ): Promise<{ invalidado: boolean }> {
   let invalidado = false
   if (venta.dteStatus === 'ACCEPTED') {
     if (!venta.fiscalDocumentId) throw new Error('No se encontró el DTE de la venta.')
-    if (!solicitante) throw new Error('Para invalidar el DTE ante Hacienda hace falta quién lo solicita.')
     const r = await invalidarConFirmaLocal({
       idempotencyKey: crypto.randomUUID(),
       documentoId: venta.fiscalDocumentId,
       tipoAnulacion: 2,
       motivoAnulacion: motivo,
       documentoReemplazoId: null,
-      receptor: solicitante,
+      receptor: null,
       responsable: null,
-      solicitante,
+      solicitante: null,
     }, { token: aut.token })
     if (r.estado !== 'ACCEPTED') {
       throw new ErrorFiscal(`Hacienda no aceptó la invalidación (${r.estado})${r.mensaje ? `: ${r.mensaje}` : ''}. La venta NO se anuló.`, r.estado)
