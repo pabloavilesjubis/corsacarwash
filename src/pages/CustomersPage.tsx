@@ -6,6 +6,7 @@ import { useEsMovil } from '../hooks/useEsMovil'
 import { CustomerFormPanel } from '../components/CustomerFormPanel'
 import { CargaMasivaClientes } from '../components/CargaMasivaClientes'
 import { GruposEmpresarialesModal } from '../components/GruposEmpresarialesModal'
+import { QrRegistroModal } from '../components/QrRegistroModal'
 import {
   searchCustomers,
   getCustomerVehicles,
@@ -311,10 +312,11 @@ const FILTER_DEFS: { id: FilterType; label: string }[] = [
 ]
 
 export function CustomersPage() {
-  const { profile, hasPermission } = useAuth()
+  const { profile, hasPermission, currentBranch } = useAuth()
   const orgId = (profile as any)?.organization_id ?? ''
   const [cargaMasiva, setCargaMasiva] = useState(false)
   const [grupos, setGrupos] = useState(false)
+  const [qrRegistro, setQrRegistro] = useState(false)
 
   const [customers, setCustomers] = useState<CustomerWithStats[]>([])
   const [loading, setLoading] = useState(true)
@@ -362,6 +364,11 @@ export function CustomersPage() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {currentBranch?.code && (
+            <button id="btn-qr-registro" className="btn btn-ghost" onClick={() => setQrRegistro(true)}>
+              QR de registro
+            </button>
+          )}
           <button id="btn-grupos" className="btn btn-ghost" onClick={() => setGrupos(true)}>
             Grupos empresariales
           </button>
@@ -377,6 +384,11 @@ export function CustomersPage() {
           />
         </div>
       </div>
+
+      {qrRegistro && currentBranch?.code && (
+        <QrRegistroModal branchCode={currentBranch.code} branchName={currentBranch.name}
+                         onCerrar={() => setQrRegistro(false)}/>
+      )}
 
       {grupos && orgId && (
         <GruposEmpresarialesModal orgId={orgId} onCerrar={() => setGrupos(false)}

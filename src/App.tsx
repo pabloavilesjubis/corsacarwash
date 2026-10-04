@@ -10,6 +10,7 @@ import { PuenteNotificaciones } from './components/PuenteNotificaciones'
 
 // Lazy-loaded pages
 const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })))
+const RegistroPage = lazy(() => import('./pages/RegistroPage').then(m => ({ default: m.RegistroPage })))
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })))
 const CustomersPage = lazy(() => import('./pages/CustomersPage').then(m => ({ default: m.CustomersPage })))
 const POSPage = lazy(() => import('./pages/POSPage').then(m => ({ default: m.POSPage })))
@@ -90,6 +91,8 @@ export default function App() {
             <Routes>
               {/* Public */}
               <Route path="/login" element={<LoginPage/>}/>
+              {/* Registro de clientes por QR (0055): sin sesión, la función valida todo. */}
+              <Route path="/registro" element={<RegistroPage/>}/>
               {import.meta.env.DEV && (
                 <Route path="/dev/ticket" element={<TicketPreviewPage/>}/>
               )}
