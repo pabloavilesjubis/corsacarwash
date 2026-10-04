@@ -65,6 +65,12 @@ export interface Sale {
   dte_numero_control: string | null
   /** Por qué no salió el último intento (rechazo de Hacienda, caída del MH…). */
   dte_error: string | null
+  /** El último correo de la venta (0061): 'sent' | 'failed' | null (nunca se intentó). */
+  correo_estado: 'sent' | 'failed' | null
+  correo_at: string | null
+  correo_error: string | null
+  /** Al crédito con facturación consolidada (0060): sin factura propia. */
+  facturacion_diferida: boolean
 }
 
 /**

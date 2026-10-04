@@ -11,8 +11,8 @@
  */
 import { LOGO_PATH, LOGO_VIEWBOX } from '../../brand/logoCompleto'
 import type { TicketEmisor } from '../ticket/corsaTicket'
-import type { CxcCliente, DocumentoCxc, MovimientoCredito } from '../../services/credito.service'
-import { EVENTO_ETIQUETA } from '../../services/credito.service'
+import type { CxcCliente, DocumentoCxc, LavadoCredito, MovimientoCredito } from '../../services/credito.service'
+import { EVENTO_ETIQUETA } from './eventos'
 
 const esc = (v: unknown) => String(v ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -34,8 +34,11 @@ export function estadoCuentaHTML(args: {
   cliente: CxcCliente
   documentos: DocumentoCxc[]
   movimientos: MovimientoCredito[]
+  /** Lavados con facturación consolidada (0060): facturados y pendientes. */
+  lavados?: LavadoCredito[]
 }): string {
   const { emisor: e, cliente: c, documentos, movimientos } = args
+  const lavados = args.lavados ?? []
   const corte = new Date().toLocaleDateString('es-SV', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'America/El_Salvador' })
   const abiertos = documentos.filter(d => d.balance > 0)
   const logo = `<svg viewBox="0 0 ${LOGO_VIEWBOX.ancho} ${LOGO_VIEWBOX.alto}" style="width:150px;height:auto" role="img" aria-label="CORSA Carwash"><path d="${LOGO_PATH}" fill="#16191A" fill-rule="evenodd"/></svg>`
@@ -153,6 +156,20 @@ export function estadoCuentaHTML(args: {
     <tr><th>Documento</th><th>Fecha</th><th>Vence</th><th class="num">Monto</th><th class="num">Abonado</th><th class="num">Saldo</th><th class="num">Atraso</th></tr>
     ${filasDocs}
   </table>
+
+  ${lavados.length ? `
+  <h2>Lavados (${lavados.length}) · ${lavados.filter(l => !l.consolidated_invoice_id).length} pendientes de facturar</h2>
+  <table>
+    <tr><th>Fecha</th><th>Placa</th><th>Servicio</th><th class="num">Monto</th><th>Factura</th></tr>
+    ${lavados.slice(0, 120).map(l => `<tr>
+      <td>${fecha(l.created_at)}</td>
+      <td style="font-weight:700">${esc(l.placa_principal)}</td>
+      <td>${esc(l.detalle ?? '')}</td>
+      <td class="num">${money(l.total)}</td>
+      <td>${!l.consolidated_invoice_id ? '<span class="rojo">Pendiente de facturar</span>'
+            : l.numero_control ? `CCF ${esc(l.numero_control)}` : esc(l.ccf_interno ?? '')}</td>
+    </tr>`).join('')}
+  </table>` : ''}
 
   <h2>Movimientos recientes</h2>
   <table>

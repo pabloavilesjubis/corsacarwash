@@ -30,6 +30,7 @@ import { cargarEmisor, emisorParaTicket, MARCA } from '../lib/fiscal/emisor'
 import { lookupVoucher, redeemVoucher, type VoucherLookup } from '../services/vouchers.service'
 import { darCortesia, fetchPolizaVigente, tiempoRestante, type RainPolicy } from '../services/rain.service'
 import { creditoDisponible, type CreditoDisponible } from '../services/credito.service'
+import { enviarCorreoVenta } from '../services/correo.service'
 import { ModalCortesiaSeguro, imprimirTicketCortesia } from '../components/pos/CortesiaSeguro'
 import { cargarAcuerdoGrupo } from '../lib/grupos/grupos'
 import type { AcuerdoFlotilla } from '../lib/flotillas/precios'
@@ -1469,6 +1470,10 @@ export function POSPage() {
         toast.error(e instanceof Error ? e.message : 'La venta se guardó, pero no se pudo imprimir algún ticket')
       }
 
+      if (dte?.estado === 'ACCEPTED' || selectedPayment === 'credito') {
+        enviarCorreoVenta(sale.order_id).then(r => { if (!r.ok) toast.error(`El correo de ${sale.order_number} no salió: ${r.error ?? ''}`, { duration: 8000 }) })
+      }
+
       toast.success(`Venta ${sale.order_number} registrada · ${sale.lineas.length} carros ✓`)
       setCarrito([])
       setCustomer(null); setFleetCompany(null); setFleetVehicle(null)
@@ -1603,6 +1608,13 @@ export function POSPage() {
         } catch (e) {
           toast.error(e instanceof Error ? e.message : 'No se pudo imprimir el ticket del seguro de lluvia')
         }
+      }
+
+      // El correo (0061): el DTE sellado, o el agradecimiento del lavado al
+      // crédito. En segundo plano: la caja no espera al correo. Si falla, la
+      // venta queda en rojo en Ventas para reintentar.
+      if (dte?.estado === 'ACCEPTED' || selectedPayment === 'credito') {
+        enviarCorreoVenta(sale.order_id).then(r => { if (!r.ok) toast.error(`El correo de ${sale.order_number} no salió: ${r.error ?? ''}`, { duration: 8000 }) })
       }
 
       toast.success(`Venta ${sale.order_number} registrada ✓`)

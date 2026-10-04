@@ -17,6 +17,7 @@ import {
 import { printFactura } from '../lib/fiscal/facturaDocument'
 import { imprimirTicketEnSegundoPlano } from '../lib/ticket/corsaTicket'
 import { emitirConFirmaLocal, fetchJsonDelDte, descargarJson } from '../services/fiscal.service'
+import { enviarCorreoVenta } from '../services/correo.service'
 import { AjusteVentaModal, type TipoAjuste } from '../components/AjusteVentaModal'
 import { buildTicketArgsFromSale } from '../lib/ticket/fromSale'
 import { emisorParaTicket, exigirEmisor } from '../lib/fiscal/emisor'
@@ -407,6 +408,11 @@ export function SalesPage() {
         toast.success(`DTE sellado por Hacienda: ${r.numeroControl ?? ''}`, { id: espera, duration: 8000 })
         // El ticket que se entregó salió sin sello: el nuevo sale con él.
         reimprimir({ ...s, dte_status: 'ACCEPTED' })
+        // Y el correo con el DTE, ahora que está sellado.
+        enviarCorreoVenta(s.order_id).then(r => {
+          if (!r.ok) toast.error(`DTE sellado, pero el correo no salió: ${r.error ?? ''}`, { duration: 8000 })
+          load()
+        })
         if (r.documentoId) {
           const { json, numeroControl } = await fetchJsonDelDte(r.documentoId)
           descargarJson(`${numeroControl ?? r.numeroControl ?? 'dte'}.json`, json)
@@ -449,9 +455,46 @@ export function SalesPage() {
    * la tarjeta: si mañana cambia una regla —qué se puede reimprimir y qué no—
    * no puede quedar cambiada en un formato y vieja en el otro.
    */
+  /**
+   * El correo de la venta (0061): verde si salió, rojo si no. Sólo cuando hay
+   * algo que mandar: el DTE sellado, o el lavado de un cliente al crédito.
+   */
+  const [enviandoCorreo, setEnviandoCorreo] = useState<string | null>(null)
+  const tieneCorreo = (s: Sale) => s.status !== 'cancelled' && (s.dte_status === 'ACCEPTED' || s.facturacion_diferida)
+  const reintentarCorreo = async (s: Sale) => {
+    if (s.correo_estado === 'sent' || enviandoCorreo) return
+    if (!window.confirm(`El correo de la venta ${s.order_number} no se envió${s.correo_error ? `:\n«${s.correo_error}»` : '.'}\n\n¿Reintentar el envío?`)) return
+    setEnviandoCorreo(s.order_id)
+    const r = await enviarCorreoVenta(s.order_id)
+    setEnviandoCorreo(null)
+    if (r.ok) toast.success(`Correo enviado a ${r.destinatarios?.join(', ') ?? ''}`)
+    else toast.error(r.error ?? 'No se pudo enviar el correo', { duration: 10000 })
+    load()
+  }
+  const TarjetaCorreo = ({ s }: { s: Sale }) => {
+    if (!tieneCorreo(s)) return null
+    const enviado = s.correo_estado === 'sent'
+    const cargando = enviandoCorreo === s.order_id
+    return (
+      <button type="button" onClick={() => reintentarCorreo(s)} disabled={enviado || cargando}
+        title={enviado ? `Enviado ${s.correo_at ? fechaHora(s.correo_at) : ''}` : (s.correo_error ?? 'No se ha enviado: tocá para reintentar')}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 999, fontSize: 11.5, fontWeight: 700,
+          border: `1px solid ${enviado ? 'var(--color-success-text)' : 'var(--color-danger-text)'}`,
+          background: enviado ? 'var(--color-success-tint)' : 'var(--color-danger-tint)',
+          color: enviado ? 'var(--color-success-text)' : 'var(--color-danger-text)',
+          cursor: enviado ? 'default' : 'pointer', whiteSpace: 'nowrap', fontFamily: 'var(--font-body)',
+        }}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><rect x="3" y="5" width="18" height="14" rx="2"/><polyline points="3 7 12 13 21 7"/></svg>
+        {cargando ? 'Enviando…' : enviado ? 'Enviado' : 'No enviado'}
+      </button>
+    )
+  }
+
   /** Las mismas tres acciones, con rótulo y a ancho completo, para la hoja. */
   const accionesGrandes = (s: Sale) => (
     <>
+      {tieneCorreo(s) && <div><TarjetaCorreo s={s}/></div>}
       <button className="btn btn-primary" onClick={() => reimprimir(s)}>
         Reimprimir ticket térmico
       </button>
@@ -606,7 +649,7 @@ export function SalesPage() {
                 <tr>
                   <th>Fecha</th><th>Orden</th><th>Cliente</th><th>Servicio</th>
                   <th>Placa</th><th>Pago</th><th>Documento</th>
-                  <th style={{ textAlign: 'right' }}>Total</th><th>Documentos</th>
+                  <th style={{ textAlign: 'right' }}>Total</th><th>Correo</th><th>Documentos</th>
                 </tr>
               </thead>
               <tbody>
@@ -631,13 +674,16 @@ export function SalesPage() {
                             </>}
                     </td>
                     <td className="font-mono" style={{ fontSize: 12.5 }}>{s.plate ?? '—'}</td>
-                    <td style={{ fontSize: 12.5 }}>{s.payment_method ?? '—'}</td>
+                    <td style={{ fontSize: 12.5 }}>{s.payment_method ?? (s.facturacion_diferida ? 'Crédito' : '—')}</td>
                     <td>
-                      <span className={`badge ${s.invoice_type === 'credito_fiscal' ? 'badge-green' : 'badge-neutral'}`}>
-                        {DOC_LABELS[s.invoice_type ?? ''] ?? '—'}
-                      </span>
+                      {s.facturacion_diferida && !s.invoice_type
+                        ? <span className="badge badge-warning" title="Se factura en el CCF consolidado desde Cuentas por cobrar">Por facturar</span>
+                        : <span className={`badge ${s.invoice_type === 'credito_fiscal' ? 'badge-green' : 'badge-neutral'}`}>
+                            {DOC_LABELS[s.invoice_type ?? ''] ?? '—'}
+                          </span>}
                     </td>
                     <td style={{ textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{money(s.total)}</td>
+                    <td><TarjetaCorreo s={s}/></td>
                     <td style={{ whiteSpace: 'nowrap' }}>{accionesDe(s)}</td>
                   </tr>
                 ))}

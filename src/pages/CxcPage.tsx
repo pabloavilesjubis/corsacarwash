@@ -23,6 +23,7 @@ import { emitirConFirmaLocal } from '../services/fiscal.service'
 import { fetchDteDeVenta } from '../services/sales.service'
 import { imprimirTicketEnSegundoPlano } from '../lib/ticket/corsaTicket'
 import { buildTicketCcfConsolidado } from '../lib/ticket/fromSale'
+import { enviarCorreoFactura, enviarEstadoCuenta } from '../services/correo.service'
 import { formatearFechaHora } from '../utils/fecha'
 
 function money(n: number) { return 'US$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
@@ -262,6 +263,10 @@ function DetalleCxc({ cliente: c, branchId, puedeAbonar, puedeFacturar, onCerrar
       const r = await emitirConFirmaLocal(invoiceId, { manual: true })
       if (r.estado === 'ACCEPTED') {
         toast.success(`CCF sellado por Hacienda: ${r.numeroControl ?? ''}`, { id: espera, duration: 8000 })
+        enviarCorreoFactura(invoiceId).then(x => {
+          if (x.ok) toast.success(`CCF enviado por correo a ${x.destinatarios?.join(', ') ?? ''}`)
+          else toast.error(`El CCF quedó sellado, pero el correo no salió: ${x.error ?? ''}`, { duration: 10000 })
+        })
         try {
           const dte = await fetchDteDeVenta(invoiceId)
           const fechas = items.map(i => i.created_at).sort()
@@ -314,10 +319,20 @@ function DetalleCxc({ cliente: c, branchId, puedeAbonar, puedeFacturar, onCerrar
     setGuardando(false)
   }
 
+  const [enviando, setEnviando] = useState(false)
+  const enviarEstado = async () => {
+    if (!window.confirm(`¿Enviar el estado de cuenta a ${c.customer_name}${c.email ? ` (${c.email})` : ' (no tiene correo: va a CORSA)'}?`)) return
+    setEnviando(true)
+    const r = await enviarEstadoCuenta(c.customer_id)
+    setEnviando(false)
+    if (r.ok) toast.success(`Estado de cuenta enviado a ${r.destinatarios?.join(', ') ?? ''}`)
+    else toast.error(r.error ?? 'No se pudo enviar', { duration: 10000 })
+  }
+
   const estadoCuenta = async () => {
     try {
       const emisor = await emisorParaTicket(branchId, false)
-      imprimirEstadoCuenta(estadoCuentaHTML({ emisor, cliente: c, documentos, movimientos }))
+      imprimirEstadoCuenta(estadoCuentaHTML({ emisor, cliente: c, documentos, movimientos, lavados }))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'No se pudo generar el estado de cuenta')
     }
@@ -339,6 +354,7 @@ function DetalleCxc({ cliente: c, branchId, puedeAbonar, puedeFacturar, onCerrar
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
             <button id="btn-estado-cuenta" className="ficha-btn-claro" onClick={estadoCuenta} disabled={cargando}>Estado de cuenta (PDF)</button>
+            <button id="btn-enviar-estado" className="ficha-btn-claro" onClick={enviarEstado} disabled={enviando}>{enviando ? 'Enviando…' : 'Enviar por correo'}</button>
             <button className="ficha-cerrar" onClick={onCerrar} aria-label="Cerrar">×</button>
           </div>
         </header>

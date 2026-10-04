@@ -157,20 +157,7 @@ export async function fetchMovimientosCredito(customerId: string, limite = 100):
   }))
 }
 
-export const EVENTO_ETIQUETA: Record<string, string> = {
-  CREDIT_ENABLED: 'Crédito habilitado',
-  CREDIT_DISABLED: 'Crédito deshabilitado',
-  LIMIT_CHANGED: 'Cambio de límite',
-  CHARGE: 'Venta al crédito',
-  CHARGE_OVERRIDE: 'Venta al crédito (sobre el límite)',
-  PAYMENT: 'Abono',
-  BLOCKED: 'Cuenta bloqueada',
-  UNBLOCKED: 'Cuenta desbloqueada',
-  CHARGE_VOID: 'Venta al crédito anulada',
-  CONSOLIDATED_ON: 'Facturación consolidada activada',
-  CONSOLIDATED_OFF: 'Facturación consolidada desactivada',
-  CONSOLIDATED_CCF: 'CCF consolidado',
-}
+export { EVENTO_ETIQUETA } from '../lib/cxc/eventos'
 
 /** La cuenta de crédito de un cliente, para su ficha (requiere corporate.read). */
 export interface CuentaCredito {
