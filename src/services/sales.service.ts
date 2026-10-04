@@ -61,6 +61,10 @@ export interface Sale {
   dte_status: string
   fiscal_document_id: string | null
   has_dte_payload: boolean
+  /** Del DTE vigente (0052): el sellado o, si no hay, el último intento. */
+  dte_numero_control: string | null
+  /** Por qué no salió el último intento (rechazo de Hacienda, caída del MH…). */
+  dte_error: string | null
 }
 
 /**

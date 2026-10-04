@@ -359,14 +359,20 @@ export function SalesPage() {
   }
 
   /**
-   * Emitir el DTE de una venta ya cobrada que salió sin él. Firma LOCAL: hay
-   * que estar en la PC de facturación, con la estación fiscal lista. Si el
-   * documento ya existía (preparado o pendiente) se retoma el MISMO; nunca se
-   * pide otro número para la misma venta.
+   * Emitir el DTE de una venta ya cobrada que no tiene sello de Hacienda.
+   * Firma LOCAL: hay que estar en la PC de facturación, con la estación
+   * fiscal lista. Un documento a medio camino (preparado, pendiente, sin
+   * respuesta) se retoma: el MISMO, sin otro número. Uno RECHAZADO se regenera:
+   * el Worker abre un documento nuevo con los datos actuales de la ficha.
    */
+  const sellado = (s: Sale) => s.dte_status === 'ACCEPTED' || s.dte_status === 'INVALIDATED'
   const puedeEmitir = (s: Sale) =>
     hasPermission('fiscal.issue') && !!s.invoice_id && s.order_kind !== 'voucher_redemption' && s.status !== 'cancelled' &&
-    ['no_emitido', 'CREATED', 'RETRY_PENDING'].includes(s.dte_status)
+    !sellado(s)
+  const rotuloEmitir = (s: Sale) =>
+    s.dte_status === 'REJECTED' ? 'Regenerar DTE (rechazado)'
+      : s.dte_status === 'no_emitido' ? 'Emitir DTE con Hacienda'
+      : 'Reintentar DTE (sin sello)'
 
   const [emitiendo, setEmitiendo] = useState<string | null>(null)
 
@@ -382,14 +388,25 @@ export function SalesPage() {
   const emitirDte = async (s: Sale) => {
     if (!s.invoice_id || emitiendo) return
     const tipo = s.invoice_type === 'credito_fiscal' ? 'Crédito Fiscal (CCF)' : 'Factura Consumidor Final (FCF)'
-    if (!window.confirm(`Se emitirá ante Hacienda la ${tipo} de la venta ${s.order_number} por ${money(Number(s.total))}.\n\n` +
-                        'Es un documento tributario real y usa el siguiente correlativo. ¿Continuar?')) return
+    const aviso = s.dte_status === 'REJECTED'
+      ? `Hacienda rechazó el DTE ${s.dte_numero_control ?? ''} de la venta ${s.order_number}:\n«${s.dte_error ?? 'sin motivo registrado'}»\n\n` +
+        'Si el problema está en los datos del cliente (NIT, NRC, dirección…), corregí la ficha del cliente ANTES: ' +
+        `el DTE nuevo sale con lo que tenga la ficha.\n\nSe emitirá una ${tipo} NUEVA por ${money(Number(s.total))}, ` +
+        'con el siguiente correlativo. ¿Continuar?'
+      : s.dte_status === 'no_emitido'
+        ? `Se emitirá ante Hacienda la ${tipo} de la venta ${s.order_number} por ${money(Number(s.total))}.\n\n` +
+          'Es un documento tributario real y usa el siguiente correlativo. ¿Continuar?'
+        : `El DTE ${s.dte_numero_control ?? ''} de la venta ${s.order_number} no tiene sello de Hacienda` +
+          `${s.dte_error ? `:\n«${s.dte_error}»` : '.'}\n\nSe retoma EL MISMO documento, sin pedir otro número. ¿Continuar?`
+    if (!window.confirm(aviso)) return
     setEmitiendo(s.order_id)
     const espera = toast.loading('Firmando en la estación fiscal y transmitiendo a Hacienda…')
     try {
       const r = await emitirConFirmaLocal(s.invoice_id, { manual: true })
       if (r.estado === 'ACCEPTED') {
         toast.success(`DTE sellado por Hacienda: ${r.numeroControl ?? ''}`, { id: espera, duration: 8000 })
+        // El ticket que se entregó salió sin sello: el nuevo sale con él.
+        reimprimir({ ...s, dte_status: 'ACCEPTED' })
         if (r.documentoId) {
           const { json, numeroControl } = await fetchJsonDelDte(r.documentoId)
           descargarJson(`${numeroControl ?? r.numeroControl ?? 'dte'}.json`, json)
@@ -446,7 +463,7 @@ export function SalesPage() {
       </button>
       {puedeEmitir(s) && (
         <button className="btn btn-primary" onClick={() => emitirDte(s)} disabled={emitiendo !== null}>
-          {emitiendo === s.order_id ? 'Emitiendo…' : 'Emitir DTE con Hacienda'}
+          {emitiendo === s.order_id ? 'Emitiendo…' : rotuloEmitir(s)}
         </button>
       )}
       {puedeCambiarPago(s) && (
@@ -480,7 +497,7 @@ export function SalesPage() {
                   disabled={s.order_kind === 'voucher_redemption'}
                   reason="un canje no genera documento fiscal"/>
       {puedeEmitir(s) && (
-        <IconAction icon={ICONS.sello} label={emitiendo === s.order_id ? 'Emitiendo DTE…' : 'Emitir DTE con Hacienda'}
+        <IconAction icon={ICONS.sello} label={emitiendo === s.order_id ? 'Emitiendo DTE…' : rotuloEmitir(s)}
                     onClick={() => emitirDte(s)} disabled={emitiendo !== null} reason="hay otra emisión en curso"/>
       )}
       {puedeCambiarPago(s) && (
