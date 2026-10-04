@@ -15,7 +15,7 @@ import toast from 'react-hot-toast'
 import { supabase } from '../../lib/supabase'
 import { imprimirTicketEnSegundoPlano } from '../../lib/ticket/corsaTicket'
 import { emisorParaTicket } from '../../lib/fiscal/emisor'
-import { darCortesia } from '../../services/rain.service'
+import { darCortesia, type PolizaCortesia } from '../../services/rain.service'
 import { getCustomerVehicles } from '../../services/customers.service'
 import { formatearFechaHora } from '../../utils/fecha'
 import { Dialogo, ModalNuevoVehiculo, SelectorVehiculos, type VehiculoPos } from './AltaRapida'
@@ -35,6 +35,25 @@ const COLUMNAS = 'id,customer_type,first_name,last_name,trade_name,legal_name,ph
 function nombre(c: Cliente): string {
   if (c.customer_type === 'individual') return `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim() || 'Cliente'
   return c.trade_name ?? c.legal_name ?? 'Cliente'
+}
+
+/**
+ * El ticket de una cortesía sin venta. Si la impresión falla la cortesía ya
+ * quedó registrada: sólo se avisa.
+ */
+export async function imprimirTicketCortesia(p: PolizaCortesia, branchId: string): Promise<void> {
+  try {
+    const emisor = await emisorParaTicket(branchId, false)
+    await imprimirTicketEnSegundoPlano({
+      emisor,
+      venta: { id: p.id, fecha: p.issued_at, lineas: [], total: 0 },
+      operacion: { servicio: '', aspirado: false, placa: p.plate },
+      cortesia: { clienteNombre: p.customer_name, fecha: formatearFechaHora(p.issued_at) },
+      seguroLluvia: { placa: p.plate, desde: p.issued_at, hasta: p.valid_until, cortesia: true },
+    })
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : 'La cortesía quedó registrada, pero no se pudo imprimir el ticket')
+  }
 }
 
 export function ModalCortesiaSeguro({ branchId, orgId, onCerrar }: {
@@ -105,18 +124,7 @@ export function ModalCortesiaSeguro({ branchId, orgId, onCerrar }: {
     setGuardando(true)
     try {
       const p = await darCortesia({ branchId, customerId: cliente.id, vehicleId: vehiculo.id })
-      try {
-        const emisor = await emisorParaTicket(branchId, false)
-        await imprimirTicketEnSegundoPlano({
-          emisor,
-          venta: { id: p.id, fecha: p.issued_at, lineas: [], total: 0 },
-          operacion: { servicio: '', aspirado: false, placa: p.plate },
-          cortesia: { clienteNombre: p.customer_name, fecha: formatearFechaHora(p.issued_at) },
-          seguroLluvia: { placa: p.plate, desde: p.issued_at, hasta: p.valid_until, cortesia: true },
-        })
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : 'La cortesía quedó registrada, pero no se pudo imprimir el ticket')
-      }
+      await imprimirTicketCortesia(p, branchId)
       toast.success(`Cortesía registrada · seguro de lluvia ${p.plate}`)
       onCerrar()
     } catch (e: any) {

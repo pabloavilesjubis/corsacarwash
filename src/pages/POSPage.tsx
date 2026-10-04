@@ -29,7 +29,7 @@ import {
 import { cargarEmisor, emisorParaTicket, MARCA } from '../lib/fiscal/emisor'
 import { lookupVoucher, redeemVoucher, type VoucherLookup } from '../services/vouchers.service'
 import { darCortesia, fetchPolizaVigente, tiempoRestante, type RainPolicy } from '../services/rain.service'
-import { ModalCortesiaSeguro } from '../components/pos/CortesiaSeguro'
+import { ModalCortesiaSeguro, imprimirTicketCortesia } from '../components/pos/CortesiaSeguro'
 import { cargarAcuerdoGrupo } from '../lib/grupos/grupos'
 import type { AcuerdoFlotilla } from '../lib/flotillas/precios'
 import {
@@ -772,6 +772,8 @@ interface CobroModalProps {
   customer: CustomerResult | null
   /** Su grupo empresarial: se le puede facturar a cualquiera de sus miembros. */
   grupo: GrupoPos | null
+  /** La caja no tiene servicio: sólo se puede canjear un cupón (que trae el suyo). */
+  sinServicio: boolean
   /** Método de pago, monto y teclado: lo arma la página. */
   pago: ReactNode
   pagaConCupon: boolean
@@ -785,7 +787,7 @@ interface CobroModalProps {
 }
 
 function CobroModal({
-  total, customer, grupo, pago, pagaConCupon, cuponValido, submitting, onTecla, onConfirm, onCanjear, onCancel,
+  total, customer, grupo, sinServicio, pago, pagaConCupon, cuponValido, submitting, onTecla, onConfirm, onCanjear, onCancel,
 }: CobroModalProps) {
   const esMovil = useEsMovil()
   // Si hay cliente en la caja, el modal abre resuelto: su documento preferido
@@ -845,6 +847,7 @@ function CobroModal({
   // Con cupón no hay documento que elegir: basta con que el cupón sirva.
   const canConfirm = submitting ? false
     : pagaConCupon ? cuponValido
+    : sinServicio ? false
     // «A nombre de…» sin cliente elegido sería un genérico disfrazado.
     : docType === 'ticket' ? fcfStatus.ok && (fcfMode === 'generic' || Boolean(fcfCliente))
     : docType === 'ccf'  ? Boolean(ccfSelected && ccfStatus?.ok)
@@ -895,6 +898,11 @@ function CobroModal({
             ...(esMovil ? {} : { borderLeft: '1px solid var(--border)', paddingLeft: 22 }),
           }}>
           {tituloColumna('Documento fiscal')}
+          {!pagaConCupon && sinServicio && (
+            <div style={{ fontSize: 12.5, color: 'var(--color-warning-text)', background: 'var(--color-warning-tint)', padding: '10px 12px', borderRadius: 10 }}>
+              No hay servicio en la caja. Elegí uno para cobrar, o pagá con cupón.
+            </div>
+          )}
           {pagaConCupon ? (
             <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', background: 'var(--subtle-bg)', padding: '10px 12px', borderRadius: 10 }}>
               El canje no emite documento: el cupón se facturó el día que se vendió. Se imprime un comprobante de canje.
@@ -1094,7 +1102,9 @@ export function POSPage() {
 
   // Normal mode
   const [customer, setCustomer] = useState<CustomerResult | null>(null)
-  const [selectedService, setSelectedService] = useState('elite')
+  // Sin servicio al entrar: la caja arranca en $0 y el total sale de lo que se
+  // elige. Así se puede dar sólo una cortesía, o empezar sin arrastrar un ÉLITE.
+  const [selectedService, setSelectedService] = useState<string | null>(null)
   const [selectedSize, setSelectedSize] = useState<SizeId>('M')
   const [withAspirado, setWithAspirado] = useState(false)
   const [conSeguro, setConSeguro] = useState(false)
@@ -1158,17 +1168,18 @@ export function POSPage() {
   // En flotilla sólo se ofrecen los servicios negociados; si el elegido no
   // está entre ellos (se cambió de flotilla), manda el primero que sí.
   const serviciosFlotilla = SERVICES.filter(s => fleetCompany?.precios[s.id as ServicioId])
-  const servicioEfectivo = mode === 'flotilla' && !serviciosFlotilla.some(s => s.id === selectedService)
-    ? (serviciosFlotilla[0]?.id ?? 'elite')
-    : selectedService
-  const svc = SERVICES.find(s => s.id === servicioEfectivo)!
-  const fleetPrices: Record<SizeId, number> = fleetCompany?.precios[svc.id as ServicioId] ?? svc.prices
+  const servicioEfectivo = !selectedService ? null
+    : mode === 'flotilla' && !serviciosFlotilla.some(s => s.id === selectedService)
+      ? (serviciosFlotilla[0]?.id ?? 'elite')
+      : selectedService
+  const svc = SERVICES.find(s => s.id === servicioEfectivo) ?? null
+  const fleetPrices: Record<SizeId, number> | null = svc ? (fleetCompany?.precios[svc.id as ServicioId] ?? svc.prices) : null
   // Con un cliente de grupo en caja (modo normal), el precio negociado del
   // grupo para ese servicio; lo que el grupo no negoció va a tarifa de lista.
   const acuerdoGrupo = mode === 'normal' ? grupo?.acuerdo ?? null : null
   const preciosDe = (s: { id: string; prices: Record<SizeId, number> }): Record<SizeId, number> =>
     acuerdoGrupo?.servicios[s.id.toUpperCase() as CodigoServicio] ?? s.prices
-  const servicePrice = mode === 'flotilla' ? fleetPrices[selectedSize] : preciosDe(svc)[selectedSize]
+  const servicePrice = !svc ? 0 : mode === 'flotilla' ? fleetPrices![selectedSize] : preciosDe(svc)[selectedSize]
   // En flotilla manda el precio negociado; si no hay acuerdo, la tarifa de lista.
   const usaAspiradoFlotilla = mode === 'flotilla'
     && Boolean(fleetCompany?.aspirado_enabled)
@@ -1178,7 +1189,7 @@ export function POSPage() {
     ? Number(fleetCompany!.aspirado_price)
     : usaAspiradoGrupo ? Number(acuerdoGrupo!.aspirado.precio)
     : ADDON_ASPIRADO.price
-  const aspiradoPrice = withAspirado ? aspiradoUnit : 0
+  const aspiradoPrice = withAspirado && svc ? aspiradoUnit : 0
 
   /**
    * A quién se le puede vender el seguro.
@@ -1224,7 +1235,7 @@ export function POSPage() {
     ? (fleetVehicle ? { id: fleetVehicle.vehicle_id, plate: fleetVehicle.plate, brand: fleetVehicle.brand, model: fleetVehicle.model } : null)
     : (vehiculoElegido ? { id: vehiculoElegido.id, plate: vehiculoElegido.plate, brand: vehiculoElegido.brand, model: vehiculoElegido.model } : null)
   const actualEnCarrito = !!vehiculoActual && carrito.some(l => l.vehiculo.id === vehiculoActual.id)
-  const lineaActual: LineaOrden | null = vehiculoActual && !actualEnCarrito ? {
+  const lineaActual: LineaOrden | null = vehiculoActual && !actualEnCarrito && svc ? {
     vehiculo: vehiculoActual, servicioId: svc.id, servicioNombre: svc.name, tier: svc.tier,
     size: selectedSize, precio: servicePrice, aspirado: withAspirado, aspiradoPrecio: withAspirado ? aspiradoUnit : 0,
   } : null
@@ -1302,7 +1313,7 @@ export function POSPage() {
     setFleetCompany(company)
     setFleetVehicle(vehicle)
     // ÉLITE si la flotilla lo negoció (es lo habitual); si no, su primer servicio.
-    setSelectedService(company.precios.elite ? 'elite' : (SERVICES.find(s => company.precios[s.id as ServicioId])?.id ?? 'elite'))
+    // Sin servicio preseleccionado, como el resto de la caja: arranca en $0.
     setShowFleetModal(false)
     // Si el acuerdo de la flotilla incluye aspirado, viene marcado: es parte
     // del servicio contratado y olvidarlo significa no cobrarlo. El cajero
@@ -1433,7 +1444,7 @@ export function POSPage() {
       toast.success(`Venta ${sale.order_number} registrada · ${sale.lineas.length} carros ✓`)
       setCarrito([])
       setCustomer(null); setFleetCompany(null); setFleetVehicle(null)
-      setMode('normal'); setSelectedService('elite'); setSelectedSize('M')
+      setMode('normal'); setSelectedService(null); setSelectedSize('M')
       setWithAspirado(false); setKeypadValue(''); setConCortesia(false)
     } catch (err: any) {
       toast.error(err?.message ?? 'Error al crear la orden')
@@ -1460,7 +1471,7 @@ export function POSPage() {
       // el cobro fallaba y ninguna venta llegaba a guardarse.
       const { data, error } = await (supabase as any).rpc('pos_register_sale', {
         p_branch_id:       branchId,
-        p_service_code:    svc.tier.toUpperCase(),
+        p_service_code:    svc!.tier.toUpperCase(),
         p_size:            selectedSize,
         p_total:           total,
         p_payment_method:  selectedPayment,
@@ -1567,7 +1578,7 @@ export function POSPage() {
 
       toast.success(`Venta ${sale.order_number} registrada ✓`)
       setCustomer(null); setFleetCompany(null); setFleetVehicle(null)
-      setMode('normal'); setSelectedService('elite'); setSelectedSize('M')
+      setMode('normal'); setSelectedService(null); setSelectedSize('M')
       setWithAspirado(false); setKeypadValue(''); setConCortesia(false)
     } catch (err: any) {
       toast.error(err?.message ?? 'Error al crear la orden')
@@ -1664,7 +1675,39 @@ export function POSPage() {
 
   // La validez del cupón se resuelve dentro del modal de cobro; para abrirlo
   // basta con que la orden esté armada.
-  const canCharge = multi ? lineasOrden.length > 0 : mode === 'flotilla' ? !!fleetVehicle : true
+  // Sin servicio sólo se puede abrir el cobro para canjear un cupón (el cupón
+  // trae su servicio), o dar la cortesía sola, que no pasa por el cobro.
+  const soloCortesia = !svc && !multi && cortesiaActiva
+  const canCharge = multi ? lineasOrden.length > 0
+    : !svc ? (soloCortesia || (mode === 'normal' && puedeCanjearCupon))
+    : mode === 'flotilla' ? !!fleetVehicle : true
+
+  /** Deja la caja como recién abierta: sin cliente, sin servicios, en $0. */
+  const limpiarVenta = () => {
+    if (multi && !window.confirm(`La orden tiene ${lineasOrden.length} carros. ¿Limpiar todo?`)) return
+    setCarrito([])
+    setCustomer(null); setFleetCompany(null); setFleetVehicle(null)
+    setMode('normal'); setSelectedService(null); setSelectedSize('M')
+    setWithAspirado(false); setConSeguro(false); setConCortesia(false); setCanjeandoSeguro(false)
+    setKeypadValue(''); setSelectedPayment('efectivo')
+    setVoucherCode(''); setVoucherFound(null); setVoucherMiss(false)
+  }
+
+  /** Sin servicio y con la cortesía marcada: sólo el seguro de cortesía, sin venta. */
+  const darSoloCortesia = async () => {
+    const clienteId = mode === 'flotilla' ? fleetCompany?.customer_id : customer?.id
+    if (!branchId || !clienteId || !vehiculoId) return
+    setSubmitting(true)
+    try {
+      const p = await darCortesia({ branchId, customerId: clienteId, vehicleId: vehiculoId })
+      await imprimirTicketCortesia(p, branchId)
+      toast.success(`Cortesía registrada · seguro de lluvia ${p.plate}`)
+      limpiarVenta()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo registrar la cortesía')
+    }
+    setSubmitting(false)
+  }
 
   const abrirCobro = () => {
     // Cada cobro empieza con el monto en blanco: el de la venta anterior no
@@ -1947,7 +1990,7 @@ export function POSPage() {
                 const isGrupo = !isFleet && Boolean(acuerdoGrupo?.servicios[s.id.toUpperCase() as CodigoServicio])
                 return (
                   <div key={s.id} id={`svc-${s.id}`}
-                    onClick={() => setSelectedService(s.id)}
+                    onClick={() => setSelectedService(cur => (cur === s.id ? null : s.id))}
                     role="button" tabIndex={0}
                     style={{ border: `2px solid ${isSel ? tc2.accent : 'var(--border)'}`, borderRadius: 14, padding: '10px 12px', background: isSel ? `${tc2.accent}09` : 'var(--surface)', cursor: 'pointer', transition: 'all 0.12s', position: 'relative' }}
                   >
@@ -2101,7 +2144,7 @@ export function POSPage() {
                     {formatearFechaHora(polizaVigente.valid_until)}
                   </div>
                   <button
-                    onClick={() => setCanjeandoSeguro(v => !v)}
+                    onClick={() => { if (!canjeandoSeguro && !selectedService) setSelectedService('pro'); setCanjeandoSeguro(v => !v) }}
                     className={canjeandoSeguro ? 'btn btn-ghost' : 'btn btn-primary'}
                     style={{ marginTop: 9, width: '100%', justifyContent: 'center' }}>
                     {canjeandoSeguro ? 'Cancelar el canje' : 'Canjear: lavado PRO sin costo'}
@@ -2116,7 +2159,13 @@ export function POSPage() {
               que en el teléfono queda al final del recorrido — mirar el total y
               cobrar es lo último que se hace. */}
           <div className="card" style={{ flex: esMovil ? '1 1 100%' : '0 0 250px', display: 'flex', flexDirection: 'column', gap: 10, padding: 12 }}>
-            <div className="panel-section-label">Resumen{multi ? ` · ${lineasOrden.length} carros` : ''}</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div className="panel-section-label">Resumen{multi ? ` · ${lineasOrden.length} carros` : ''}</div>
+              <button id="btn-limpiar-venta" onClick={limpiarVenta} disabled={submitting}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-danger-text)', fontSize: 12, fontWeight: 600, padding: '2px 4px' }}>
+                Limpiar venta
+              </button>
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {/* Los carros ya agregados a la orden; el de abajo es el que se está armando. */}
               {carrito.map(l => (
@@ -2142,7 +2191,12 @@ export function POSPage() {
               {multi && lineaActual && (
                 <div className="font-mono" style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text-primary)', marginBottom: -6 }}>{lineaActual.vehiculo.plate}</div>
               )}
-              {(!multi || lineaActual) && (<>
+              {!svc && !multi && (
+                <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', padding: '6px 0' }}>
+                  Sin servicio. Elegí uno para cobrar{cortesiaActiva ? ', o da la cortesía sin cobro.' : '.'}
+                </div>
+              )}
+              {svc && (!multi || lineaActual) && (<>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{svc.name} · {selectedSize}</div>
@@ -2211,9 +2265,12 @@ export function POSPage() {
             <div className="clip-btn-wrap" style={{ opacity: (!canCharge || submitting) ? 0.55 : 1, pointerEvents: (!canCharge || submitting) ? 'none' : 'auto' }}>
               <div className="clip-btn-corner"/>
               <button id="btn-charge" className="clip-btn large" style={{ width: '100%' }}
-                      onClick={abrirCobro}
+                      onClick={soloCortesia ? darSoloCortesia : abrirCobro}
                       disabled={!canCharge || submitting}>
-                {submitting ? 'Procesando…' : `Cobrar ${fmt(total)}`}
+                {submitting ? 'Procesando…'
+                  : soloCortesia ? 'Dar cortesía (sin cobro)'
+                  : !svc && !multi ? (canCharge ? 'Canjear cupón' : 'Elegí un servicio')
+                  : `Cobrar ${fmt(total)}`}
               </button>
             </div>
           </div>
@@ -2264,6 +2321,7 @@ export function POSPage() {
         <CobroModal
           customer={customer}
           grupo={mode === 'normal' ? grupo : null}
+          sinServicio={!svc && !multi}
           total={total}
           pago={bloqueDeCobro}
           pagaConCupon={pagaConCupon}
