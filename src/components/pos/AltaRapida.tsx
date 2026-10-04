@@ -50,7 +50,7 @@ export interface ClientePos {
 
 // ─── Envoltorio: hoja en teléfono, modal en computadora ───────
 
-function Dialogo({ titulo, children, onCerrar }: {
+export function Dialogo({ titulo, children, onCerrar }: {
   titulo: string; children: React.ReactNode; onCerrar: () => void
 }) {
   const esMovil = useEsMovil()

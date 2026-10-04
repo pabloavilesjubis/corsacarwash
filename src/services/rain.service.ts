@@ -32,6 +32,8 @@ export interface RainPolicy {
   horas_restantes: number
   redeemed_at: string | null
   notes: string | null
+  /** Regalado desde el POS (0053). */
+  courtesy?: boolean
 }
 
 export interface RainFilters {
@@ -111,4 +113,36 @@ export const ESTADO_COLOR: Record<EstadoPoliza, { color: string; tint: string }>
   vencida:    { color: 'var(--text-secondary)',     tint: 'var(--subtle-bg)' },
   canjeada:   { color: 'var(--corsa-green)',        tint: 'var(--subtle-bg)' },
   anulada:    { color: 'var(--color-danger-text)',  tint: 'var(--color-danger-tint)' },
+}
+
+/** Lo que devuelve rain_policy_courtesy (0053). */
+export interface PolizaCortesia {
+  id: string
+  plate: string
+  price: number
+  courtesy: true
+  customer_name: string
+  issued_at: string
+  valid_until: string
+}
+
+/**
+ * Seguro de lluvia de cortesía: 48 horas, precio cero. Con `workOrderId` queda
+ * atado a la venta recién cobrada (y repetirlo devuelve el mismo); sin él es
+ * una cortesía suelta, desde el modal del POS.
+ */
+export async function darCortesia(args: {
+  branchId: string
+  customerId: string
+  vehicleId: string
+  workOrderId?: string | null
+}): Promise<PolizaCortesia> {
+  const { data, error } = await (supabase as any).rpc('rain_policy_courtesy', {
+    p_branch_id: args.branchId,
+    p_customer_id: args.customerId,
+    p_vehicle_id: args.vehicleId,
+    p_work_order_id: args.workOrderId ?? null,
+  })
+  if (error) throw error
+  return data as PolizaCortesia
 }

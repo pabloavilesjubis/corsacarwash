@@ -125,6 +125,8 @@ export interface PosSaleResult {
     price: number
     issued_at: string
     valid_until: string
+    /** De cortesía (0053): la agrega el POS después del cobro, sin línea de venta. */
+    courtesy?: boolean
   } | null
   /** Póliza consumida por esta venta, si el lavado se cobró con un seguro. */
   rain_redeemed: {
@@ -180,7 +182,8 @@ export function buildTicketArgsFromPos(
         ...(result.with_aspirado
           ? [{ nombre: 'Aspirado de interiores', cantidad: 1, precioUnitario: aspirado, subtotal: aspirado }]
           : []),
-        ...(result.rain_policy
+        // Una cortesía no se cobró: no va como línea, sólo como el bloque del seguro.
+        ...(result.rain_policy && !result.rain_policy.courtesy
           ? [{
               nombre: 'Seguro de lluvia',
               cantidad: 1,
@@ -211,6 +214,7 @@ export function buildTicketArgsFromPos(
           placa: result.rain_policy.plate,
           desde: result.rain_policy.issued_at,
           hasta: result.rain_policy.valid_until,
+          cortesia: !!result.rain_policy.courtesy,
         }
       : undefined,
   }

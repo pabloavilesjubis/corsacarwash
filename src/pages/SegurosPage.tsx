@@ -114,7 +114,7 @@ function DetallePoliza({ p, esMovil, onCerrar, onCanjear, canjeando }: {
         <Dato label="Comprado" valor={formatearFechaHora(p.issued_at)}/>
         <Dato label="Vence" valor={<strong>{formatearFechaHora(p.valid_until)}</strong>}/>
         {vigente && <Dato label="Le quedan" valor={tiempoRestante(p.horas_restantes)}/>}
-        <Dato label="Precio" valor={money(p.price)}/>
+        <Dato label="Precio" valor={p.courtesy ? 'Cortesía' : money(p.price)}/>
         <Dato label="Orden" valor={p.order_number}/>
         <Dato label="Sucursal" valor={p.branch_name}/>
         {p.redeemed_at && <Dato label="Canjeado" valor={formatearFechaHora(p.redeemed_at)}/>}
@@ -319,7 +319,7 @@ export function SegurosPage() {
                         {p.estado === 'activa' || p.estado === 'por_vencer' ? tiempoRestante(p.horas_restantes) : '—'}
                       </td>
                       <td><Estado estado={p.estado}/></td>
-                      <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{money(p.price)}</td>
+                      <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{p.courtesy ? 'Cortesía' : money(p.price)}</td>
                     </tr>
                   ))}
                 </tbody>

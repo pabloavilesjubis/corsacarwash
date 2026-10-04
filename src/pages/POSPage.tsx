@@ -25,7 +25,8 @@ import { fetchDteDeVenta, type DteDeVenta } from '../services/sales.service'
 import { buildTicketArgsFromPos, type PosSaleResult } from '../lib/ticket/fromSale'
 import { cargarEmisor, emisorParaTicket, MARCA } from '../lib/fiscal/emisor'
 import { lookupVoucher, redeemVoucher, type VoucherLookup } from '../services/vouchers.service'
-import { fetchPolizaVigente, tiempoRestante, type RainPolicy } from '../services/rain.service'
+import { darCortesia, fetchPolizaVigente, tiempoRestante, type RainPolicy } from '../services/rain.service'
+import { ModalCortesiaSeguro } from '../components/pos/CortesiaSeguro'
 import {
   getCustomerVehicles, fetchMapaTamanos, type TamanoVehiculo,
 } from '../services/customers.service'
@@ -947,6 +948,10 @@ export function POSPage() {
   const [selectedSize, setSelectedSize] = useState<SizeId>('M')
   const [withAspirado, setWithAspirado] = useState(false)
   const [conSeguro, setConSeguro] = useState(false)
+  // Seguro de lluvia de cortesía (0053). Arranca sin marcar: con una orden
+  // armada se agrega al cobrar; sin orden, el botón abre el modal.
+  const [conCortesia, setConCortesia] = useState(false)
+  const [modalCortesia, setModalCortesia] = useState(false)
   // Póliza viva del vehículo elegido, si tiene una. La trae el servidor.
   const [polizaVigente, setPolizaVigente] = useState<RainPolicy | null>(null)
   // Los vehículos del cliente elegido, y con cuál entra. Un cliente con tres
@@ -1040,6 +1045,10 @@ export function POSPage() {
    * puede vender.
    */
   const seguroActivo = conSeguro && puedeVenderSeguro && !canjeandoSeguro
+  // La cortesía, igual: derivada. Sin cliente con placa no hay orden a la que
+  // agregarla, y el botón pasa a abrir el modal de cortesía suelta.
+  const puedeDarCortesia = hasPermission('rain.courtesy')
+  const cortesiaActiva = conCortesia && puedeVenderSeguro && !canjeandoSeguro && !seguroActivo && puedeDarCortesia
   const seguroPrice = seguroActivo ? ADDON_SEGURO.price : 0
 
   // Un lavado cobrado con el seguro no se cobra: es el derecho que ya se pagó.
@@ -1199,7 +1208,22 @@ export function POSPage() {
       })
       if (error) throw error
 
-      const sale = data as PosSaleResult
+      let sale = data as PosSaleResult
+
+      // La cortesía va después del cobro y no adentro: no mueve plata, y si
+      // falla la venta ya está bien registrada. Se avisa y se puede dar suelta.
+      if (cortesiaActiva && vehiculoId) {
+        try {
+          const p = await darCortesia({
+            branchId, workOrderId: sale.order_id, vehicleId: vehiculoId,
+            customerId: (mode === 'flotilla' ? fleetCompany?.customer_id : customer?.id) as string,
+          })
+          sale = { ...sale, rain_policy: { id: p.id, plate: p.plate, price: 0, issued_at: p.issued_at, valid_until: p.valid_until, courtesy: true } }
+        } catch (e) {
+          toast.error(`La venta se registró, pero la cortesía no: ${e instanceof Error ? e.message : 'error'}. Dala desde el botón Cortesía.`,
+            { duration: 10000 })
+        }
+      }
       // Un ticket genérico no lleva datos del cliente aunque haya uno en la caja.
       const receptor = billing.ccfCustomer ?? billing.fcfCustomer ?? null
 
@@ -1259,14 +1283,14 @@ export function POSPage() {
       toast.success(`Venta ${sale.order_number} registrada ✓`)
       setCustomer(null); setFleetCompany(null); setFleetVehicle(null)
       setMode('normal'); setSelectedService('elite'); setSelectedSize('M')
-      setWithAspirado(false); setKeypadValue('')
+      setWithAspirado(false); setKeypadValue(''); setConCortesia(false)
     } catch (err: any) {
       toast.error(err?.message ?? 'Error al crear la orden')
     }
     setSubmitting(false)
   }, [branchId, emiteDte, mode, fleetCompany, fleetVehicle, customer, svc, selectedSize, total, selectedPayment,
       withAspirado, aspiradoPrice, currentBranch, seguroActivo, seguroPrice,
-      canjeandoSeguro, polizaVigente, vehiculoElegido])
+      canjeandoSeguro, polizaVigente, vehiculoElegido, cortesiaActiva, vehiculoId])
 
   // Con cupón el botón sólo se habilita si el cupón existe y está sin usar:
   // canjear uno ya utilizado o inexistente falla en el servidor, y es mejor
@@ -1670,7 +1694,7 @@ export function POSPage() {
 
               {/* ── Seguro de lluvia ── */}
               <button id="addon-seguro"
-                onClick={() => puedeVenderSeguro && !canjeandoSeguro && setConSeguro(v => !v)}
+                onClick={() => { if (puedeVenderSeguro && !canjeandoSeguro) { setConSeguro(v => !v); setConCortesia(false) } }}
                 disabled={!puedeVenderSeguro || canjeandoSeguro}
                 style={{
                   width: '100%', display: 'flex', alignItems: 'center', gap: 10,
@@ -1701,6 +1725,48 @@ export function POSPage() {
                   +{fmt(ADDON_SEGURO.price)}
                 </div>
               </button>
+
+              {/* ── Cortesía: seguro de lluvia sin costo ──
+                  Con una orden armada (cliente con placa) es una casilla, sin
+                  marcar por defecto, que lo agrega al cobro. Fuera de orden
+                  abre el modal que emite la cortesía suelta con su ticket. */}
+              {(() => {
+                const enOrden = puedeVenderSeguro && !canjeandoSeguro
+                const habilitado = puedeDarCortesia && (enOrden || !canjeandoSeguro)
+                return (
+                  <button id="addon-cortesia"
+                    onClick={() => {
+                      if (!habilitado) return
+                      if (enOrden) { setConCortesia(v => !v); setConSeguro(false) }
+                      else setModalCortesia(true)
+                    }}
+                    disabled={!habilitado}
+                    style={{
+                      width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '7px 12px', borderRadius: 12, marginTop: 6,
+                      border: `2px solid ${cortesiaActiva ? 'var(--corsa-green)' : 'var(--border)'}`,
+                      background: cortesiaActiva ? 'rgba(22,25,26,0.05)' : 'var(--surface)',
+                      cursor: habilitado ? 'pointer' : 'not-allowed',
+                      opacity: habilitado ? 1 : 0.55,
+                      transition: 'all 0.12s', textAlign: 'left',
+                    }}>
+                    <div style={{ width: 20, height: 20, borderRadius: 4, flexShrink: 0, border: `2px solid ${cortesiaActiva ? 'var(--corsa-green)' : 'var(--border)'}`, background: cortesiaActiva ? 'var(--corsa-green)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {cortesiaActiva && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Cortesía</div>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 1 }}>
+                        {!puedeDarCortesia ? 'Tu rol no puede dar cortesías'
+                          : enOrden ? 'Seguro de lluvia sin costo con esta orden'
+                          : 'Sin orden: genera un ticket de cortesía'}
+                      </div>
+                    </div>
+                    <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 13, color: cortesiaActiva ? 'var(--corsa-green)' : 'var(--text-secondary)' }}>
+                      $0
+                    </div>
+                  </button>
+                )
+              })()}
 
               {/* ── Este carro ya tiene seguro vivo ── */}
               {polizaVigente && (
@@ -1756,6 +1822,12 @@ export function POSPage() {
                   <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--corsa-green)', fontVariantNumeric: 'tabular-nums' }}>+{fmt(seguroPrice)}</div>
                 </div>
               )}
+              {cortesiaActiva && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 13, color: 'var(--corsa-green)', fontWeight: 600 }}>Seguro de lluvia · cortesía</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--corsa-green)' }}>sin costo</div>
+                </div>
+              )}
               {canjeandoSeguro && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px solid var(--border)' }}>
                   <div style={{ fontSize: 13, color: 'var(--corsa-green)', fontWeight: 600 }}>Canje de seguro de lluvia</div>
@@ -1808,6 +1880,9 @@ export function POSPage() {
         />
       )}
 
+      {modalCortesia && branchId && (
+        <ModalCortesiaSeguro branchId={branchId} orgId={orgId} onCerrar={() => setModalCortesia(false)}/>
+      )}
       {altaVehiculo && orgId && customer?.id && (
         <ModalNuevoVehiculo
           orgId={orgId}

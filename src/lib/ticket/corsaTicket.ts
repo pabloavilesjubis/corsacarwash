@@ -128,6 +128,18 @@ export interface TicketSeguroLluvia {
   desde: string
   /** ISO del vencimiento — 48 horas después. */
   hasta: string
+  /** Regalado por la caja (0053): se imprime rotulado como cortesía. */
+  cortesia?: boolean
+}
+
+/**
+ * Seguro de cortesía SIN venta. Cuando viene, el ticket es sólo el seguro: ni
+ * cabecera de lavado, ni bloque fiscal, ni importes —no hubo cobro, y un
+ * ticket con totales en cero parecería una venta mal hecha—.
+ */
+export interface TicketCortesia {
+  clienteNombre: string
+  fecha: string
 }
 
 export interface TicketArgs {
@@ -139,6 +151,7 @@ export interface TicketArgs {
   atendio?: string
   redencion?: TicketRedencion
   seguroLluvia?: TicketSeguroLluvia
+  cortesia?: TicketCortesia
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -190,7 +203,7 @@ function marcaAspirado(aspirado: boolean): string {
 // ─── Generador ───────────────────────────────────────────────
 
 export function buildCorsaTicketHTML(args: TicketArgs): string {
-  const { emisor: e, venta: v, operacion: op, dte: d = {}, cliente: cli, atendio, redencion, seguroLluvia } = args
+  const { emisor: e, venta: v, operacion: op, dte: d = {}, cliente: cli, atendio, redencion, seguroLluvia, cortesia } = args
 
   const programa = resolveServiceProgram(op.servicio)
   const tipoLabel = (d.tipoDte && DTE_LABELS[d.tipoDte])
@@ -265,6 +278,7 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
   const seguroBlock = seguroLluvia ? `
     <div class="seguro-block">
       <div class="seguro-title">SEGURO DE LLUVIA</div>
+      ${seguroLluvia.cortesia ? `<div class="seguro-cortesia">CORTESÍA</div>` : ''}
       <div class="seguro-sub">Un lavado PRO sin costo si llueve</div>
       <div class="seguro-plate">${esc(seguroLluvia.placa)}</div>
       <div class="seguro-rows">
@@ -331,6 +345,21 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
        </div>`
     : ''
 
+  const cortesiaBlock = cortesia ? `
+    <div class="redencion">
+      <div class="redencion-title">Cortesía</div>
+      <div class="kv-block">
+        <div class="kv-row"><span class="k">Cliente</span><span class="v">${esc(cortesia.clienteNombre)}</span></div>
+        <div class="kv-row"><span class="k">Fecha</span><span class="v">${esc(cortesia.fecha)}</span></div>
+        ${atendio ? `<div class="kv-row"><span class="k">Atendió</span><span class="v">${esc(atendio)}</span></div>` : ''}
+      </div>
+      ${seguroBlock}
+      <div class="redencion-note">
+        Seguro de lluvia de cortesía, sin costo.<br/>
+        Este comprobante no es un documento tributario.
+      </div>
+    </div>` : ''
+
   const redencionBlock = redencion ? `
     <div class="redencion">
       <div class="redencion-title">Canje de cupón</div>
@@ -351,7 +380,7 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
 <html lang="es">
 <head>
 <meta charset="UTF-8"/>
-<title>${redencion ? `Canje ${esc(redencion.codigoCupon)}` : `Ticket ${esc(d.numeroControl || v.id || 'CORSA')}`}</title>
+<title>${cortesia ? 'Cortesía seguro de lluvia' : redencion ? `Canje ${esc(redencion.codigoCupon)}` : `Ticket ${esc(d.numeroControl || v.id || 'CORSA')}`}</title>
 <style>
   /* ════════════════════════════════════════════════════════
      REGLA DE ORO (heredada del ticket de BEON):
@@ -413,6 +442,10 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
   }
   .seguro-title { font-size: 14px; font-weight: 900; letter-spacing: 0.1em; }
   .seguro-sub { font-size: 10px; font-weight: 700; margin-top: 2px; }
+  .seguro-cortesia {
+    display: inline-block; border: 2px solid #000; padding: 0 8px; margin-top: 3px;
+    font-size: 12px; font-weight: 900; letter-spacing: 0.14em;
+  }
   .seguro-plate {
     border: 2px solid #000; display: inline-block;
     padding: 2px 10px; margin: 5px 0 4px;
@@ -527,7 +560,7 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
 </head>
 <body>
   <div class="ticket">
-    ${opBlock}
+    ${cortesia ? '' : opBlock}
 
     <div class="brand-block">
       ${LOGO_SVG}
@@ -539,7 +572,7 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
 
     <hr class="sep-solid"/>
 
-    ${redencion ? redencionBlock : `
+    ${cortesia ? cortesiaBlock : redencion ? redencionBlock : `
     <div class="doc-type">
       <div class="doc-type-name">${esc(tipoLabel)}</div>
       ${e.ambiente ? `<div class="doc-type-amb">${esc(e.ambiente)}</div>` : ''}
