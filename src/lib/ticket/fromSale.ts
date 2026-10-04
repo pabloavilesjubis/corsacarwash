@@ -8,6 +8,7 @@
 
 import type { TicketArgs, TicketDte, TicketEmisor } from './corsaTicket'
 import type { DteDeVenta, Sale } from '../../services/sales.service'
+import { formatearFechaHora } from '../../utils/fecha'
 
 /**
  * El emisor del ticket con el rótulo del ambiente y la sucursal.
@@ -217,5 +218,30 @@ export function buildTicketArgsFromPos(
           cortesia: !!result.rain_policy.courtesy,
         }
       : undefined,
+  }
+}
+
+/**
+ * El ticket aparte del seguro de lluvia de una venta (pagado o de cortesía),
+ * con el formato del ticket de cortesía. Se imprime DESPUÉS del de
+ * facturación, que no cambia: el cliente guarda éste en la guantera.
+ */
+export function buildTicketSeguroDeVenta(
+  result: PosSaleResult,
+  emisor: TicketEmisor,
+  clienteNombre: string,
+): TicketArgs | null {
+  const p = result.rain_policy
+  if (!p) return null
+  return {
+    emisor,
+    venta: { id: p.id, fecha: p.issued_at, lineas: [], total: 0 },
+    operacion: { servicio: '', aspirado: false, placa: p.plate },
+    cortesia: {
+      clienteNombre,
+      fecha: formatearFechaHora(p.issued_at),
+      pagado: p.courtesy ? undefined : { orden: result.order_number, precio: Number(p.price || 0) },
+    },
+    seguroLluvia: { placa: p.plate, desde: p.issued_at, hasta: p.valid_until, cortesia: !!p.courtesy },
   }
 }

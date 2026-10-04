@@ -140,6 +140,11 @@ export interface TicketSeguroLluvia {
 export interface TicketCortesia {
   clienteNombre: string
   fecha: string
+  /**
+   * Seguro PAGADO con una venta. El ticket aparte del seguro sale con el mismo
+   * formato, pero dice de qué orden es y que el cobro va en el de facturación.
+   */
+  pagado?: { orden: string; precio: number }
 }
 
 export interface TicketArgs {
@@ -347,15 +352,19 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
 
   const cortesiaBlock = cortesia ? `
     <div class="redencion">
-      <div class="redencion-title">Cortesía</div>
+      <div class="redencion-title">${cortesia.pagado ? 'Seguro de lluvia' : 'Cortesía'}</div>
       <div class="kv-block">
         <div class="kv-row"><span class="k">Cliente</span><span class="v">${esc(cortesia.clienteNombre)}</span></div>
         <div class="kv-row"><span class="k">Fecha</span><span class="v">${esc(cortesia.fecha)}</span></div>
+        ${cortesia.pagado ? `<div class="kv-row"><span class="k">Orden</span><span class="v">${esc(cortesia.pagado.orden)}</span></div>` : ''}
         ${atendio ? `<div class="kv-row"><span class="k">Atendió</span><span class="v">${esc(atendio)}</span></div>` : ''}
       </div>
       ${seguroBlock}
       <div class="redencion-note">
-        Seguro de lluvia de cortesía, sin costo.<br/>
+        ${cortesia.pagado
+          ? `Seguro de lluvia pagado (${money(cortesia.pagado.precio)}) con la orden ${esc(cortesia.pagado.orden)}.<br/>
+             El cobro va en el ticket de facturación.`
+          : 'Seguro de lluvia de cortesía, sin costo.'}<br/>
         Este comprobante no es un documento tributario.
       </div>
     </div>` : ''
@@ -380,7 +389,7 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
 <html lang="es">
 <head>
 <meta charset="UTF-8"/>
-<title>${cortesia ? 'Cortesía seguro de lluvia' : redencion ? `Canje ${esc(redencion.codigoCupon)}` : `Ticket ${esc(d.numeroControl || v.id || 'CORSA')}`}</title>
+<title>${cortesia ? (cortesia.pagado ? 'Seguro de lluvia' : 'Cortesía seguro de lluvia') : redencion ? `Canje ${esc(redencion.codigoCupon)}` : `Ticket ${esc(d.numeroControl || v.id || 'CORSA')}`}</title>
 <style>
   /* ════════════════════════════════════════════════════════
      REGLA DE ORO (heredada del ticket de BEON):

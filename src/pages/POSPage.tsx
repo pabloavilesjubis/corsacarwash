@@ -22,7 +22,7 @@ import { FCF_IDENTIFICACION_OBLIGATORIA_DESDE } from '../lib/mh-catalogs'
 import { imprimirTicketEnSegundoPlano } from '../lib/ticket/corsaTicket'
 import { emitirConFirmaLocal, posEmiteDte } from '../services/fiscal.service'
 import { fetchDteDeVenta, type DteDeVenta } from '../services/sales.service'
-import { buildTicketArgsFromPos, type PosSaleResult } from '../lib/ticket/fromSale'
+import { buildTicketArgsFromPos, buildTicketSeguroDeVenta, type PosSaleResult } from '../lib/ticket/fromSale'
 import { cargarEmisor, emisorParaTicket, MARCA } from '../lib/fiscal/emisor'
 import { lookupVoucher, redeemVoucher, type VoucherLookup } from '../services/vouchers.service'
 import { darCortesia, fetchPolizaVigente, tiempoRestante, type RainPolicy } from '../services/rain.service'
@@ -1395,6 +1395,19 @@ export function POSPage() {
         }, dte))
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'La venta se guardó, pero no se pudo abrir el ticket')
+      }
+
+      // Con seguro de lluvia (pagado o de cortesía) sale además su propio
+      // ticket, aparte del de facturación: es el que el cliente guarda y
+      // presenta si llueve. El de facturación no cambia.
+      if (sale.rain_policy) {
+        try {
+          const titular = mode === 'flotilla' ? (fleetCompany?.trade_name ?? 'Cliente') : displayName(customer)
+          const args = buildTicketSeguroDeVenta(sale, await emisorParaTicket(branchId, false), titular)
+          if (args) await imprimirTicketEnSegundoPlano(args)
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : 'No se pudo imprimir el ticket del seguro de lluvia')
+        }
       }
 
       toast.success(`Venta ${sale.order_number} registrada ✓`)
