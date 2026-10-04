@@ -17,6 +17,7 @@ import {
 import { printFactura } from '../lib/fiscal/facturaDocument'
 import { imprimirTicketEnSegundoPlano } from '../lib/ticket/corsaTicket'
 import { emitirConFirmaLocal, fetchJsonDelDte, descargarJson } from '../services/fiscal.service'
+import { AjusteVentaModal, type TipoAjuste } from '../components/AjusteVentaModal'
 import { buildTicketArgsFromSale } from '../lib/ticket/fromSale'
 import { emisorParaTicket, exigirEmisor } from '../lib/fiscal/emisor'
 import { formatearFechaHora } from '../utils/fecha'
@@ -52,6 +53,16 @@ const ICONS = {
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
       <polyline points="9 12 11 14 15 10"/>
+    </svg>
+  ),
+  anular: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/>
+    </svg>
+  ),
+  pago: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>
     </svg>
   ),
   json: (
@@ -354,10 +365,20 @@ export function SalesPage() {
    * pide otro número para la misma venta.
    */
   const puedeEmitir = (s: Sale) =>
-    hasPermission('fiscal.issue') && !!s.invoice_id && s.order_kind !== 'voucher_redemption' &&
+    hasPermission('fiscal.issue') && !!s.invoice_id && s.order_kind !== 'voucher_redemption' && s.status !== 'cancelled' &&
     ['no_emitido', 'CREATED', 'RETRY_PENDING'].includes(s.dte_status)
 
   const [emitiendo, setEmitiendo] = useState<string | null>(null)
+
+  /**
+   * Anular y cambiar forma de pago (0048). Cualquiera con acceso a Ventas ve
+   * los botones; quien no es Super Admin ni Administrador necesita que un
+   * Super Admin autorice con su contraseña en el diálogo.
+   */
+  const [ajuste, setAjuste] = useState<{ tipo: TipoAjuste; venta: Sale } | null>(null)
+  const anulada = (s: Sale) => s.status === 'cancelled'
+  const puedeAnular = (s: Sale) => !anulada(s)
+  const puedeCambiarPago = (s: Sale) => !anulada(s) && s.order_kind !== 'voucher_redemption' && Number(s.total) > 0
   const emitirDte = async (s: Sale) => {
     if (!s.invoice_id || emitiendo) return
     const tipo = s.invoice_type === 'credito_fiscal' ? 'Crédito Fiscal (CCF)' : 'Factura Consumidor Final (FCF)'
@@ -428,6 +449,17 @@ export function SalesPage() {
           {emitiendo === s.order_id ? 'Emitiendo…' : 'Emitir DTE con Hacienda'}
         </button>
       )}
+      {puedeCambiarPago(s) && (
+        <button className="btn btn-ghost" onClick={() => setAjuste({ tipo: 'pago', venta: s })}>
+          Cambiar forma de pago
+        </button>
+      )}
+      {puedeAnular(s) && (
+        <button className="btn btn-ghost" style={{ color: 'var(--color-danger-text)' }}
+                onClick={() => setAjuste({ tipo: 'anular', venta: s })}>
+          Anular venta
+        </button>
+      )}
       <button className="btn btn-ghost"
               onClick={() => descargarJsonDte(s)}
               disabled={!tieneJson(s)}
@@ -450,6 +482,12 @@ export function SalesPage() {
       {puedeEmitir(s) && (
         <IconAction icon={ICONS.sello} label={emitiendo === s.order_id ? 'Emitiendo DTE…' : 'Emitir DTE con Hacienda'}
                     onClick={() => emitirDte(s)} disabled={emitiendo !== null} reason="hay otra emisión en curso"/>
+      )}
+      {puedeCambiarPago(s) && (
+        <IconAction icon={ICONS.pago} label="Cambiar forma de pago" onClick={() => setAjuste({ tipo: 'pago', venta: s })}/>
+      )}
+      {puedeAnular(s) && (
+        <IconAction icon={ICONS.anular} label="Anular venta" onClick={() => setAjuste({ tipo: 'anular', venta: s })}/>
       )}
       <IconAction icon={ICONS.json} label="JSON del DTE"
                   onClick={() => descargarJsonDte(s)}
@@ -558,7 +596,10 @@ export function SalesPage() {
                 {sales.map(s => (
                   <tr key={s.order_id} style={{ cursor: 'default' }}>
                     <td style={{ fontSize: 12.5, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{fechaHora(s.created_at)}</td>
-                    <td className="font-mono" style={{ fontSize: 12.5, fontWeight: 600 }}>{s.order_number}</td>
+                    <td className="font-mono" style={{ fontSize: 12.5, fontWeight: 600 }}>
+                      <span style={anulada(s) ? { textDecoration: 'line-through', opacity: 0.6 } : undefined}>{s.order_number}</span>
+                      {anulada(s) && <span className="badge badge-neutral" style={{ marginLeft: 6 }}>Anulada</span>}
+                    </td>
                     <td style={{ fontSize: 13 }} className="truncate">{s.customer_name}</td>
                     <td style={{ fontSize: 13 }}>
                       {s.order_kind === 'voucher_sale'
@@ -588,6 +629,16 @@ export function SalesPage() {
           </div>
         )}
       </div>
+
+      {ajuste && (
+        <AjusteVentaModal
+          tipo={ajuste.tipo}
+          venta={ajuste.venta}
+          tienePermiso={hasPermission(ajuste.tipo === 'anular' ? 'sales.void' : 'sales.change_payment')}
+          onCerrar={() => setAjuste(null)}
+          onHecho={() => { setDetalle(null); load() }}
+        />
+      )}
 
       {/* Detalle de una venta — sólo teléfono */}
       {esMovil && detalle && (

@@ -260,6 +260,8 @@ export interface ResultadoFiscal {
   firmado?: boolean
   /** Firma local: el DTE armado que la estación fiscal tiene que firmar. */
   dte?: unknown
+  /** Firma local de una invalidación: el evento armado. */
+  evento?: unknown
 }
 
 export class ErrorFiscal extends Error {
@@ -273,12 +275,15 @@ export class ErrorFiscal extends Error {
   }
 }
 
-async function llamarWorker(ruta: string, cuerpo: unknown, opts: { timeoutMs?: number } = {}): Promise<ResultadoFiscal> {
+async function llamarWorker(
+  ruta: string, cuerpo: unknown,
+  /** `token`: otra sesión, p. ej. la del Super Admin que autoriza una anulación. */
+  opts: { timeoutMs?: number; token?: string } = {},
+): Promise<ResultadoFiscal> {
   if (!URL_FISCAL) {
     throw new ErrorFiscal('Falta VITE_FISCAL_API_URL en la configuración de la app.', 'SIN_CONFIGURAR')
   }
-  const { data } = await supabase.auth.getSession()
-  const token = data.session?.access_token
+  const token = opts.token ?? (await supabase.auth.getSession()).data.session?.access_token
   if (!token) throw new ErrorFiscal('La sesión venció. Volvé a ingresar.', 'SESION_INVALIDA')
 
   let res: Response
@@ -363,7 +368,31 @@ export interface SolicitudInvalidacion {
   solicitante: Persona
 }
 
-export const invalidar = (s: SolicitudInvalidacion) => llamarWorker('/v1/app/invalidacion', s)
+/**
+ * Invalida un DTE sellado con FIRMA LOCAL: el Worker arma el evento, la
+ * estación fiscal de ESTA PC lo firma, el Worker lo transmite a /anulardte.
+ * Sin `responsable`, el Worker usa el responsable fijo de la configuración
+ * fiscal (0048). `token`: la sesión del Super Admin que autorizó, si no es la
+ * del usuario.
+ */
+export async function invalidarConFirmaLocal(
+  s: Omit<SolicitudInvalidacion, 'responsable'> & { responsable?: SolicitudInvalidacion['responsable'] | null },
+  opts: { token?: string } = {},
+): Promise<ResultadoFiscal> {
+  await exigirEstacionLista()
+  const preparado = await llamarWorker('/v1/app/invalidacion/preparar', s, { token: opts.token, timeoutMs: 60_000 })
+  if (preparado.estado !== 'PENDIENTE_FIRMA' || !preparado.evento || !preparado.invalidacionId) return preparado
+  let jws: string
+  try {
+    jws = await firmarEnEstacion(preparado.evento)
+  } catch (e) {
+    throw new ErrorFiscal(`${e instanceof Error ? e.message : 'No se pudo firmar.'} La invalidación quedó preparada; reintentá cuando la estación esté lista.`, 'SIN_FIRMA')
+  }
+  return llamarWorker('/v1/app/invalidacion/firmada', { invalidacionId: preparado.invalidacionId, jws },
+    { token: opts.token, timeoutMs: 60_000 })
+}
+
+export const invalidar = (s: SolicitudInvalidacion) => invalidarConFirmaLocal(s)
 
 /**
  * Emite el DTE de una venta del POS y espera la respuesta de Hacienda.
@@ -408,9 +437,12 @@ export async function posEmiteDte(branchId: string): Promise<boolean> {
  * `manual`: una venta ya cobrada, desde el historial (permiso fiscal.issue);
  * no depende de emitir_en_pos.
  */
-export async function emitirConFirmaLocal(
-  invoiceId: string, opciones: { manual?: boolean; timeoutMs?: number } = {},
-): Promise<ResultadoFiscal> {
+/**
+ * La estación fiscal de ESTA PC tiene que poder firmar AHORA. Se comprueba
+ * antes de pedir número o abrir una invalidación: si la PC no puede firmar no
+ * queda nada a medias.
+ */
+async function exigirEstacionLista(): Promise<void> {
   const estacion = await probarEstacion()
   if (!estacion.detectado) {
     throw new ErrorFiscal('Estación fiscal no disponible: abrí esto en la PC de facturación con el CORSA Gateway.', 'SIN_ESTACION')
@@ -424,6 +456,12 @@ export async function emitirConFirmaLocal(
   if (servicio.ambiente === '01' && !st.allowProduction) {
     throw new ErrorFiscal('La estación fiscal no tiene habilitada la firma de producción («Habilitar firma de produccion.bat»). No se reservó ningún número.', 'SIN_PRODUCCION')
   }
+}
+
+export async function emitirConFirmaLocal(
+  invoiceId: string, opciones: { manual?: boolean; timeoutMs?: number } = {},
+): Promise<ResultadoFiscal> {
+  await exigirEstacionLista()
 
   const timeoutMs = opciones.timeoutMs ?? 60_000
   const preparado = await llamarWorker(
