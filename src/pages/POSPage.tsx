@@ -7,7 +7,7 @@
  * Modal de cobro: Ticket (FCF) o CCF
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import toast from 'react-hot-toast'
 import { useAuth } from '../hooks/useAuth'
@@ -458,7 +458,7 @@ function CustomerSearchPanel({ selected, onSelect, onClear, onNuevo }: {
   }, [])
 
   if (selected) return (
-    <div className="card" style={{ padding: 14 }}>
+    <div className="card" style={{ padding: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{displayName(selected)}</div>
@@ -481,7 +481,7 @@ function CustomerSearchPanel({ selected, onSelect, onClear, onNuevo }: {
   )
 
   return (
-    <div className="card" style={{ padding: 14 }}>
+    <div className="card" style={{ padding: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
         <div style={{ width: 28, height: 28, borderRadius: 10, background: 'var(--subtle-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -585,21 +585,46 @@ function ReceptorPanel({ status, title }: { status: ReceptorStatus; title: strin
   )
 }
 
-// ─── Billing Modal ────────────────────────────────────────────
+// ─── Modal de cobro ───────────────────────────────────────────
 
-interface BillingModalProps {
-  total: number; paymentMethod: string
+/**
+ * Todo lo que se pide al cobrar, en un solo lugar: cómo paga el cliente (a la
+ * izquierda) y a nombre de quién va el documento (a la derecha).
+ *
+ * Antes el método de pago y el teclado vivían debajo del resumen, y el tipo de
+ * documento en un modal aparte que se abría después. En la pantalla de 15" de
+ * caja ese bloque empujaba el botón de cobrar fuera de la vista. Ahora el
+ * resumen es sólo la orden y su total; el cobro se arma acá entero.
+ *
+ * El estado del pago (método, monto, cupón) sigue viviendo en la página: el
+ * canje y el registro de la venta lo leen, y cerrar el modal para corregir un
+ * servicio no debería borrar el cupón que ya se tecleó.
+ */
+interface CobroModalProps {
+  total: number
   /** Cliente ya elegido en la caja; de ahí sale todo lo prellenado. */
   customer: CustomerResult | null
+  /** Método de pago, monto y teclado: lo arma la página. */
+  pago: ReactNode
+  pagaConCupon: boolean
+  cuponValido: boolean
+  submitting: boolean
+  /** Una tecla física del monto (o del cupón), como si fuera del teclado en pantalla. */
+  onTecla: (k: string) => void
   onConfirm: (billing: BillingInfo) => void
+  onCanjear: () => void
   onCancel: () => void
 }
 
-function BillingModal({ total, paymentMethod, customer, onConfirm, onCancel }: BillingModalProps) {
+function CobroModal({
+  total, customer, pago, pagaConCupon, cuponValido, submitting, onTecla, onConfirm, onCanjear, onCancel,
+}: CobroModalProps) {
+  const esMovil = useEsMovil()
   // Si hay cliente en la caja, el modal abre resuelto: su documento preferido
   // ya elegido y sus datos cargados. El cajero valida o corrige, no transcribe.
+  // Sin cliente, el ticket genérico: es la venta de mostrador de todos los días.
   const [docType, setDocType] = useState<DocType>(
-    customer ? preferredDocType(customer) : null
+    customer ? preferredDocType(customer) : 'ticket'
   )
   const [fcfMode, setFcfMode] = useState<FcfMode>(
     customer && preferredDocType(customer) === 'ticket' ? 'named' : 'generic'
@@ -633,6 +658,28 @@ function BillingModal({ total, paymentMethod, customer, onConfirm, onCancel }: B
     return () => document.removeEventListener('keydown', h)
   }, [onCancel])
 
+  // La caja tiene teclado: el monto se puede escribir sin tocar la pantalla.
+  // Se ignora mientras el foco está en un campo (el nombre del ticket, la
+  // búsqueda del CCF), que es donde esas teclas sí tienen que caer.
+  const teclaRef = useRef(onTecla)
+  useEffect(() => { teclaRef.current = onTecla })
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      const k = /^[0-9]$/.test(e.key) ? e.key
+        : e.key === '.' || e.key === ',' ? '.'
+        : e.key === 'Backspace' ? '⌫'
+        : null
+      if (!k) return
+      e.preventDefault()
+      teclaRef.current(k)
+    }
+    document.addEventListener('keydown', h)
+    return () => document.removeEventListener('keydown', h)
+  }, [])
+
   // El receptor efectivo: para CCF el buscado en el modal, para ticket el de la caja.
   const ccfStatus = ccfSelected ? ccfReceptorStatus(ccfSelected) : null
   const fcfStatus = fcfReceptorStatus(customer, total)
@@ -641,30 +688,60 @@ function BillingModal({ total, paymentMethod, customer, onConfirm, onCancel }: B
   // puede tener NIT y aun así no poder recibir un CCF (sin NRC, sin actividad,
   // sin dirección): el DTE se rechazaba al transmitir. Ahora se exige el
   // receptor completo, y el panel de arriba dice exactamente qué falta.
-  const canConfirm =
-    docType === 'ticket' ? fcfStatus.ok
+  // Con cupón no hay documento que elegir: basta con que el cupón sirva.
+  const canConfirm = submitting ? false
+    : pagaConCupon ? cuponValido
+    : docType === 'ticket' ? fcfStatus.ok
     : docType === 'ccf'  ? Boolean(ccfSelected && ccfStatus?.ok)
     : false
 
-  return createPortal(
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 20 }}
-      onClick={e => { if (e.target === e.currentTarget) onCancel() }}>
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: 500, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column' }}>
+  const confirmar = () => {
+    if (!canConfirm) return
+    if (pagaConCupon) { onCanjear(); return }
+    if (docType) onConfirm({ docType, fcfMode: docType === 'ticket' ? fcfMode : undefined, fcfName: fcfMode === 'named' ? fcfName : undefined, ccfCustomer: docType === 'ccf' ? ccfSelected : undefined })
+  }
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: '1px solid var(--border)' }}>
-          <div>
-            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 20, color: 'var(--text-primary)' }}>Tipo de documento fiscal</div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 3 }}>
-              Total: <strong style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{fmt(total)}</strong>
-              {' · '}{PAYMENT_METHODS.find(p => p.id === paymentMethod)?.label}
-            </div>
+  const tituloColumna = (texto: string) => (
+    <div className="panel-section-label">{texto}</div>
+  )
+
+  return createPortal(
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: esMovil ? 10 : 20 }}
+      onClick={e => { if (e.target === e.currentTarget) onCancel() }}>
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: esMovil ? 520 : 880, maxHeight: esMovil ? '94dvh' : '92vh', overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column' }}>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '14px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, color: 'var(--text-primary)' }}>Cobrar</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            {/* El total viaja con el modal: es el número que el cajero le dice
+                al cliente mientras marca el monto recibido. */}
+            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{fmt(total)}</div>
+            <button onClick={onCancel} aria-label="Cerrar" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 22 }}>×</button>
           </div>
-          <button onClick={onCancel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 22 }}>×</button>
         </div>
 
-        <div style={{ padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{
+          flex: 1, overflowY: 'auto', padding: esMovil ? '14px 14px' : '16px 20px',
+          display: 'grid', gridTemplateColumns: esMovil ? '1fr' : '300px 1fr', gap: esMovil ? 18 : 22, alignItems: 'start',
+        }}>
+          {/* Pago */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {pago}
+          </div>
+
+          {/* Documento fiscal */}
+          <div style={{
+            display: 'flex', flexDirection: 'column', gap: 12,
+            ...(esMovil ? {} : { borderLeft: '1px solid var(--border)', paddingLeft: 22 }),
+          }}>
+          {tituloColumna('Documento fiscal')}
+          {pagaConCupon ? (
+            <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', background: 'var(--subtle-bg)', padding: '10px 12px', borderRadius: 10 }}>
+              El canje no emite documento: el cupón se facturó el día que se vendió. Se imprime un comprobante de canje.
+            </div>
+          ) : (<>
           {/* Doc type */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             {[
               { id: 'ticket', label: 'Ticket', sub: 'Factura consumidor final', color: 'var(--corsa-green)' },
               { id: 'ccf',    label: 'CCF',    sub: 'Comprobante crédito fiscal', color: 'var(--corsa-orange)' },
@@ -674,16 +751,18 @@ function BillingModal({ total, paymentMethod, customer, onConfirm, onCancel }: B
                 id={`doctype-${opt.id}`}
                 onClick={() => setDocType(opt.id as DocType)}
                 style={{
-                  padding: '16px 14px', borderRadius: 16, cursor: 'pointer', textAlign: 'left',
+                  padding: '10px 12px', borderRadius: 14, cursor: 'pointer', textAlign: 'left',
                   border: `2px solid ${docType === opt.id ? opt.color : 'var(--border)'}`,
                   background: docType === opt.id ? `${opt.color}10` : 'var(--surface)',
-                  transition: 'all 0.12s',
+                  transition: 'all 0.12s', display: 'flex', alignItems: 'center', gap: 10,
                 }}
               >
-                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, color: docType === opt.id ? opt.color : 'var(--text-primary)' }}>{opt.label}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 3 }}>{opt.sub}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, color: docType === opt.id ? opt.color : 'var(--text-primary)' }}>{opt.label}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 1 }}>{opt.sub}</div>
+                </div>
                 {docType === opt.id && (
-                  <div style={{ marginTop: 8, width: 18, height: 18, borderRadius: '50%', background: opt.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ width: 18, height: 18, borderRadius: '50%', background: opt.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
                   </div>
                 )}
@@ -770,14 +849,18 @@ function BillingModal({ total, paymentMethod, customer, onConfirm, onCancel }: B
               </div>
             </div>
           )}
+          </>)}
+          </div>
         </div>
 
-        <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+        <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center', flexShrink: 0 }}>
           <button onClick={onCancel} className="btn btn-ghost">Cancelar</button>
           <div className="clip-btn-wrap" style={{ opacity: canConfirm ? 1 : 0.5, pointerEvents: canConfirm ? 'auto' : 'none' }}>
             <div className="clip-btn-corner"/>
-            <button id="billing-confirm" className="clip-btn" onClick={() => { if (docType) onConfirm({ docType, fcfMode: docType === 'ticket' ? fcfMode : undefined, fcfName: fcfMode === 'named' ? fcfName : undefined, ccfCustomer: docType === 'ccf' ? ccfSelected : undefined }) }}>
-              Confirmar y cobrar {fmt(total)}
+            <button id="billing-confirm" className="clip-btn" onClick={confirmar} disabled={!canConfirm}>
+              {submitting ? 'Procesando…'
+                : pagaConCupon ? 'Canjear cupón e imprimir'
+                : `Confirmar y cobrar ${fmt(total)}`}
             </button>
           </div>
         </div>
@@ -850,8 +933,6 @@ export function POSPage() {
     posEmiteDte(branchId).then(v => { if (vivo) setEmiteDte(v) }).catch(() => { if (vivo) setEmiteDte(false) })
     return () => { vivo = false }
   }, [branchId])
-  // Sólo en teléfono: el cobro vive en una hoja que se abre al final.
-  const [cobroAbierto, setCobroAbierto] = useState(false)
   const [voucherCode, setVoucherCode] = useState('')
   const [voucherFound, setVoucherFound] = useState<VoucherLookup | null>(null)
   const [voucherChecking, setVoucherChecking] = useState(false)
@@ -971,6 +1052,7 @@ export function POSPage() {
    */
   const canjearCupon = useCallback(async () => {
     if (!branchId || !voucherFound || voucherFound.status !== 'active') return
+    setShowBillingModal(false)
     setSubmitting(true)
     try {
       const r = await redeemVoucher(voucherFound.code, branchId, {
@@ -1012,7 +1094,6 @@ export function POSPage() {
 
   const handleBillingConfirm = useCallback(async (billing: BillingInfo) => {
     setShowBillingModal(false)
-    setCobroAbierto(false)
     setSubmitting(true)
 
     // FCF y CCF esperan igual: el Worker emite el que corresponda según la
@@ -1181,30 +1262,33 @@ export function POSPage() {
     return () => { vivo = false }
   }, [vehiculoId])
 
-  const canCharge = pagaConCupon
-    ? voucherFound?.status === 'active'
-    : mode === 'flotilla' ? !!fleetVehicle : true
+  // La validez del cupón se resuelve dentro del modal de cobro; para abrirlo
+  // basta con que la orden esté armada.
+  const canCharge = mode === 'flotilla' ? !!fleetVehicle : true
+
+  const abrirCobro = () => {
+    // Cada cobro empieza con el monto en blanco: el de la venta anterior no
+    // tiene nada que ver con éste.
+    setKeypadValue('')
+    setShowBillingModal(true)
+  }
 
   /**
-   * El bloque de cobro: método de pago, monto y teclado.
+   * El bloque de pago del modal de cobro: método, monto y teclado.
    *
-   * Vive en una constante porque se monta en dos lugares distintos y tiene que
-   * ser EL MISMO: en la computadora, dentro del panel de resumen; en el
-   * teléfono, dentro de la hoja que se abre al tocar «Cobrar». Duplicar este
-   * JSX sería duplicar la lógica de cobro, y el día que cambie una regla —un
-   * método de pago nuevo, otra validación de cupón— quedaría cambiada en un
-   * lado y vieja en el otro. Es lo mismo que se hizo en Ventas con las
-   * acciones de cada fila.
+   * Lo arma la página y no el modal porque el estado es de la página: el canje
+   * y el registro de la venta lo leen, y cerrar el modal para corregir un
+   * servicio no tiene que borrar el cupón ya tecleado.
    */
   const bloqueDeCobro = (
     <>
           {/* Pago */}
           <div>
-            <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 7 }}>Método de pago</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+            <div className="panel-section-label" style={{ marginBottom: 10 }}>Método de pago</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
               {metodosPago.map(pm => (
                 <button key={pm.id} id={`pay-${pm.id}`} onClick={() => setSelectedPayment(pm.id)}
-                  style={{ padding: '6px 10px', borderRadius: 10, fontSize: 12, fontWeight: 500, border: `1px solid ${selectedPayment === pm.id ? 'var(--corsa-green)' : 'var(--border)'}`, background: selectedPayment === pm.id ? 'var(--corsa-green)' : 'var(--surface)', color: selectedPayment === pm.id ? '#fff' : 'var(--text-primary)', cursor: 'pointer', transition: 'all 0.12s' }}>
+                  style={{ padding: '8px 4px', borderRadius: 10, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', border: `1px solid ${selectedPayment === pm.id ? 'var(--corsa-green)' : 'var(--border)'}`, background: selectedPayment === pm.id ? 'var(--corsa-green)' : 'var(--surface)', color: selectedPayment === pm.id ? '#fff' : 'var(--text-primary)', cursor: 'pointer', transition: 'all 0.12s' }}>
                   {pm.label}
                 </button>
               ))}
@@ -1269,18 +1353,6 @@ export function POSPage() {
             )}
           </div>
 
-          <div className="divider"/>
-
-          <div className="clip-btn-wrap" style={{ opacity: (!canCharge || submitting) ? 0.55 : 1, pointerEvents: (!canCharge || submitting) ? 'none' : 'auto' }}>
-            <div className="clip-btn-corner"/>
-            <button id="btn-charge" className="clip-btn large"
-                    onClick={() => pagaConCupon ? canjearCupon() : setShowBillingModal(true)}
-                    disabled={!canCharge || submitting}>
-              {submitting ? 'Procesando…'
-                : pagaConCupon ? 'Canjear cupón e imprimir'
-                : `Cobrar ${fmt(total)}`}
-            </button>
-          </div>
     </>
   )
 
@@ -1289,7 +1361,7 @@ export function POSPage() {
 
       {/* Title */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-        <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 32, letterSpacing: '-0.025em', margin: 0, color: 'var(--text-primary)' }}>Nueva orden</h1>
+        <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 24, letterSpacing: '-0.025em', margin: 0, color: 'var(--text-primary)' }}>Nueva orden</h1>
         <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>Selecciona el tipo de servicio para continuar</div>
       </div>
 
@@ -1299,7 +1371,7 @@ export function POSPage() {
           que se elige una vez por orden. Lo que se sacrifica es la línea
           explicativa de cada modo — el icono y el nombre alcanzan, y el alto
           que se gana es el que hace falta para ver el servicio sin scrollear. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: esMovil ? 8 : 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: esMovil ? 8 : 10 }}>
         {[
           {
             id: 'normal' as const,
@@ -1333,7 +1405,7 @@ export function POSPage() {
             onClick={() => !opt.disabled && handleModeChange(opt.id)}
             disabled={opt.disabled}
             style={{
-              padding: esMovil ? '10px 6px' : '14px 16px', borderRadius: 16,
+              padding: esMovil ? '10px 6px' : '9px 12px', borderRadius: 14,
               cursor: opt.disabled ? 'not-allowed' : 'pointer',
               textAlign: esMovil ? 'center' : 'left',
               border: `2px solid ${mode === opt.id ? opt.color : 'var(--border)'}`,
@@ -1344,21 +1416,21 @@ export function POSPage() {
               alignItems: esMovil ? 'center' : 'flex-start',
               justifyContent: esMovil ? 'center' : undefined,
               aspectRatio: esMovil ? '1 / 1' : undefined,
-              gap: esMovil ? 6 : 12,
+              gap: esMovil ? 6 : 10,
             }}
           >
             <div style={{ color: mode === opt.id ? opt.color : 'var(--text-secondary)', marginTop: esMovil ? 0 : 2, flexShrink: 0 }}>{opt.icon}</div>
             <div>
               <div style={{
                 fontFamily: 'var(--font-heading)', fontWeight: 700,
-                fontSize: esMovil ? 12.5 : 15, lineHeight: 1.15,
+                fontSize: esMovil ? 12.5 : 14, lineHeight: 1.15,
                 color: mode === opt.id ? opt.color : 'var(--text-primary)',
               }}>
                 {esMovil ? opt.corto : opt.label}
                 {mode === opt.id && !esMovil && <span style={{ marginLeft: 6, fontSize: 11, color: opt.color }}>●</span>}
               </div>
               {/* La explicación de cada modo sólo cabe en computadora. */}
-              {!esMovil && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{opt.sub}</div>}
+              {!esMovil && <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 1 }}>{opt.sub}</div>}
             </div>
           </button>
         ))}
@@ -1390,11 +1462,11 @@ export function POSPage() {
 
       {/* ── Main layout (only when ready) ── */}
       {(mode === 'normal' || (mode === 'flotilla' && fleetVehicle)) && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-start' }}>
 
           {/* Col 1: Customer (only normal mode) */}
           {mode === 'normal' && (
-            <div style={{ flex: esMovil ? '1 1 100%' : '0 0 280px' }}>
+            <div style={{ flex: esMovil ? '1 1 100%' : '0 0 250px' }}>
               <CustomerSearchPanel
                 selected={customer}
                 onSelect={setCustomer}
@@ -1406,7 +1478,7 @@ export function POSPage() {
                   ninguno registrado, el botón de agregar es lo único que se ve
                   — y es lo que habilita el seguro de lluvia. */}
               {customer && (
-                <div className="card" style={{ padding: 14, marginTop: 10 }}>
+                <div className="card" style={{ padding: 12, marginTop: 10 }}>
                   <SelectorVehiculos
                     vehiculos={vehiculos}
                     elegido={vehiculoElegido}
@@ -1420,17 +1492,17 @@ export function POSPage() {
           )}
 
           {/* Col 2: Services */}
-          <div style={{ flex: '1 1 360px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ flex: '1 1 360px', display: 'flex', flexDirection: 'column', gap: 10 }}>
 
             {/* Size */}
-            <div className="card" style={{ padding: 12 }}>
-              <div className="panel-section-label" style={{ marginBottom: 8 }}>Tamaño del vehículo</div>
+            <div className="card" style={{ padding: 10 }}>
+              <div className="panel-section-label" style={{ marginBottom: 6 }}>Tamaño del vehículo</div>
               <div style={{ display: 'flex', gap: 8 }}>
                 {SIZES.map(sz => (
                   <button key={sz.id} id={`size-${sz.id}`} onClick={() => setSelectedSize(sz.id)}
-                    style={{ flex: 1, padding: '11px 8px', borderRadius: 12, cursor: 'pointer', textAlign: 'center', border: `2px solid ${selectedSize === sz.id ? 'var(--corsa-green)' : 'var(--border)'}`, background: selectedSize === sz.id ? 'var(--corsa-green)' : 'var(--surface)', color: selectedSize === sz.id ? '#fff' : 'var(--text-primary)', transition: 'all 0.12s' }}>
-                    <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20 }}>{sz.label}</div>
-                    <div style={{ fontSize: 11, marginTop: 1, opacity: 0.8 }}>{sz.sub}</div>
+                    style={{ flex: 1, padding: '6px 6px', borderRadius: 12, cursor: 'pointer', textAlign: 'center', border: `2px solid ${selectedSize === sz.id ? 'var(--corsa-green)' : 'var(--border)'}`, background: selectedSize === sz.id ? 'var(--corsa-green)' : 'var(--surface)', color: selectedSize === sz.id ? '#fff' : 'var(--text-primary)', transition: 'all 0.12s' }}>
+                    <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 17, lineHeight: 1.2 }}>{sz.label}</div>
+                    <div style={{ fontSize: 10.5, opacity: 0.8 }}>{sz.sub}</div>
                   </button>
                 ))}
               </div>
@@ -1447,24 +1519,24 @@ export function POSPage() {
                   <div key={s.id} id={`svc-${s.id}`}
                     onClick={() => mode !== 'flotilla' && setSelectedService(s.id)}
                     role={mode !== 'flotilla' ? 'button' : undefined} tabIndex={mode !== 'flotilla' ? 0 : undefined}
-                    style={{ border: `2px solid ${isSel ? tc2.accent : 'var(--border)'}`, borderRadius: 16, padding: 14, background: isSel ? `${tc2.accent}09` : 'var(--surface)', cursor: mode !== 'flotilla' ? 'pointer' : 'default', transition: 'all 0.12s', position: 'relative' }}
+                    style={{ border: `2px solid ${isSel ? tc2.accent : 'var(--border)'}`, borderRadius: 14, padding: '10px 12px', background: isSel ? `${tc2.accent}09` : 'var(--surface)', cursor: mode !== 'flotilla' ? 'pointer' : 'default', transition: 'all 0.12s', position: 'relative' }}
                   >
                     {s.recommended && mode !== 'flotilla' && (
-                      <div style={{ position: 'absolute', top: -1, right: 14, background: '#8B5A2B', color: '#fff', fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', padding: '3px 7px', borderRadius: '0 0 5px 5px' }}>RECOMENDADO</div>
+                      <div style={{ position: 'absolute', top: -8, left: 12, background: '#8B5A2B', color: '#fff', fontSize: 9.5, fontWeight: 700, letterSpacing: '0.06em', padding: '2px 7px', borderRadius: 6 }}>RECOMENDADO</div>
                     )}
                     {isFleet && (
-                      <div style={{ position: 'absolute', top: -1, right: 14, background: 'var(--corsa-orange)', color: 'var(--on-accent)', fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', padding: '3px 7px', borderRadius: '0 0 8px 8px' }}>PRECIO FLOTILLA</div>
+                      <div style={{ position: 'absolute', top: -8, left: 12, background: 'var(--corsa-orange)', color: 'var(--on-accent)', fontSize: 9.5, fontWeight: 700, letterSpacing: '0.06em', padding: '2px 7px', borderRadius: 6 }}>PRECIO FLOTILLA</div>
                     )}
                     {isSel && <div style={{ position: 'absolute', top: 12, left: -2, width: 4, height: 'calc(100% - 24px)', background: tc2.accent, borderRadius: '0 2px 2px 0' }}/>}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div>
-                        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 19, color: isSel ? tc2.accent : 'var(--text-primary)' }}>{s.name}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 3, maxWidth: 260 }}>{s.description}</div>
+                        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 16, color: isSel ? tc2.accent : 'var(--text-primary)' }}>{s.name}</div>
+                        <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2, maxWidth: 260 }}>{s.description}</div>
                       </div>
-                      <div style={{ display: 'flex', gap: 12, alignItems: 'baseline', marginLeft: 12 }}>
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', marginLeft: 12 }}>
                         {SIZES.map(sz => (
                           <div key={sz.id} style={{ textAlign: 'center', opacity: selectedSize === sz.id ? 1 : 0.38, transition: 'opacity 0.12s' }}>
-                            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: selectedSize === sz.id ? 800 : 600, fontSize: selectedSize === sz.id ? 22 : 16, color: isSel && selectedSize === sz.id ? tc2.accent : 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+                            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: selectedSize === sz.id ? 800 : 600, fontSize: selectedSize === sz.id ? 18 : 13.5, color: isSel && selectedSize === sz.id ? tc2.accent : 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
                               ${displayPrices[sz.id]}
                             </div>
                             <div style={{ fontSize: 10.5, color: 'var(--text-secondary)', fontWeight: 600 }}>{sz.id}</div>
@@ -1478,15 +1550,15 @@ export function POSPage() {
             </div>
 
             {/* Aspirado add-on */}
-            <div className="card" style={{ padding: 12 }}>
-              <div className="panel-section-label" style={{ marginBottom: 8 }}>Servicios adicionales</div>
+            <div className="card" style={{ padding: 10 }}>
+              <div className="panel-section-label" style={{ marginBottom: 6 }}>Servicios adicionales</div>
               <button id="addon-aspirado" onClick={() => setWithAspirado(v => !v)}
-                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', borderRadius: 12, border: `2px solid ${withAspirado ? 'var(--corsa-orange)' : 'var(--border)'}`, background: withAspirado ? 'rgba(223,245,107,0.35)' : 'var(--surface)', cursor: 'pointer', transition: 'all 0.12s', textAlign: 'left' }}>
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '7px 12px', borderRadius: 12, border: `2px solid ${withAspirado ? 'var(--corsa-orange)' : 'var(--border)'}`, background: withAspirado ? 'rgba(223,245,107,0.35)' : 'var(--surface)', cursor: 'pointer', transition: 'all 0.12s', textAlign: 'left' }}>
                 <div style={{ width: 20, height: 20, borderRadius: 4, flexShrink: 0, border: `2px solid ${withAspirado ? 'var(--corsa-orange)' : 'var(--border)'}`, background: withAspirado ? 'var(--corsa-orange)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {withAspirado && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--on-accent)" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{ADDON_ASPIRADO.label}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{ADDON_ASPIRADO.label}</div>
                   <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 1 }}>
                     Sin importar tamaño del vehículo
                     {usaAspiradoFlotilla && (
@@ -1497,7 +1569,7 @@ export function POSPage() {
                 {/* El importe estaba escrito a mano como "+$3": la tarjeta
                     mostraba la tarifa de lista aunque la flotilla tuviera otra
                     negociada, y sólo el resumen reflejaba el precio real. */}
-                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, color: withAspirado ? 'var(--corsa-orange)' : 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 15, color: withAspirado ? 'var(--corsa-orange)' : 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
                   +{fmt(aspiradoUnit)}
                 </div>
               </button>
@@ -1507,8 +1579,8 @@ export function POSPage() {
                 onClick={() => puedeVenderSeguro && !canjeandoSeguro && setConSeguro(v => !v)}
                 disabled={!puedeVenderSeguro || canjeandoSeguro}
                 style={{
-                  width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-                  padding: '11px 14px', borderRadius: 12, marginTop: 8,
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '7px 12px', borderRadius: 12, marginTop: 6,
                   border: `2px solid ${seguroActivo ? 'var(--corsa-green)' : 'var(--border)'}`,
                   background: seguroActivo ? 'rgba(22,25,26,0.05)' : 'var(--surface)',
                   cursor: puedeVenderSeguro && !canjeandoSeguro ? 'pointer' : 'not-allowed',
@@ -1519,7 +1591,7 @@ export function POSPage() {
                   {seguroActivo && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
                     {ADDON_SEGURO.label}
                   </div>
                   {/* Cuando no se puede vender, la tarjeta dice qué falta. Un
@@ -1531,7 +1603,7 @@ export function POSPage() {
                       : `${ADDON_SEGURO.horas} h de cobertura · si llueve, vuelve por un PRO sin costo`}
                   </div>
                 </div>
-                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, color: seguroActivo ? 'var(--corsa-green)' : 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 15, color: seguroActivo ? 'var(--corsa-green)' : 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
                   +{fmt(ADDON_SEGURO.price)}
                 </div>
               </button>
@@ -1565,7 +1637,7 @@ export function POSPage() {
           {/* El resumen y el cobro: de columna fija a bloque de ancho completo,
               que en el teléfono queda al final del recorrido — mirar el total y
               cobrar es lo último que se hace. */}
-          <div className="card" style={{ flex: esMovil ? '1 1 100%' : '0 0 280px', display: 'flex', flexDirection: 'column', gap: 12, padding: 14 }}>
+          <div className="card" style={{ flex: esMovil ? '1 1 100%' : '0 0 250px', display: 'flex', flexDirection: 'column', gap: 10, padding: 12 }}>
             <div className="panel-section-label">Resumen</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1576,7 +1648,7 @@ export function POSPage() {
                     {mode === 'flotilla' && <span style={{ color: 'var(--corsa-orange)', marginLeft: 5 }}>· Precio flotilla</span>}
                   </div>
                 </div>
-                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{fmt(servicePrice)}</div>
+                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 17, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{fmt(servicePrice)}</div>
               </div>
               {withAspirado && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px solid var(--border)' }}>
@@ -1608,28 +1680,21 @@ export function POSPage() {
               </span>
             </div>
 
-            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <span style={{ fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 14 }}>Total</span>
               {fmt(total)}
             </div>
 
-            {/* En la computadora el cobro va acá, a la vista: hay lugar y el
-                cajero trabaja con el panel entero delante. En el teléfono ese
-                mismo bloque —seis métodos de pago y un teclado— empuja el
-                total fuera de la pantalla, así que pasa a una hoja que se abre
-                recién cuando la orden ya está armada. */}
-            {!esMovil ? bloqueDeCobro : (
-              <div className="clip-btn-wrap" style={{ opacity: (!canCharge || submitting) ? 0.55 : 1, pointerEvents: (!canCharge || submitting) ? 'none' : 'auto' }}>
-                <div className="clip-btn-corner"/>
-                <button id="btn-abrir-cobro" className="clip-btn large"
-                        onClick={() => setCobroAbierto(true)}
-                        disabled={!canCharge || submitting}>
-                  Cobrar {fmt(total)}
-                </button>
-              </div>
-            )}
-
-
+            {/* El pago y el documento se piden en el modal de cobro: acá sólo
+                la orden y su total, para que el botón quede siempre a la vista. */}
+            <div className="clip-btn-wrap" style={{ opacity: (!canCharge || submitting) ? 0.55 : 1, pointerEvents: (!canCharge || submitting) ? 'none' : 'auto' }}>
+              <div className="clip-btn-corner"/>
+              <button id="btn-charge" className="clip-btn large" style={{ width: '100%' }}
+                      onClick={abrirCobro}
+                      disabled={!canCharge || submitting}>
+                {submitting ? 'Procesando…' : `Cobrar ${fmt(total)}`}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1662,40 +1727,6 @@ export function POSPage() {
         />
       )}
 
-      {/* ── Hoja de cobro (sólo teléfono) ── */}
-      {esMovil && cobroAbierto && (
-        <>
-          <div
-            onClick={() => setCobroAbierto(false)}
-            style={{ position: 'fixed', inset: 0, background: 'rgba(2,20,18,0.5)', zIndex: 250 }}
-          />
-          <div style={{
-            position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 251,
-            background: 'var(--surface)', borderRadius: '14px 14px 0 0',
-            /* dvh: con la barra del navegador a la vista, 100vh deja el botón
-               de cobrar por debajo del borde. */
-            maxHeight: '92dvh', overflowY: 'auto',
-            padding: '10px 16px calc(16px + env(safe-area-inset-bottom, 0px))',
-            boxShadow: '0 -12px 40px rgba(0,0,0,0.22)',
-          }}>
-            <div style={{ width: 38, height: 4, borderRadius: 2, background: 'var(--border)', margin: '2px auto 12px' }}/>
-
-            {/* El total viaja con la hoja: es el número que el cajero le dice
-                al cliente mientras marca el monto recibido. */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
-              <span style={{ fontSize: 14, fontWeight: 700 }}>Total</span>
-              <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 26, fontVariantNumeric: 'tabular-nums' }}>
-                {fmt(total)}
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {bloqueDeCobro}
-            </div>
-          </div>
-        </>
-      )}
-
       {/* Fleet Modal */}
       {showFleetModal && (
         <FleetModal
@@ -1704,13 +1735,18 @@ export function POSPage() {
         />
       )}
 
-      {/* Billing Modal */}
+      {/* Modal de cobro */}
       {showBillingModal && (
-        <BillingModal
+        <CobroModal
           customer={customer}
           total={total}
-          paymentMethod={selectedPayment}
+          pago={bloqueDeCobro}
+          pagaConCupon={pagaConCupon}
+          cuponValido={voucherFound?.status === 'active'}
+          submitting={submitting}
+          onTecla={handleKeypad}
           onConfirm={handleBillingConfirm}
+          onCanjear={canjearCupon}
           onCancel={() => setShowBillingModal(false)}
         />
       )}

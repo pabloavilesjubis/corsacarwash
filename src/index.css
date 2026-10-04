@@ -320,7 +320,10 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
   border-radius: 26px;
 }
 .page-inner { padding: 30px 34px 44px; display: flex; flex-direction: column; gap: 18px; }
-.pos-inner  { padding: 26px 30px 40px; display: flex; flex-direction: column; gap: 16px; }
+/* Más apretado que el resto de las páginas: la caja es una pantalla de 15" y
+   la orden entera —modo, servicio, adicionales y total— tiene que verse sin
+   scrollear ni bajar el zoom del navegador. */
+.pos-inner  { padding: 18px 22px 28px; display: flex; flex-direction: column; gap: 12px; }
 
 /* ─── PAGE HEADER ─── */
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; flex-wrap: wrap; }
