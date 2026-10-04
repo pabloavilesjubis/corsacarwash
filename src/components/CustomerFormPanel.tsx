@@ -11,7 +11,7 @@
  * PostgREST. Si cambia una regla, cambian las dos.
  */
 
-import { useMemo, useRef } from 'react'
+import { useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -52,6 +52,7 @@ const schema = z.object({
   fiscal_municipio: z.string().optional(),
   fiscal_complemento: z.string().optional(),
   billing_email: z.string().optional(),
+  billing_email_same: z.boolean(),
   business_group_id: z.string().optional(),
 }).superRefine((v, ctx) => {
   const req = (path: keyof typeof v, message: string) =>
@@ -75,7 +76,7 @@ const schema = z.object({
     req('nrc', 'El NRC debe tener entre 1 y 8 dígitos')
   }
   if (v.email?.trim() && !isEmail(v.email)) req('email', 'Correo inválido')
-  if (v.billing_email?.trim() && !isEmail(v.billing_email)) {
+  if (!v.billing_email_same && v.billing_email?.trim() && !isEmail(v.billing_email)) {
     req('billing_email', 'Correo inválido')
   }
 
@@ -109,8 +110,8 @@ const schema = z.object({
   if (onlyDigits(v.phone).length < 8) {
     req('phone', 'El teléfono es obligatorio para CCF (mínimo 8 dígitos)')
   }
-  if (!v.billing_email?.trim() && !v.email?.trim()) {
-    req('billing_email', 'Se necesita un correo para enviar el DTE')
+  if (v.billing_email_same ? !v.email?.trim() : !v.billing_email?.trim()) {
+    req(v.billing_email_same ? 'email' : 'billing_email', 'Se necesita un correo para enviar el DTE')
   }
 })
 
@@ -161,6 +162,9 @@ function defaultsFrom(customer?: Customer): FormValues {
     fiscal_municipio: customer?.fiscal_municipio ?? '',
     fiscal_complemento: customer?.fiscal_complemento ?? '',
     billing_email: customer?.billing_email ?? '',
+    // Sin dato (clientes de antes de 0059): marcado si no tiene uno propio distinto.
+    billing_email_same: (customer as any)?.billing_email_same
+      ?? !(customer?.billing_email && customer.billing_email.trim().toLowerCase() !== (customer.email ?? '').trim().toLowerCase()),
     business_group_id: customer?.business_group_id ?? '',
   }
 }
@@ -185,12 +189,9 @@ export function CustomerFormPanel({
   onSaved: (id: string) => void
 }) {
   const isEdit = Boolean(customer)
-  // Último valor que el espejo escribió en billing_email. Sirve para distinguir
-  // "el usuario nunca lo tocó" de "lo cambió a propósito".
-  const previousEmail = useRef(customer?.email ?? '')
 
   const {
-    register, handleSubmit, watch, setValue, getValues,
+    register, handleSubmit, watch, setValue,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -198,6 +199,7 @@ export function CustomerFormPanel({
   })
 
   const type = watch('customer_type')
+  const mismoCorreo = watch('billing_email_same')
   const docType = watch('fiscal_document_type')
   const departamento = watch('fiscal_departamento')
   const docTypeCode = watch('fiscal_doc_type') ?? ''
@@ -229,7 +231,10 @@ export function CustomerFormPanel({
       fiscal_departamento: blankToNull(v.fiscal_departamento),
       fiscal_municipio: blankToNull(v.fiscal_municipio),
       fiscal_complemento: blankToNull(v.fiscal_complemento),
-      billing_email: blankToNull(v.billing_email),
+      // Con la casilla marcada la base lo iguala al general (0059); se manda
+      // igual para que el valor guardado sea el mismo con o sin trigger.
+      billing_email: v.billing_email_same ? blankToNull(v.email) : blankToNull(v.billing_email),
+      billing_email_same: v.billing_email_same,
       business_group_id: blankToNull(v.business_group_id),
     }
 
@@ -309,25 +314,27 @@ export function CustomerFormPanel({
           <input {...register('phone')} className="corsa-input" placeholder="2222-1111"/>
         </Field>
         <Field label="Correo" error={errors.email?.message}>
-          <input
-            {...register('email')}
-            className="corsa-input"
-            placeholder="correo@ejemplo.com"
-            onChange={e => {
-              const next = e.target.value
-              setValue('email', next, { shouldValidate: true })
-              // El correo de facturación arranca igual al de contacto: en la
-              // mayoría de los casos es el mismo y escribirlo dos veces sólo
-              // invita a la errata. Se sigue pudiendo separar a mano — una vez
-              // que difieren, dejamos de sobrescribirlo.
-              const factura = getValues('billing_email') ?? ''
-              if (factura === '' || factura === previousEmail.current) {
-                setValue('billing_email', next)
-              }
-              previousEmail.current = next
-            }}
-          />
+          <input {...register('email')} className="corsa-input" placeholder="correo@ejemplo.com"/>
         </Field>
+
+        {/* Correo de facturación: a donde se envían el DTE y los documentos.
+            Por defecto el mismo que el general (0059); desmarcando se pone otro. */}
+        <Field label="Correo de facturación" error={errors.billing_email?.message}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-primary)', cursor: 'pointer' }}>
+              <input id="billing-email-same" type="checkbox" {...register('billing_email_same')}
+                     style={{ accentColor: 'var(--corsa-green)', width: 16, height: 16 }}/>
+              Mismo que el correo general
+            </label>
+            {mismoCorreo
+              ? <input className="corsa-input" value={watch('email') || ''} disabled placeholder="Se usa el correo general"
+                       style={{ opacity: 0.7 }}/>
+              : <input {...register('billing_email')} className="corsa-input" placeholder="facturacion@empresa.com" autoFocus/>}
+          </div>
+        </Field>
+        <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: -6 }}>
+          A este correo se envían las facturas electrónicas (DTE) y los estados de cuenta.
+        </div>
 
         {/* ── Documento tributario ── */}
         <SectionLabel>Documento tributario</SectionLabel>
@@ -449,14 +456,6 @@ export function CustomerFormPanel({
                      placeholder="Col. Escalón, Calle 1 #23"/>
             </Field>
 
-            <Field label="Correo para facturación electrónica" error={errors.billing_email?.message}>
-              <input {...register('billing_email')} className="corsa-input"
-                     placeholder="facturacion@empresa.com"/>
-            </Field>
-            <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: -6 }}>
-              Se copia del correo de contacto. Cambialo si la empresa recibe las
-              facturas en otra casilla.
-            </div>
           </>
         )}
 

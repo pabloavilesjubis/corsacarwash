@@ -106,6 +106,8 @@ export interface CustomerWritableFields {
   fiscal_municipio?: string | null
   fiscal_complemento?: string | null
   billing_email?: string | null
+  /** true: el de facturación es el general (0059). */
+  billing_email_same?: boolean
   /** Grupo empresarial (0054); null = ninguno. */
   business_group_id?: string | null
 }

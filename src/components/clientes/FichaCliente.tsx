@@ -230,6 +230,16 @@ export function FichaCliente({ customer, orgId, onCerrar, onActualizado }: {
                   <input className="corsa-input" defaultValue={customer.phone ?? ''} placeholder="7777-8888"
                          onBlur={e => quickEdit('phone', e.target.value, e.target)}/>
                 </label>
+                {/* A donde van los DTE y los estados de cuenta (0059). */}
+                <div className="ficha-campo">
+                  <span>Correo de facturación</span>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, padding: '4px 0' }}>
+                    {customer.billing_email || customer.email || '—'}
+                    <span style={{ fontSize: 11.5, fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 6 }}>
+                      {(customer as any).billing_email_same === false ? '· distinto del general' : '· el mismo que el general'}
+                    </span>
+                  </div>
+                </div>
               </div>
             </Seccion>
 
