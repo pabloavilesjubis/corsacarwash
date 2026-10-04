@@ -33,7 +33,7 @@ import { darCortesia, fetchPolizaVigente, tiempoRestante, type RainPolicy } from
 import { creditoDisponible, type CreditoDisponible } from '../services/credito.service'
 import { enviarCorreoVenta } from '../services/correo.service'
 import { ModalCortesiaSeguro, imprimirTicketCortesia } from '../components/pos/CortesiaSeguro'
-import { cargarAcuerdoGrupo } from '../lib/grupos/grupos'
+import { cargarAcuerdoGrupo, cargarVehiculosSinCliente, listarGrupos, type GrupoEmpresarial } from '../lib/grupos/grupos'
 import type { AcuerdoFlotilla } from '../lib/flotillas/precios'
 import {
   getCustomerVehicles, fetchMapaTamanos, type TamanoVehiculo,
@@ -208,24 +208,27 @@ interface GrupoPos {
   acuerdo: AcuerdoFlotilla
   /** Los clientes del grupo con los datos fiscales (para facturarles) y sus carros. */
   miembros: (CustomerResult & { vehiculos: VehiculoPos[] })[]
+  /** Carros del grupo que todavía no tienen cliente (0067): entran con quien esté en caja. */
+  sinCliente: VehiculoPos[]
 }
 
 /** El grupo y sus miembros, con las mismas columnas que el buscador de la caja. */
 async function cargarGrupoPos(groupId: string): Promise<GrupoPos | null> {
   const db = supabase as any
-  const [{ data: g }, { data: ms }, acuerdo] = await Promise.all([
+  const [{ data: g }, { data: ms }, acuerdo, sinCliente] = await Promise.all([
     db.from('business_groups').select('id, name').eq('id', groupId).maybeSingle(),
     db.from('customers')
       .select(`${CUSTOMER_COLUMNS},vehicles(id,plate,brand,model,color,vehicle_type_id,active)`)
       .eq('business_group_id', groupId).eq('active', true),
     cargarAcuerdoGrupo(groupId),
+    cargarVehiculosSinCliente(groupId),
   ])
   if (!g) return null
   const miembros = (ms ?? []).map((m: any) => ({
     ...m, vehiculos: (m.vehicles ?? []).filter((v: any) => v.active !== false),
   }))
   miembros.sort((a: CustomerResult, b: CustomerResult) => displayName(a).localeCompare(displayName(b)))
-  return { id: g.id, name: g.name, acuerdo, miembros }
+  return { id: g.id, name: g.name, acuerdo, miembros, sinCliente: sinCliente as VehiculoPos[] }
 }
 
 interface BillingInfo {
@@ -258,10 +261,12 @@ function useDebounce<T>(val: T, ms = 350): T {
 
 interface FleetModalProps {
   onVehicleSelected: (company: FleetCompany, vehicle: FleetVehicle) => void
+  /** Un grupo empresarial: sus placas y sus precios, y se elige a quién facturar. */
+  onGrupoSelected: (grupo: { id: string; name: string }) => void
   onCancel: () => void
 }
 
-function FleetModal({ onVehicleSelected, onCancel }: FleetModalProps) {
+function FleetModal({ onVehicleSelected, onGrupoSelected, onCancel }: FleetModalProps) {
   const esMovilModal = useEsMovil()
   const { profile } = useAuth()
   const orgId = (profile as any)?.organization_id ?? null
@@ -273,6 +278,9 @@ function FleetModal({ onVehicleSelected, onCancel }: FleetModalProps) {
   const [loadingVeh, setLoadingVeh] = useState(false)
   const [searchC, setSearchC] = useState('')
   const [searchV, setSearchV] = useState('')
+  // Los grupos empresariales también se cobran desde acá, con sus precios.
+  const [grupos, setGrupos] = useState<GrupoEmpresarial[]>([])
+  useEffect(() => { listarGrupos().then(setGrupos).catch(() => setGrupos([])) }, [])
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
@@ -366,6 +374,10 @@ function FleetModal({ onVehicleSelected, onCancel }: FleetModalProps) {
     ? companies.filter(c => c.trade_name.toLowerCase().includes(searchC.toLowerCase()) || (c.nit ?? '').includes(searchC))
     : companies
 
+  const filteredGrupos = searchC.trim()
+    ? grupos.filter(g => g.name.toLowerCase().includes(searchC.toLowerCase()))
+    : grupos
+
   const filteredVehicles = searchV.trim()
     ? vehicles.filter(v => v.plate.toLowerCase().includes(searchV.toLowerCase()) || (v.brand ?? '').toLowerCase().includes(searchV.toLowerCase()) || (v.model ?? '').toLowerCase().includes(searchV.toLowerCase()))
     : vehicles
@@ -436,6 +448,20 @@ function FleetModal({ onVehicleSelected, onCancel }: FleetModalProps) {
                   })}
                 </div>
               ))}
+              {filteredGrupos.length > 0 && (<>
+                <div style={{ padding: '10px 14px 6px', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-secondary)', background: 'var(--subtle-bg)', borderBottom: '1px solid var(--border)' }}>
+                  Grupos empresariales
+                </div>
+                {filteredGrupos.map(g => (
+                  <div key={g.id} id={`grupo-${g.id}`} onClick={() => onGrupoSelected({ id: g.id, name: g.name })}
+                    style={{ padding: '11px 14px', cursor: 'pointer', borderBottom: '1px solid var(--border)', borderLeft: '3px solid transparent' }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }}>{g.name}</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                      {g.miembros} {g.miembros === 1 ? 'cliente' : 'clientes'} · precios del grupo · varias placas
+                    </div>
+                  </div>
+                ))}
+              </>)}
             </div>
           </div>
 
@@ -444,7 +470,7 @@ function FleetModal({ onVehicleSelected, onCancel }: FleetModalProps) {
             {!selectedCompany ? (
               <div className="empty-state" style={{ margin: 'auto' }}>
                 <div style={{ fontSize: 32, marginBottom: 8 }}>←</div>
-                <div className="empty-state-sub">Selecciona una empresa para ver sus vehículos</div>
+                <div className="empty-state-sub">Selecciona una empresa para ver sus vehículos, o un grupo empresarial</div>
               </div>
             ) : (
               <>
@@ -1107,7 +1133,12 @@ function PlacasDelGrupo({ grupo, clienteId, elegido, onElegir }: {
   elegido: VehiculoPos | null
   onElegir: (v: VehiculoPos) => void
 }) {
-  const otros = grupo.miembros.filter(m => m.id !== clienteId && m.vehiculos.length > 0)
+  // Los demás miembros con carros y, al final, los carros del grupo sin cliente.
+  const otros: { id: string; nombre: string; vehiculos: VehiculoPos[] }[] = [
+    ...grupo.miembros.filter(m => m.id !== clienteId && m.vehiculos.length > 0)
+      .map(m => ({ id: m.id, nombre: displayName(m), vehiculos: m.vehiculos })),
+    ...(grupo.sinCliente.length ? [{ id: 'sin-cliente', nombre: 'Del grupo · sin cliente asignado', vehiculos: grupo.sinCliente }] : []),
+  ]
   if (otros.length === 0) return null
   return (
     <div className="card" style={{ padding: 12, marginTop: 10 }}>
@@ -1115,7 +1146,7 @@ function PlacasDelGrupo({ grupo, clienteId, elegido, onElegir }: {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {otros.map(m => (
           <div key={m.id}>
-            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginBottom: 4 }}>{displayName(m)}</div>
+            <div style={{ fontSize: 11.5, color: m.id === 'sin-cliente' ? 'var(--color-warning-text)' : 'var(--text-secondary)', marginBottom: 4 }}>{m.nombre}</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {m.vehiculos.map(v => {
                 const sel = elegido?.id === v.id
@@ -1177,6 +1208,11 @@ export function POSPage() {
   const [conCortesia, setConCortesia] = useState(false)
   // Grupo empresarial del cliente en caja (0054). Se pide al elegir el cliente.
   const [grupo, setGrupo] = useState<GrupoPos | null>(null)
+  // Grupo empresarial elegido desde Flotilla, sin un cliente en caja: se ven
+  // las placas de todo el grupo, se cobra a sus precios y se elige a cuál de
+  // sus clientes se le factura (y a cuál se le carga si es al crédito).
+  const [grupoDirecto, setGrupoDirecto] = useState<{ id: string; name: string } | null>(null)
+  const [facturarA, setFacturarA] = useState<CustomerResult | null>(null)
   // Varios carros en una orden (0057): los ya agregados. El que se está
   // configurando en pantalla es el siguiente.
   const [carrito, setCarrito] = useState<LineaOrden[]>([])
@@ -1269,8 +1305,11 @@ export function POSPage() {
   const vehiculoId = mode === 'flotilla'
     ? fleetVehicle?.vehicle_id ?? null
     : vehiculoElegido?.id ?? null
+  // El dueño de la venta: el de la flotilla, el cliente en caja o, con un
+  // grupo elegido desde Flotilla, el miembro al que se factura.
+  const clienteVenta = mode === 'flotilla' ? null : (customer ?? facturarA)
   const puedeVenderSeguro = Boolean(
-    (mode === 'flotilla' ? fleetCompany?.customer_id : customer?.id)
+    (mode === 'flotilla' ? fleetCompany?.customer_id : clienteVenta?.id)
     && vehiculoDelCliente?.plate
   )
   /**
@@ -1320,7 +1359,7 @@ export function POSPage() {
     ? Math.round(lineasOrden.reduce((t, l) => t + l.precio + (l.aspirado ? l.aspiradoPrecio : 0), 0) * 100) / 100
     : totalUnCarro
   // Clientes con placas: sólo así hay a qué carro atar cada línea.
-  const puedeAgregarCarro = !!lineaActual && (mode === 'flotilla' ? !!fleetCompany : !!customer)
+  const puedeAgregarCarro = !!lineaActual && (mode === 'flotilla' ? !!fleetCompany : !!customer || !!grupoDirecto)
 
   /** Guarda el carro en pantalla en la orden y deja elegir el siguiente. */
   const agregarCarro = () => {
@@ -1397,8 +1436,16 @@ export function POSPage() {
     setWithAspirado(Boolean(company.aspirado_enabled))
   }
 
+  const modoVisible: OrderMode = grupoDirecto ? 'flotilla' : mode
+  const handleGrupoSelected = (g: { id: string; name: string }) => {
+    setShowFleetModal(false)
+    setMode('normal'); setCustomer(null); setFleetCompany(null); setFleetVehicle(null)
+    setGrupoDirecto(g); setFacturarA(null); setVehiculoElegido(null); setWithAspirado(false); setKeypadValue('')
+  }
+
   const handleModeChange = (m: OrderMode) => {
     setMode(m)
+    setGrupoDirecto(null); setFacturarA(null)
     setFleetCompany(null); setFleetVehicle(null)
     setCustomer(null); setWithAspirado(false); setKeypadValue('')
     if (m === 'flotilla') setShowFleetModal(true)
@@ -1461,7 +1508,7 @@ export function POSPage() {
   const cobrarVariosCarros = useCallback(async (billing: BillingInfo) => {
     setSubmitting(true)
     try {
-      const clienteId = mode === 'flotilla' ? (fleetCompany?.customer_id ?? null) : (customer?.id ?? null)
+      const clienteId = mode === 'flotilla' ? (fleetCompany?.customer_id ?? null) : (clienteVenta?.id ?? null)
       const { data, error } = await (supabase as any).rpc('pos_register_sale_multi', {
         p_branch_id:       branchId,
         p_lineas:          lineasOrden.map(l => ({
@@ -1501,12 +1548,12 @@ export function POSPage() {
         }
       }
 
-      const titular = mode === 'flotilla' ? (fleetCompany?.trade_name ?? undefined) : (customer ? displayName(customer) : undefined)
+      const titular = mode === 'flotilla' ? (fleetCompany?.trade_name ?? undefined) : (clienteVenta ? displayName(clienteVenta) : undefined)
       try {
         const emisor = await emisorParaTicket(branchId, !!dte)
         await imprimirTicketEnSegundoPlano(buildTicketArgsFromPosMulti(sale, emisor, {
           clienteNombre: receptor ? displayName(receptor)
-            : sale.facturacion_diferida ? (mode === 'flotilla' ? fleetCompany?.trade_name : displayName(customer)) : undefined,
+            : sale.facturacion_diferida ? (mode === 'flotilla' ? fleetCompany?.trade_name : displayName(clienteVenta)) : undefined,
           clienteDoc: receptor
             ? { tipo: receptor.nit ? 'NIT' : 'DUI', numero: receptor.nit ?? receptor.dui, nrc: receptor.nrc }
             : undefined,
@@ -1526,14 +1573,14 @@ export function POSPage() {
 
       toast.success(`Venta ${sale.order_number} registrada · ${sale.lineas.length} carros ✓`)
       setCarrito([])
-      setCustomer(null); setFleetCompany(null); setFleetVehicle(null)
+      setCustomer(null); setFleetCompany(null); setFleetVehicle(null); setGrupoDirecto(null); setFacturarA(null)
       setMode('normal'); setSelectedService(null); setSelectedSize('M')
       setWithAspirado(false); setKeypadValue(''); setConCortesia(false)
     } catch (err: any) {
       toast.error(err?.message ?? 'Error al crear la orden')
     }
     setSubmitting(false)
-  }, [branchId, emiteDte, mode, fleetCompany, customer, lineasOrden, total, selectedPayment, currentBranch])
+  }, [branchId, emiteDte, mode, fleetCompany, customer, clienteVenta, lineasOrden, total, selectedPayment, currentBranch])
 
   const handleBillingConfirm = useCallback(async (billing: BillingInfo) => {
     setShowBillingModal(false)
@@ -1561,7 +1608,7 @@ export function POSPage() {
         p_payment_method:  selectedPayment,
         p_with_aspirado:   withAspirado,
         p_aspirado_price:  aspiradoPrice,
-        p_customer_id:     mode === 'flotilla' ? (fleetCompany?.customer_id ?? null) : (customer?.id ?? null),
+        p_customer_id:     mode === 'flotilla' ? (fleetCompany?.customer_id ?? null) : (clienteVenta?.id ?? null),
         p_vehicle_id:      mode === 'flotilla' ? (fleetVehicle?.vehicle_id ?? null) : (vehiculoElegido?.id ?? null),
         p_doc_type:        billing.docType,
         p_fcf_name:        billing.fcfCustomer ? displayName(billing.fcfCustomer) : null,
@@ -1585,7 +1632,7 @@ export function POSPage() {
         try {
           const p = await darCortesia({
             branchId, workOrderId: sale.order_id, vehicleId: vehiculoId,
-            customerId: (mode === 'flotilla' ? fleetCompany?.customer_id : customer?.id) as string,
+            customerId: (mode === 'flotilla' ? fleetCompany?.customer_id : clienteVenta?.id) as string,
           })
           sale = { ...sale, rain_policy: { id: p.id, plate: p.plate, price: 0, issued_at: p.issued_at, valid_until: p.valid_until, courtesy: true } }
         } catch (e) {
@@ -1634,7 +1681,7 @@ export function POSPage() {
         const emisor = await emisorParaTicket(branchId, !!dte)
         await imprimirTicketEnSegundoPlano(buildTicketArgsFromPos(sale, emisor, {
           clienteNombre: receptor ? displayName(receptor)
-            : sale.facturacion_diferida ? (mode === 'flotilla' ? fleetCompany?.trade_name : displayName(customer)) : undefined,
+            : sale.facturacion_diferida ? (mode === 'flotilla' ? fleetCompany?.trade_name : displayName(clienteVenta)) : undefined,
           clienteDoc: receptor
             ? { tipo: receptor.nit ? 'NIT' : 'DUI', numero: receptor.nit ?? receptor.dui, nrc: receptor.nrc }
             : undefined,
@@ -1656,7 +1703,7 @@ export function POSPage() {
       // presenta si llueve. El de facturación no cambia.
       if (sale.rain_policy) {
         try {
-          const titular = mode === 'flotilla' ? (fleetCompany?.trade_name ?? 'Cliente') : displayName(customer)
+          const titular = mode === 'flotilla' ? (fleetCompany?.trade_name ?? 'Cliente') : displayName(clienteVenta)
           const args = buildTicketSeguroDeVenta(sale, await emisorParaTicket(branchId, false), titular)
           if (args) await imprimirTicketEnSegundoPlano(args)
         } catch (e) {
@@ -1672,14 +1719,14 @@ export function POSPage() {
       }
 
       toast.success(`Venta ${sale.order_number} registrada ✓`)
-      setCustomer(null); setFleetCompany(null); setFleetVehicle(null)
+      setCustomer(null); setFleetCompany(null); setFleetVehicle(null); setGrupoDirecto(null); setFacturarA(null)
       setMode('normal'); setSelectedService(null); setSelectedSize('M')
       setWithAspirado(false); setKeypadValue(''); setConCortesia(false)
     } catch (err: any) {
       toast.error(err?.message ?? 'Error al crear la orden')
     }
     setSubmitting(false)
-  }, [branchId, emiteDte, mode, fleetCompany, fleetVehicle, customer, svc, selectedSize, total, selectedPayment,
+  }, [branchId, emiteDte, mode, fleetCompany, fleetVehicle, customer, clienteVenta, svc, selectedSize, total, selectedPayment,
       withAspirado, aspiradoPrice, currentBranch, seguroActivo, seguroPrice,
       canjeandoSeguro, polizaVigente, vehiculoElegido, cortesiaActiva, vehiculoId, multi, cobrarVariosCarros, soloAdicionales])
 
@@ -1739,7 +1786,7 @@ export function POSPage() {
    * demás miembros y a quiénes se les puede facturar. Si falla, la caja sigue
    * como con cualquier cliente: tarifa de lista y sus propios carros.
    */
-  const grupoId = mode === 'normal' ? customer?.business_group_id ?? null : null
+  const grupoId = mode === 'normal' ? customer?.business_group_id ?? grupoDirecto?.id ?? null : null
   useEffect(() => {
     if (!grupoId) { setGrupo(null); return }
     let vivo = true
@@ -1750,8 +1797,11 @@ export function POSPage() {
   }, [grupoId])
 
   // La orden con varios carros es de UN cliente: si cambia, se vacía.
-  const clienteDeOrden = mode === 'flotilla' ? fleetCompany?.customer_id ?? null : customer?.id ?? null
-  useEffect(() => { setCarrito([]) }, [clienteDeOrden, mode])
+  const clienteDeOrden = mode === 'flotilla' ? fleetCompany?.customer_id ?? null : clienteVenta?.id ?? null
+  // Con un grupo elegido, elegir a quién facturar no vacía la orden: los
+  // carros son del grupo, no de ese cliente.
+  const claveOrden = grupoDirecto ? `grupo:${grupoDirecto.id}` : clienteDeOrden
+  useEffect(() => { setCarrito([]) }, [claveOrden, mode])
 
   useEffect(() => {
     const id = mode === 'flotilla' ? fleetCompany?.customer_id : null
@@ -1795,7 +1845,9 @@ export function POSPage() {
   // Sin servicio sólo se puede abrir el cobro para canjear un cupón (el cupón
   // trae su servicio), o dar la cortesía sola, que no pasa por el cobro.
   const soloCortesia = !svc && !multi && cortesiaActiva && !soloAdicionales
-  const canCharge = multi ? lineasOrden.length > 0
+  const faltaFacturarA = !!grupoDirecto && !customer && !facturarA
+  const canCharge = faltaFacturarA ? false
+    : multi ? lineasOrden.length > 0
     : soloAdicionales ? (mode === 'flotilla' ? !!fleetVehicle : true)
     : !svc ? (soloCortesia || (mode === 'normal' && puedeCanjearCupon))
     : mode === 'flotilla' ? !!fleetVehicle : true
@@ -1804,7 +1856,7 @@ export function POSPage() {
   const limpiarVenta = () => {
     if (multi && !window.confirm(`La orden tiene ${lineasOrden.length} carros. ¿Limpiar todo?`)) return
     setCarrito([])
-    setCustomer(null); setFleetCompany(null); setFleetVehicle(null)
+    setCustomer(null); setFleetCompany(null); setFleetVehicle(null); setGrupoDirecto(null); setFacturarA(null)
     setMode('normal'); setSelectedService(null); setSelectedSize('M')
     setWithAspirado(false); setConSeguro(false); setConCortesia(false); setCanjeandoSeguro(false)
     setKeypadValue(''); setSelectedPayment('efectivo')
@@ -1813,7 +1865,7 @@ export function POSPage() {
 
   /** Sin servicio y con la cortesía marcada: sólo el seguro de cortesía, sin venta. */
   const darSoloCortesia = async () => {
-    const clienteId = mode === 'flotilla' ? fleetCompany?.customer_id : customer?.id
+    const clienteId = mode === 'flotilla' ? fleetCompany?.customer_id : clienteVenta?.id
     if (!branchId || !clienteId || !vehiculoId) return
     setSubmitting(true)
     try {
@@ -1972,6 +2024,7 @@ export function POSPage() {
       </div>
 
       {/* ── Mode selector (3 cards) ── */}
+      {/* Un grupo elegido desde Flotilla cobra como cliente normal, pero el modo que se ve es Flotilla. */}
       {/* En el teléfono las tres van en una línea, cuadradas, como el selector
           de tamaño: apiladas se comían media pantalla de alto para elegir algo
           que se elige una vez por orden. Lo que se sacrifica es la línea
@@ -2014,8 +2067,8 @@ export function POSPage() {
               padding: esMovil ? '10px 6px' : '9px 12px', borderRadius: 14,
               cursor: opt.disabled ? 'not-allowed' : 'pointer',
               textAlign: esMovil ? 'center' : 'left',
-              border: `2px solid ${mode === opt.id ? opt.color : 'var(--border)'}`,
-              background: mode === opt.id ? `${opt.color}0D` : 'var(--surface)',
+              border: `2px solid ${modoVisible === opt.id ? opt.color : 'var(--border)'}`,
+              background: modoVisible === opt.id ? `${opt.color}0D` : 'var(--surface)',
               opacity: opt.disabled ? 0.5 : 1,
               transition: 'all 0.12s', display: 'flex',
               flexDirection: esMovil ? 'column' : 'row',
@@ -2025,15 +2078,15 @@ export function POSPage() {
               gap: esMovil ? 6 : 10,
             }}
           >
-            <div style={{ color: mode === opt.id ? opt.color : 'var(--text-secondary)', marginTop: esMovil ? 0 : 2, flexShrink: 0 }}>{opt.icon}</div>
+            <div style={{ color: modoVisible === opt.id ? opt.color : 'var(--text-secondary)', marginTop: esMovil ? 0 : 2, flexShrink: 0 }}>{opt.icon}</div>
             <div>
               <div style={{
                 fontFamily: 'var(--font-heading)', fontWeight: 700,
                 fontSize: esMovil ? 12.5 : 14, lineHeight: 1.15,
-                color: mode === opt.id ? opt.color : 'var(--text-primary)',
+                color: modoVisible === opt.id ? opt.color : 'var(--text-primary)',
               }}>
                 {esMovil ? opt.corto : opt.label}
-                {mode === opt.id && !esMovil && <span style={{ marginLeft: 6, fontSize: 11, color: opt.color }}>●</span>}
+                {modoVisible === opt.id && !esMovil && <span style={{ marginLeft: 6, fontSize: 11, color: opt.color }}>●</span>}
               </div>
               {/* La explicación de cada modo sólo cabe en computadora. */}
               {!esMovil && <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 1 }}>{opt.sub}</div>}
@@ -2071,7 +2124,41 @@ export function POSPage() {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-start' }}>
 
           {/* Col 1: Customer (only normal mode) */}
-          {mode === 'normal' && (
+          {mode === 'normal' && grupoDirecto && !customer && (
+            <div style={{ flex: esMovil ? '1 1 100%' : '0 0 250px' }}>
+              <div className="card" style={{ padding: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                  <div>
+                    <div className="panel-section-label">Grupo empresarial</div>
+                    <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 16 }}>{grupoDirecto.name}</div>
+                  </div>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setShowFleetModal(true)}>Cambiar</button>
+                </div>
+                <label className="ficha-campo" style={{ marginTop: 10 }}>
+                  <span>Facturar a (CCF y cuenta por cobrar)</span>
+                  <select id="grupo-facturar-a" className="corsa-input" value={facturarA?.id ?? ''}
+                          onChange={e => setFacturarA(grupo?.miembros.find(m => m.id === e.target.value) ?? null)}>
+                    <option value="">Elegí a quién del grupo…</option>
+                    {(grupo?.miembros ?? []).map(m => (
+                      <option key={m.id} value={m.id}>{displayName(m)}{m.nit ? ` · NIT ${m.nit}` : ''}</option>
+                    ))}
+                  </select>
+                </label>
+                {facturarA && (
+                  <button className="btn btn-ghost btn-sm" style={{ marginTop: 8, width: '100%', justifyContent: 'center' }}
+                          onClick={() => setAltaVehiculo(true)}>+ Agregar vehículo a {displayName(facturarA)}</button>
+                )}
+              </div>
+              {grupo && (
+                <PlacasDelGrupo grupo={grupo} clienteId="" elegido={vehiculoElegido} onElegir={setVehiculoElegido}/>
+              )}
+              {grupo && grupo.miembros.every(m => m.vehiculos.length === 0) && grupo.sinCliente.length === 0 && (
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8 }}>El grupo no tiene placas registradas.</div>
+              )}
+            </div>
+          )}
+
+          {mode === 'normal' && !(grupoDirecto && !customer) && (
             <div style={{ flex: esMovil ? '1 1 100%' : '0 0 250px' }}>
               <CustomerSearchPanel
                 selected={customer}
@@ -2405,7 +2492,9 @@ export function POSPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 10px', borderRadius: 10, background: 'var(--subtle-bg)', fontSize: 12, color: 'var(--text-secondary)' }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
               <span style={{ fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {mode === 'flotilla' ? (fleetCompany?.trade_name ?? 'Flotilla') : displayName(customer)}
+                {mode === 'flotilla' ? (fleetCompany?.trade_name ?? 'Flotilla')
+                  : grupoDirecto && !customer ? `${grupoDirecto.name} · ${facturarA ? displayName(facturarA) : 'elegí a quién facturar'}`
+                  : displayName(customer)}
               </span>
             </div>
 
@@ -2422,6 +2511,7 @@ export function POSPage() {
                       onClick={soloCortesia ? darSoloCortesia : abrirCobro}
                       disabled={!canCharge || submitting}>
                 {submitting ? 'Procesando…'
+                  : faltaFacturarA ? 'Elegí a quién facturar'
                   : soloCortesia ? 'Dar cortesía (sin cobro)'
                   : !svc && !multi && !soloAdicionales ? (canCharge ? 'Canjear cupón' : 'Elegí un servicio')
                   : `Cobrar ${fmt(total)}`}
@@ -2451,14 +2541,16 @@ export function POSPage() {
       {modalCortesia && branchId && (
         <ModalCortesiaSeguro branchId={branchId} orgId={orgId} onCerrar={() => setModalCortesia(false)}/>
       )}
-      {altaVehiculo && orgId && customer?.id && (
+      {altaVehiculo && orgId && clienteVenta?.id && (
         <ModalNuevoVehiculo
           orgId={orgId}
-          clienteId={customer.id}
+          clienteId={clienteVenta.id}
           onCancelar={() => setAltaVehiculo(false)}
           onCreado={v => {
             setAltaVehiculo(false)
-            setVehiculos(prev => [...prev, v])
+            if (customer) setVehiculos(prev => [...prev, v])
+            // Con un grupo, el carro nuevo aparece entre las placas del grupo.
+            else if (grupoDirecto) cargarGrupoPos(grupoDirecto.id).then(g => setGrupo(g)).catch(() => {})
             setVehiculoElegido(v)
           }}
         />
@@ -2468,6 +2560,7 @@ export function POSPage() {
       {showFleetModal && (
         <FleetModal
           onVehicleSelected={handleFleetVehicleSelected}
+          onGrupoSelected={handleGrupoSelected}
           onCancel={() => { setShowFleetModal(false); if (!fleetVehicle) setMode('normal') }}
         />
       )}
@@ -2475,7 +2568,7 @@ export function POSPage() {
       {/* Modal de cobro */}
       {showBillingModal && (
         <CobroModal
-          customer={mode === 'flotilla' ? clienteFlotilla : customer}
+          customer={mode === 'flotilla' ? clienteFlotilla : clienteVenta}
           grupo={mode === 'normal' ? grupo : null}
           sinServicio={!svc && !multi && !soloAdicionales}
           consolida={selectedPayment === 'credito' && creditoCaja?.consolidado === true}

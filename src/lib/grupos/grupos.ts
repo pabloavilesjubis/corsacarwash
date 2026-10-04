@@ -101,6 +101,27 @@ function deFila(r: { per_size: boolean; price: number | null; price_s: number | 
 }
 
 /** El acuerdo del grupo, con la misma forma que el de una flotilla. */
+/** Un carro del grupo que todavía no tiene cliente (0067). */
+export interface VehiculoSinCliente { id: string; plate: string; brand?: string | null; model?: string | null; color?: string | null; vehicle_type_id?: string | null }
+
+/** Los carros del grupo sin cliente asignado: quedaron así en una carga masiva. */
+export async function cargarVehiculosSinCliente(groupId: string): Promise<VehiculoSinCliente[]> {
+  const { data, error } = await db()
+    .from('vehicles')
+    .select('id, plate, brand, model, color, vehicle_type_id')
+    .eq('business_group_id', groupId).is('customer_id', null).eq('active', true)
+    .order('plate')
+  // Antes de la 0067 la columna no existe: el grupo simplemente no tiene carros sueltos.
+  if (error) return []
+  return data ?? []
+}
+
+/** Le asigna un cliente del grupo a un carro que quedó sin cliente. */
+export async function asignarVehiculo(vehicleId: string, customerId: string): Promise<void> {
+  const { error } = await db().rpc('grupo_asignar_vehiculo', { p_vehicle_id: vehicleId, p_customer_id: customerId })
+  if (error) throw new Error(error.message)
+}
+
 export async function cargarAcuerdoGrupo(groupId: string): Promise<AcuerdoFlotilla> {
   const acuerdo: AcuerdoFlotilla = { servicios: {}, porTamano: {}, aspirado: { activo: false, precio: null } }
   const [{ data: g, error: e1 }, { data: sp, error: e2 }] = await Promise.all([

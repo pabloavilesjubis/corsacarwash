@@ -112,9 +112,12 @@ export function VehiculosClienteModal({ orgId, customerId, customerName, onCerra
           onCancelar={() => setAlta(false)}
           onCreado={async () => { setAlta(false); await cargar(); onCambio() }}
           onPlacaDeOtro={async c => {
-            const { data } = await (supabase as any).from('customers')
-              .select('customer_type, first_name, last_name, trade_name, legal_name').eq('id', c.duenoId).maybeSingle()
-            const dueno = !data ? 'otro cliente'
+            const { data } = c.duenoId
+              ? await (supabase as any).from('customers')
+                  .select('customer_type, first_name, last_name, trade_name, legal_name').eq('id', c.duenoId).maybeSingle()
+              : { data: null }
+            const dueno = !c.duenoId ? 'un grupo empresarial (sin cliente asignado)'
+              : !data ? 'otro cliente'
               : data.customer_type === 'individual' ? `${data.first_name ?? ''} ${data.last_name ?? ''}`.trim()
               : (data.trade_name || data.legal_name || 'otro cliente')
             setAlta(false)

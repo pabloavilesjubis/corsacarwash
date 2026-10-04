@@ -334,7 +334,7 @@ export function ModalNuevoVehiculo({ orgId, clienteId, onCreado, onCancelar, onP
   onCreado: (vehiculo: VehiculoPos) => void
   onCancelar: () => void
   /** Si viene, una placa de otro cliente se ofrece transferir en vez de sólo avisar (Clientes). */
-  onPlacaDeOtro?: (c: { placa: string; vehicleId: string; duenoId: string }) => void
+  onPlacaDeOtro?: (c: { placa: string; vehicleId: string; duenoId: string | null }) => void
   /** Rótulo del botón: en caja «Agregar y usar»; en Clientes, «Agregar vehículo». */
   textoGuardar?: string
 }) {

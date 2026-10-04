@@ -3,8 +3,8 @@
  *
  *   1. elegir el archivo (o bajar la plantilla);
  *   2. elegir a quién van: un cliente de la base o un grupo empresarial (con
- *      un grupo, la columna «Empresa» reparte por miembro y el resto va al
- *      predeterminado); revisar fila por fila;
+ *      un grupo, la columna «Empresa» reparte por miembro y el resto queda del
+ *      grupo sin cliente, para asignarlo después); revisar fila por fila;
  *   3. importar y ver el resultado.
  *
  * Sólo la placa es obligatoria: lo demás se carga si viene. Las placas ya
@@ -59,7 +59,6 @@ export function CargaMasivaVehiculos({ orgId, onCerrar, onImportado }: {
   const [grupos, setGrupos] = useState<GrupoEmpresarial[]>([])
   const [grupoId, setGrupoId] = useState('')
   const [miembros, setMiembros] = useState<DestinoMiembro[]>([])
-  const [predeterminado, setPredeterminado] = useState('')
 
   const [avance, setAvance] = useState(0)
   const [resultado, setResultado] = useState<{ creados: number; fallidos: { fila: number; error: string }[] } | null>(null)
@@ -99,30 +98,30 @@ export function CargaMasivaVehiculos({ orgId, onCerrar, onImportado }: {
     listarGrupos().then(setGrupos).catch(() => setGrupos([]))
   }, [destino, grupos.length])
   useEffect(() => {
-    if (!grupoId) { setMiembros([]); setPredeterminado(''); return }
+    if (!grupoId) { setMiembros([]); return }
     let vivo = true
     cargarMiembros(grupoId).then(ms => {
-      if (!vivo) return
-      const lista = ms.map(m => ({ id: m.id, nombre: nombreMiembro(m), nit: m.nit, dui: m.dui }))
-      setMiembros(lista)
-      setPredeterminado(lista[0]?.id ?? '')
+      if (vivo) setMiembros(ms.map(m => ({ id: m.id, nombre: nombreMiembro(m), nit: m.nit, dui: m.dui })))
     }).catch(() => { if (vivo) setMiembros([]) })
     return () => { vivo = false }
   }, [grupoId])
 
   const filas = useMemo(() => {
-    if (destino === 'cliente') return resolverDestino(base, cliente ? [cliente] : [], cliente)
-    if (destino === 'grupo') return resolverDestino(base, miembros, miembros.find(m => m.id === predeterminado) ?? null)
+    if (destino === 'cliente') return resolverDestino(base, { tipo: 'cliente', cliente })
+    if (destino === 'grupo') return resolverDestino(base, {
+      tipo: 'grupo', grupoId: grupoId || null, grupoNombre: grupos.find(g => g.id === grupoId)?.name ?? 'Grupo', miembros,
+    })
     return base
-  }, [base, destino, cliente, miembros, predeterminado])
+  }, [base, destino, cliente, grupoId, grupos, miembros])
 
-  const aCargar = filas.filter(f => f.estado === 'nuevo' && f.clienteId)
+  const aCargar = filas.filter(f => f.estado === 'nuevo' && (f.clienteId || f.grupoId))
+  const sinCliente = aCargar.filter(f => !f.clienteId).length
   const cuenta = {
     nuevo: filas.filter(f => f.estado === 'nuevo').length,
     saltadas: filas.filter(f => f.estado === 'existe' || f.estado === 'repetida').length,
     sinPlaca: filas.filter(f => f.estado === 'sin_placa').length,
   }
-  const destinoListo = destino === 'cliente' ? !!cliente : destino === 'grupo' ? !!predeterminado : false
+  const destinoListo = destino === 'cliente' ? !!cliente : destino === 'grupo' ? !!grupoId : false
 
   const importar = async () => {
     setPaso('importando'); setAvance(0)
@@ -131,7 +130,7 @@ export function CargaMasivaVehiculos({ orgId, onCerrar, onImportado }: {
       const tipo = (t: string) => tamanos.find(x => x.tamano === t)?.id ?? tamanos[0]?.id
       if (!tamanos.length) throw new Error('No hay tamaños de vehículo configurados')
       const r = await insertarVehiculosEnLote(orgId, aCargar.map(f => ({
-        fila: f.fila, customer_id: f.clienteId!, plate: f.placa, brand: f.marca, model: f.modelo,
+        fila: f.fila, customer_id: f.clienteId, business_group_id: f.clienteId ? null : f.grupoId, plate: f.placa, brand: f.marca, model: f.modelo,
         color: f.color, year: f.anio, vehicle_type_id: tipo(f.tamano)!,
       })), setAvance)
       setResultado(r)
@@ -192,7 +191,7 @@ export function CargaMasivaVehiculos({ orgId, onCerrar, onImportado }: {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 {([
                   ['cliente', 'Un cliente de la base', 'Todos los carros a un cliente'],
-                  ['grupo', 'Un grupo empresarial', conEmpresa ? 'Se reparten por la columna Empresa' : 'Al miembro que elijas'],
+                  ['grupo', 'Un grupo empresarial', conEmpresa ? 'Por la columna Empresa; sin empresa, quedan del grupo' : 'Quedan del grupo, sin cliente'],
                 ] as [Destino, string, string][]).map(([id, l, sub]) => (
                   <button key={id} type="button" id={`destino-${id}`} onClick={() => setDestino(id)}
                     style={{ textAlign: 'left', padding: '9px 12px', borderRadius: 10, cursor: 'pointer', color: 'var(--text-primary)',
@@ -239,13 +238,11 @@ export function CargaMasivaVehiculos({ orgId, onCerrar, onImportado }: {
                     </select>
                   </label>
                   {grupoId && (
-                    <label className="ficha-campo" style={{ flex: '1 1 220px' }}>
-                      <span>{conEmpresa ? 'Si la fila no dice Empresa, va a' : 'Se cargan a'}</span>
-                      <select className="corsa-input" value={predeterminado} onChange={e => setPredeterminado(e.target.value)}>
-                        {miembros.length === 0 && <option value="">El grupo no tiene miembros</option>}
-                        {miembros.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
-                      </select>
-                    </label>
+                    <div style={{ flex: '1 1 260px', fontSize: 12, color: 'var(--text-secondary)', alignSelf: 'flex-end', lineHeight: 1.45 }}>
+                      {sinCliente > 0
+                        ? <><strong style={{ color: 'var(--text-primary)' }}>{sinCliente}</strong> {sinCliente === 1 ? 'carro queda' : 'carros quedan'} del grupo sin cliente: se ven en caja con cualquier cliente del grupo y se asignan después en Grupos empresariales.</>
+                        : 'Todos los carros tienen su empresa del grupo.'}
+                    </div>
                   )}
                 </div>
               )}
@@ -275,7 +272,9 @@ export function CargaMasivaVehiculos({ orgId, onCerrar, onImportado }: {
                         <td>{f.color ?? '—'}</td>
                         <td>{f.anio ?? '—'}</td>
                         <td style={{ fontWeight: 700 }}>{f.tamano}</td>
-                        <td className="cliente" title={f.clienteNombre ?? ''}>{f.estado === 'nuevo' ? (f.clienteNombre ?? <span style={{ color: 'var(--text-secondary)' }}>elegí el destino</span>) : '—'}</td>
+                        <td className="cliente" title={f.clienteNombre ?? ''} style={!f.clienteId && f.grupoId ? { color: 'var(--color-warning-text)' } : undefined}>
+                          {f.estado === 'nuevo' ? (f.clienteNombre ?? <span style={{ color: 'var(--text-secondary)' }}>elegí el destino</span>) : '—'}
+                        </td>
                         <td><span className="badge" style={{ color: e.color, background: e.tint }}>{e.label}</span></td>
                         <td className="envuelve" style={{ fontSize: 11.5, color: 'var(--text-secondary)', minWidth: 180 }}>{f.avisos.join(' · ') || '—'}</td>
                       </tr>

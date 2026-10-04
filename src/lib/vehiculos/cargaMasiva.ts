@@ -9,8 +9,8 @@
  *
  * Destino: un cliente (todos los carros a él) o un grupo empresarial, donde
  * cada fila puede decir a qué empresa del grupo va (columna «Empresa», por
- * NIT, DUI o nombre); la que no lo dice, o no se encuentra, va al miembro
- * elegido como predeterminado.
+ * NIT, DUI o nombre); la que no lo dice, o no se encuentra, queda del grupo
+ * sin cliente (0067) y se le asigna después desde Grupos empresariales.
  *
  * Una placa que ya está registrada no se duplica ni se le cambia el dueño:
  * se marca y se salta. Lo mismo una placa repetida dentro del archivo.
@@ -44,9 +44,11 @@ export interface FilaVehiculo {
   tamano: TamanoVehiculo
   /** Lo que decía la columna Empresa, tal cual. */
   empresaTexto: string | null
-  /** A qué cliente va (se resuelve con el destino). */
+  /** A qué cliente va (se resuelve con el destino). Null en un grupo = sin cliente. */
   clienteId: string | null
   clienteNombre: string | null
+  /** Con destino grupo: el grupo dueño del carro. */
+  grupoId: string | null
   estado: 'nuevo' | 'existe' | 'repetida' | 'sin_placa'
   avisos: string[]
 }
@@ -142,7 +144,7 @@ export function interpretarVehiculos(hoja: Celda[][], existentes: PlacaExistente
       modelo: val(r, 'modelo') || null,
       color: val(r, 'color') || null,
       empresaTexto: val(r, 'empresa') || null,
-      clienteId: null, clienteNombre: null,
+      clienteId: null, clienteNombre: null, grupoId: null,
     })
   })
   return { filas, ignoradas, conEmpresa: indices.empresa != null }
@@ -151,9 +153,16 @@ export function interpretarVehiculos(hoja: Celda[][], existentes: PlacaExistente
 /**
  * A qué cliente va cada fila. Con un cliente, todas a él. Con un grupo, la
  * columna Empresa busca al miembro por NIT, DUI o nombre; si no hay o no se
- * encuentra, va al predeterminado.
+ * encuentra, el carro queda del grupo sin cliente.
  */
-export function resolverDestino(filas: FilaVehiculo[], miembros: DestinoMiembro[], predeterminado: DestinoMiembro | null): FilaVehiculo[] {
+export function resolverDestino(
+  filas: FilaVehiculo[],
+  destino: { tipo: 'cliente'; cliente: DestinoMiembro | null } | { tipo: 'grupo'; grupoId: string | null; grupoNombre: string; miembros: DestinoMiembro[] },
+): FilaVehiculo[] {
+  if (destino.tipo === 'cliente') {
+    return filas.map(f => ({ ...f, clienteId: destino.cliente?.id ?? null, clienteNombre: destino.cliente?.nombre ?? null, grupoId: null }))
+  }
+  const { miembros, grupoId, grupoNombre } = destino
   const buscar = (t: string): DestinoMiembro | null => {
     const d = soloDigitos(t)
     if (d.length >= 9) {
@@ -168,12 +177,12 @@ export function resolverDestino(filas: FilaVehiculo[], miembros: DestinoMiembro[
   }
   return filas.map(f => {
     const avisos = f.avisos.filter(a => !a.startsWith('Empresa '))
-    let destino = predeterminado
-    if (f.empresaTexto && miembros.length > 1) {
-      const m = buscar(f.empresaTexto)
-      if (m) destino = m
-      else avisos.push(`Empresa «${f.empresaTexto}» no está en el grupo: va a ${predeterminado?.nombre ?? '—'}`)
+    const m = f.empresaTexto ? buscar(f.empresaTexto) : null
+    if (f.empresaTexto && !m) avisos.push(`Empresa «${f.empresaTexto}» no está en el grupo: queda sin cliente`)
+    return {
+      ...f, avisos, grupoId,
+      clienteId: m?.id ?? null,
+      clienteNombre: m ? m.nombre : grupoId ? `${grupoNombre} · sin cliente` : null,
     }
-    return { ...f, avisos, clienteId: destino?.id ?? null, clienteNombre: destino?.nombre ?? null }
   })
 }

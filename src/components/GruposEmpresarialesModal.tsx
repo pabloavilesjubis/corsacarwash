@@ -13,8 +13,8 @@ import { useAuth } from '../hooks/useAuth'
 import { EditorPrecios } from './EditorPrecios'
 import { lineasDesde, SERVICIOS_FLOTILLA, type AcuerdoFlotilla, type LineasEditables } from '../lib/flotillas/precios'
 import {
-  asignarGrupo, cargarAcuerdoGrupo, cargarMiembros, crearGrupo, guardarAcuerdoGrupo, listarGrupos,
-  nombreMiembro, problemaDeLineasGrupo, renombrarGrupo, type GrupoEmpresarial, type MiembroGrupo,
+  asignarGrupo, asignarVehiculo, cargarAcuerdoGrupo, cargarMiembros, cargarVehiculosSinCliente, crearGrupo, guardarAcuerdoGrupo, listarGrupos,
+  nombreMiembro, problemaDeLineasGrupo, renombrarGrupo, type GrupoEmpresarial, type MiembroGrupo, type VehiculoSinCliente,
 } from '../lib/grupos/grupos'
 
 function fmt(n: number) { return 'US$' + n.toFixed(2) }
@@ -39,6 +39,8 @@ export function GruposEmpresarialesModal({ orgId, onCerrar, onCambio }: {
   const [grupos, setGrupos] = useState<GrupoEmpresarial[]>([])
   const [elegido, setElegido] = useState<string | null>(null)
   const [miembros, setMiembros] = useState<MiembroGrupo[]>([])
+  const [sinCliente, setSinCliente] = useState<VehiculoSinCliente[]>([])
+  const [asignando, setAsignando] = useState<string | null>(null)
   const [acuerdo, setAcuerdo] = useState<AcuerdoFlotilla | null>(null)
   const [cargando, setCargando] = useState(false)
   const [nuevo, setNuevo] = useState('')
@@ -65,8 +67,8 @@ export function GruposEmpresarialesModal({ orgId, onCerrar, onCambio }: {
   const cargarDetalle = useCallback(async (id: string) => {
     setCargando(true)
     try {
-      const [ms, ac] = await Promise.all([cargarMiembros(id), cargarAcuerdoGrupo(id)])
-      setMiembros(ms); setAcuerdo(ac)
+      const [ms, ac, sc] = await Promise.all([cargarMiembros(id), cargarAcuerdoGrupo(id), cargarVehiculosSinCliente(id)])
+      setMiembros(ms); setAcuerdo(ac); setSinCliente(sc)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'No se pudo cargar el grupo')
     }
@@ -74,7 +76,7 @@ export function GruposEmpresarialesModal({ orgId, onCerrar, onCambio }: {
   }, [])
   useEffect(() => {
     if (elegido) cargarDetalle(elegido)
-    else { setMiembros([]); setAcuerdo(null) }
+    else { setMiembros([]); setAcuerdo(null); setSinCliente([]) }
   }, [elegido, cargarDetalle])
 
   const grupo = grupos.find(g => g.id === elegido) ?? null
@@ -100,6 +102,22 @@ export function GruposEmpresarialesModal({ orgId, onCerrar, onCambio }: {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'No se pudo renombrar')
     }
+  }
+
+  /** Le da dueño a un carro que quedó del grupo sin cliente. */
+  const asignar = async (v: VehiculoSinCliente, customerId: string) => {
+    const m = miembros.find(x => x.id === customerId)
+    if (!m || !window.confirm(`¿Asignar la placa ${v.plate} a ${nombreMiembro(m)}?`)) return
+    setAsignando(v.id)
+    try {
+      await asignarVehiculo(v.id, customerId)
+      toast.success(`${v.plate} asignada a ${nombreMiembro(m)}`)
+      if (elegido) await cargarDetalle(elegido)
+      onCambio()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo asignar el vehículo')
+    }
+    setAsignando(null)
   }
 
   const cambiarMiembro = async (customerId: string, groupId: string | null, aviso: string) => {
@@ -227,6 +245,34 @@ export function GruposEmpresarialesModal({ orgId, onCerrar, onCambio }: {
                     </div>
                   ))}
                 </div>
+                {sinCliente.length > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <div className="panel-section-label" style={{ marginBottom: 6, color: 'var(--color-warning-text)' }}>
+                      Vehículos sin cliente ({sinCliente.length})
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                      Quedaron del grupo en una carga masiva. En caja se ven con cualquier cliente del grupo; asignales su dueño cuando lo sepas.
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {sinCliente.map(v => (
+                        <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 10px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12.5 }}>
+                          <span className="font-mono" style={{ fontWeight: 700, minWidth: 90 }}>{v.plate}</span>
+                          <span style={{ flex: 1, minWidth: 0, color: 'var(--text-secondary)' }} className="truncate">
+                            {[v.brand, v.model, v.color].filter(Boolean).join(' · ') || '—'}
+                          </span>
+                          {puedeEditar && (
+                            <select className="corsa-input" style={{ width: 220, padding: '4px 8px', fontSize: 12 }} value=""
+                                    disabled={asignando === v.id || miembros.length === 0}
+                                    onChange={e => { if (e.target.value) asignar(v, e.target.value) }}>
+                              <option value="">{miembros.length ? 'Asignar a…' : 'Agregá clientes al grupo'}</option>
+                              {miembros.map(m => <option key={m.id} value={m.id}>{nombreMiembro(m)}</option>)}
+                            </select>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {puedeEditar && (
                   <AgregarMiembro excluir={miembros.map(m => m.id)}
                     onElegir={(c, grupoActual) => {

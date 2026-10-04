@@ -155,7 +155,9 @@ export async function checkPlateConflict(plate: string, currentCustomerId: strin
     .select('id, customer_id, customers:customer_id(customer_type, first_name, last_name, legal_name, trade_name)')
     .eq('normalized_plate', normalized)
     .eq('active', true)
-    .neq('customer_id', currentCustomerId)
+    // Un carro del grupo sin cliente (0067) también es «de otro»: `neq` solo
+    // deja afuera los null, y la placa se duplicaba.
+    .or(`customer_id.is.null,customer_id.neq.${currentCustomerId}`)
     .limit(1)
     .maybeSingle()
   if (error) throw error
@@ -354,7 +356,7 @@ export async function fetchPlacasExistentes(organizationId: string): Promise<{ n
   for (let desde = 0; ; desde += 1000) {
     const { data, error } = await (supabase as any)
       .from('vehicles')
-      .select('normalized_plate, customers(customer_type, first_name, last_name, trade_name, legal_name)')
+      .select('normalized_plate, customers(customer_type, first_name, last_name, trade_name, legal_name), business_groups(name)')
       .eq('organization_id', organizationId)
       .eq('active', true)
       .neq('normalized_plate', '')
@@ -365,7 +367,8 @@ export async function fetchPlacasExistentes(organizationId: string): Promise<{ n
       const cliente = c.customer_type === 'individual'
         ? `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim()
         : (c.trade_name || c.legal_name || '')
-      todas.push({ normalized_plate: v.normalized_plate, cliente: cliente || 'otro cliente' })
+      const grupo = v.business_groups?.name ? `${v.business_groups.name} (sin cliente)` : ''
+      todas.push({ normalized_plate: v.normalized_plate, cliente: cliente || grupo || 'otro cliente' })
     }
     if (!data || data.length < 1000) return todas
   }
@@ -377,11 +380,15 @@ export async function fetchPlacasExistentes(organizationId: string): Promise<{ n
  */
 export async function insertarVehiculosEnLote(
   organizationId: string,
-  filas: { fila: number; customer_id: string; plate: string; brand: string | null; model: string | null; color: string | null; year: number | null; vehicle_type_id: string }[],
+  filas: { fila: number; customer_id: string | null; business_group_id?: string | null; plate: string; brand: string | null; model: string | null; color: string | null; year: number | null; vehicle_type_id: string }[],
   onAvance?: (n: number) => void,
 ): Promise<{ creados: number; fallidos: { fila: number; error: string }[] }> {
   const registro = (f: typeof filas[number]) => ({
-    organization_id: organizationId, customer_id: f.customer_id, vehicle_type_id: f.vehicle_type_id,
+    organization_id: organizationId, customer_id: f.customer_id,
+    // Carro del grupo sin cliente (0067): sólo se manda cuando aplica, para no
+    // depender de la columna en una carga a un cliente.
+    ...(f.business_group_id ? { business_group_id: f.business_group_id } : {}),
+    vehicle_type_id: f.vehicle_type_id,
     plate: f.plate.toUpperCase().trim(), brand: f.brand, model: f.model, color: f.color, year: f.year, active: true,
   })
   let creados = 0
