@@ -147,6 +147,8 @@ export interface Customer {
   fiscal_complemento: string | null
   /** Correo de envío del DTE; si está vacío se usa `email`. */
   billing_email: string | null
+  /** Grupo empresarial (0054). */
+  business_group_id?: string | null
 
   active: boolean
   created_at: string

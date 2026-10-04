@@ -21,6 +21,7 @@ import {
   MH_PATTERNS, onlyDigits, getMunicipiosFor,
 } from '../lib/mh-catalogs'
 import { SearchSelect } from './ui/SearchSelect'
+import { SelectorGrupo } from './SelectorGrupo'
 import {
   createCustomer, updateCustomer,
   type CustomerWritableFields,
@@ -51,6 +52,7 @@ const schema = z.object({
   fiscal_municipio: z.string().optional(),
   fiscal_complemento: z.string().optional(),
   billing_email: z.string().optional(),
+  business_group_id: z.string().optional(),
 }).superRefine((v, ctx) => {
   const req = (path: keyof typeof v, message: string) =>
     ctx.addIssue({ code: 'custom', path: [path], message })
@@ -159,6 +161,7 @@ function defaultsFrom(customer?: Customer): FormValues {
     fiscal_municipio: customer?.fiscal_municipio ?? '',
     fiscal_complemento: customer?.fiscal_complemento ?? '',
     billing_email: customer?.billing_email ?? '',
+    business_group_id: customer?.business_group_id ?? '',
   }
 }
 
@@ -225,6 +228,7 @@ export function CustomerFormPanel({
       fiscal_municipio: blankToNull(v.fiscal_municipio),
       fiscal_complemento: blankToNull(v.fiscal_complemento),
       billing_email: blankToNull(v.billing_email),
+      business_group_id: blankToNull(v.business_group_id),
     }
 
     try {
@@ -451,6 +455,14 @@ export function CustomerFormPanel({
             </div>
           </>
         )}
+
+        <SectionLabel>Grupo empresarial</SectionLabel>
+        <SelectorGrupo orgId={orgId} value={watch('business_group_id') ?? ''}
+                       onChange={id => setValue('business_group_id', id)}/>
+        <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: -6 }}>
+          Clientes hermanos: en caja se pueden usar las placas de cualquiera del grupo
+          y facturar a cualquiera del grupo, con los precios negociados del grupo.
+        </div>
 
         <SectionLabel>Notas</SectionLabel>
         <textarea {...register('notes')} className="corsa-input" rows={2}

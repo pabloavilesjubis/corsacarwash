@@ -27,6 +27,8 @@ import { cargarEmisor, emisorParaTicket, MARCA } from '../lib/fiscal/emisor'
 import { lookupVoucher, redeemVoucher, type VoucherLookup } from '../services/vouchers.service'
 import { darCortesia, fetchPolizaVigente, tiempoRestante, type RainPolicy } from '../services/rain.service'
 import { ModalCortesiaSeguro } from '../components/pos/CortesiaSeguro'
+import { cargarAcuerdoGrupo } from '../lib/grupos/grupos'
+import type { AcuerdoFlotilla } from '../lib/flotillas/precios'
 import {
   getCustomerVehicles, fetchMapaTamanos, type TamanoVehiculo,
 } from '../services/customers.service'
@@ -123,7 +125,7 @@ type FcfMode = 'generic' | 'named'
 const CUSTOMER_COLUMNS =
   'id,customer_type,first_name,last_name,trade_name,legal_name,dui,nit,nrc,email,phone,' +
   'fiscal_document_type,fiscal_doc_type,fiscal_doc_number,cod_actividad,desc_actividad,' +
-  'fiscal_departamento,fiscal_municipio,fiscal_complemento,billing_email'
+  'fiscal_departamento,fiscal_municipio,fiscal_complemento,billing_email,business_group_id'
 
 interface CustomerResult {
   id: string
@@ -142,6 +144,8 @@ interface CustomerResult {
   fiscal_municipio?: string | null
   fiscal_complemento?: string | null
   billing_email?: string | null
+  /** Grupo empresarial (0054): placas compartidas, facturar a cualquiera del grupo y sus precios. */
+  business_group_id?: string | null
   vehicle?: { id: string; plate: string; brand?: string; model?: string; year?: string; color?: string }
   membership_status?: 'active' | 'expiring' | null
   membership_plan?: string
@@ -177,6 +181,33 @@ interface FleetVehicle {
   model: string | null
   year: number | null
   color: string | null
+}
+
+/** El grupo empresarial del cliente en caja (0054). */
+interface GrupoPos {
+  id: string
+  name: string
+  acuerdo: AcuerdoFlotilla
+  /** Los clientes del grupo con los datos fiscales (para facturarles) y sus carros. */
+  miembros: (CustomerResult & { vehiculos: VehiculoPos[] })[]
+}
+
+/** El grupo y sus miembros, con las mismas columnas que el buscador de la caja. */
+async function cargarGrupoPos(groupId: string): Promise<GrupoPos | null> {
+  const db = supabase as any
+  const [{ data: g }, { data: ms }, acuerdo] = await Promise.all([
+    db.from('business_groups').select('id, name').eq('id', groupId).maybeSingle(),
+    db.from('customers')
+      .select(`${CUSTOMER_COLUMNS},vehicles(id,plate,brand,model,color,vehicle_type_id,active)`)
+      .eq('business_group_id', groupId).eq('active', true),
+    cargarAcuerdoGrupo(groupId),
+  ])
+  if (!g) return null
+  const miembros = (ms ?? []).map((m: any) => ({
+    ...m, vehiculos: (m.vehicles ?? []).filter((v: any) => v.active !== false),
+  }))
+  miembros.sort((a: CustomerResult, b: CustomerResult) => displayName(a).localeCompare(displayName(b)))
+  return { id: g.id, name: g.name, acuerdo, miembros }
 }
 
 interface BillingInfo {
@@ -697,6 +728,8 @@ interface CobroModalProps {
   total: number
   /** Cliente ya elegido en la caja; de ahí sale todo lo prellenado. */
   customer: CustomerResult | null
+  /** Su grupo empresarial: se le puede facturar a cualquiera de sus miembros. */
+  grupo: GrupoPos | null
   /** Método de pago, monto y teclado: lo arma la página. */
   pago: ReactNode
   pagaConCupon: boolean
@@ -710,7 +743,7 @@ interface CobroModalProps {
 }
 
 function CobroModal({
-  total, customer, pago, pagaConCupon, cuponValido, submitting, onTecla, onConfirm, onCanjear, onCancel,
+  total, customer, grupo, pago, pagaConCupon, cuponValido, submitting, onTecla, onConfirm, onCanjear, onCancel,
 }: CobroModalProps) {
   const esMovil = useEsMovil()
   // Si hay cliente en la caja, el modal abre resuelto: su documento preferido
@@ -855,6 +888,38 @@ function CobroModal({
             ))}
           </div>
 
+          {/* Facturar a alguien del grupo: un toque elige al receptor. */}
+          {grupo && grupo.miembros.length > 1 && (
+            <div>
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                Facturar a alguien de {grupo.name}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {grupo.miembros.map(m => {
+                  const sel = docType === 'ccf' ? ccfSelected?.id === m.id : fcfMode === 'named' && fcfCliente?.id === m.id
+                  return (
+                    <button key={m.id} type="button"
+                      onClick={() => {
+                        if (docType === 'ccf') setCcfSelected(m)
+                        else { setFcfMode('named'); setFcfCliente(m) }
+                      }}
+                      style={{
+                        padding: '6px 10px', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-body)',
+                        fontSize: 12.5, fontWeight: 600, textAlign: 'left',
+                        border: `1.5px solid ${sel ? 'var(--corsa-orange)' : 'var(--border)'}`,
+                        background: sel ? 'rgba(223,245,107,0.35)' : 'var(--surface)', color: 'var(--text-primary)',
+                      }}>
+                      {displayName(m)}
+                      <div style={{ fontSize: 10.5, fontWeight: 400, color: 'var(--text-secondary)' }}>
+                        {m.nit ? `NIT ${m.nit}` : m.dui ? `DUI ${m.dui}` : 'Sin documento'}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {/* FCF options */}
           {docType === 'ticket' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -925,6 +990,49 @@ function CobroModal({
   )
 }
 
+// ─── Placas del grupo empresarial ─────────────────────────────
+
+/** Los carros de los otros clientes del grupo, con su dueño. */
+function PlacasDelGrupo({ grupo, clienteId, elegido, onElegir }: {
+  grupo: GrupoPos
+  clienteId: string
+  elegido: VehiculoPos | null
+  onElegir: (v: VehiculoPos) => void
+}) {
+  const otros = grupo.miembros.filter(m => m.id !== clienteId && m.vehiculos.length > 0)
+  if (otros.length === 0) return null
+  return (
+    <div className="card" style={{ padding: 12, marginTop: 10 }}>
+      <div className="panel-section-label" style={{ marginBottom: 6 }}>Placas de {grupo.name}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {otros.map(m => (
+          <div key={m.id}>
+            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginBottom: 4 }}>{displayName(m)}</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {m.vehiculos.map(v => {
+                const sel = elegido?.id === v.id
+                return (
+                  <button key={v.id} onClick={() => onElegir(v)}
+                    style={{
+                      padding: '6px 10px', borderRadius: 12, cursor: 'pointer', minHeight: 40, textAlign: 'left',
+                      border: `2px solid ${sel ? 'var(--corsa-green)' : 'var(--border)'}`,
+                      background: sel ? 'rgba(22,25,26,0.05)' : 'var(--surface)', fontFamily: 'var(--font-body)',
+                    }}>
+                    <div className="font-mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{v.plate}</div>
+                    {(v.brand || v.model) && (
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{[v.brand, v.model].filter(Boolean).join(' ')}</div>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ─── Main POS Page ────────────────────────────────────────────
 
 export function POSPage() {
@@ -951,6 +1059,8 @@ export function POSPage() {
   // Seguro de lluvia de cortesía (0053). Arranca sin marcar: con una orden
   // armada se agrega al cobrar; sin orden, el botón abre el modal.
   const [conCortesia, setConCortesia] = useState(false)
+  // Grupo empresarial del cliente en caja (0054). Se pide al elegir el cliente.
+  const [grupo, setGrupo] = useState<GrupoPos | null>(null)
   const [modalCortesia, setModalCortesia] = useState(false)
   // Póliza viva del vehículo elegido, si tiene una. La trae el servidor.
   const [polizaVigente, setPolizaVigente] = useState<RainPolicy | null>(null)
@@ -1007,13 +1117,20 @@ export function POSPage() {
     : selectedService
   const svc = SERVICES.find(s => s.id === servicioEfectivo)!
   const fleetPrices: Record<SizeId, number> = fleetCompany?.precios[svc.id as ServicioId] ?? svc.prices
-  const servicePrice = mode === 'flotilla' ? fleetPrices[selectedSize] : svc.prices[selectedSize]
+  // Con un cliente de grupo en caja (modo normal), el precio negociado del
+  // grupo para ese servicio; lo que el grupo no negoció va a tarifa de lista.
+  const acuerdoGrupo = mode === 'normal' ? grupo?.acuerdo ?? null : null
+  const preciosDe = (s: { id: string; prices: Record<SizeId, number> }): Record<SizeId, number> =>
+    acuerdoGrupo?.servicios[s.id.toUpperCase() as CodigoServicio] ?? s.prices
+  const servicePrice = mode === 'flotilla' ? fleetPrices[selectedSize] : preciosDe(svc)[selectedSize]
   // En flotilla manda el precio negociado; si no hay acuerdo, la tarifa de lista.
   const usaAspiradoFlotilla = mode === 'flotilla'
     && Boolean(fleetCompany?.aspirado_enabled)
     && fleetCompany?.aspirado_price != null
+  const usaAspiradoGrupo = Boolean(acuerdoGrupo?.aspirado.activo && acuerdoGrupo.aspirado.precio != null)
   const aspiradoUnit = usaAspiradoFlotilla
     ? Number(fleetCompany!.aspirado_price)
+    : usaAspiradoGrupo ? Number(acuerdoGrupo!.aspirado.precio)
     : ADDON_ASPIRADO.price
   const aspiradoPrice = withAspirado ? aspiradoUnit : 0
 
@@ -1344,6 +1461,21 @@ export function POSPage() {
   }, [customer])
 
   /**
+   * El grupo empresarial del cliente (0054): sus precios, las placas de los
+   * demás miembros y a quiénes se les puede facturar. Si falla, la caja sigue
+   * como con cualquier cliente: tarifa de lista y sus propios carros.
+   */
+  const grupoId = mode === 'normal' ? customer?.business_group_id ?? null : null
+  useEffect(() => {
+    if (!grupoId) { setGrupo(null); return }
+    let vivo = true
+    cargarGrupoPos(grupoId)
+      .then(g => { if (vivo) setGrupo(g) })
+      .catch(() => { if (vivo) setGrupo(null) })
+    return () => { vivo = false }
+  }, [grupoId])
+
+  /**
    * ¿Este carro ya tiene seguro vigente?
    *
    * Se pregunta al servidor cada vez que cambia el vehículo. Que el cajero se
@@ -1606,6 +1738,13 @@ export function POSPage() {
                   />
                 </div>
               )}
+
+              {/* Las placas de los demás clientes del grupo: el carro de la
+                  empresa hermana entra con el cliente que está en caja. */}
+              {customer && grupo && (
+                <PlacasDelGrupo grupo={grupo} clienteId={customer.id}
+                  elegido={vehiculoElegido} onElegir={setVehiculoElegido}/>
+              )}
             </div>
           )}
 
@@ -1632,13 +1771,17 @@ export function POSPage() {
                 const tc2 = TIER_COLORS[s.tier]
                 const isSel = servicioEfectivo === s.id
                 const isFleet = mode === 'flotilla'
-                const displayPrices = isFleet ? (fleetCompany?.precios[s.id as ServicioId] ?? s.prices) : s.prices
+                const displayPrices = isFleet ? (fleetCompany?.precios[s.id as ServicioId] ?? s.prices) : preciosDe(s)
+                const isGrupo = !isFleet && Boolean(acuerdoGrupo?.servicios[s.id.toUpperCase() as CodigoServicio])
                 return (
                   <div key={s.id} id={`svc-${s.id}`}
                     onClick={() => setSelectedService(s.id)}
                     role="button" tabIndex={0}
                     style={{ border: `2px solid ${isSel ? tc2.accent : 'var(--border)'}`, borderRadius: 14, padding: '10px 12px', background: isSel ? `${tc2.accent}09` : 'var(--surface)', cursor: 'pointer', transition: 'all 0.12s', position: 'relative' }}
                   >
+                    {isGrupo && (
+                      <div style={{ position: 'absolute', top: -8, right: 12, background: 'var(--corsa-orange)', color: 'var(--on-accent)', fontSize: 9.5, fontWeight: 700, letterSpacing: '0.06em', padding: '2px 7px', borderRadius: 6 }}>PRECIO GRUPO</div>
+                    )}
                     {s.recommended && mode !== 'flotilla' && (
                       <div style={{ position: 'absolute', top: -8, left: 12, background: '#8B5A2B', color: '#fff', fontSize: 9.5, fontWeight: 700, letterSpacing: '0.06em', padding: '2px 7px', borderRadius: 6 }}>RECOMENDADO</div>
                     )}
@@ -1681,6 +1824,9 @@ export function POSPage() {
                     Sin importar tamaño del vehículo
                     {usaAspiradoFlotilla && (
                       <span style={{ color: 'var(--corsa-orange)' }}> · Incluido en el plan de la flotilla</span>
+                    )}
+                    {!usaAspiradoFlotilla && mode === 'normal' && usaAspiradoGrupo && (
+                      <span style={{ color: 'var(--corsa-orange)' }}> · Precio del grupo</span>
                     )}
                   </div>
                 </div>
@@ -1806,6 +1952,9 @@ export function POSPage() {
                   <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
                     {SIZES.find(s => s.id === selectedSize)?.sub}
                     {mode === 'flotilla' && <span style={{ color: 'var(--corsa-orange)', marginLeft: 5 }}>· Precio flotilla</span>}
+                    {mode === 'normal' && acuerdoGrupo?.servicios[svc.id.toUpperCase() as CodigoServicio] && (
+                      <span style={{ color: 'var(--corsa-orange)', marginLeft: 5 }}>· Precio {grupo?.name}</span>
+                    )}
                   </div>
                 </div>
                 <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 17, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{fmt(servicePrice)}</div>
@@ -1908,6 +2057,7 @@ export function POSPage() {
       {showBillingModal && (
         <CobroModal
           customer={customer}
+          grupo={mode === 'normal' ? grupo : null}
           total={total}
           pago={bloqueDeCobro}
           pagaConCupon={pagaConCupon}
