@@ -323,16 +323,37 @@ function FleetModal({ onVehicleSelected, onCancel }: FleetModalProps) {
   const selectCompany = async (company: FleetCompany) => {
     setSelectedCompany(company)
     setLoadingVeh(true)
-    const { data } = await (supabase as any)
-      .from('fleet_vehicles')
-      .select('id, vehicle_id, vehicles(plate, brand, model, year, color)')
-      .eq('fleet_id', company.fleet_id)
-      .eq('active', true)
-    setVehicles((data ?? []).map((fv: any) => ({
+    // Los carros de la flotilla y, además, los que el cliente dueño ya tiene
+    // en su ficha aunque nadie los haya sumado a la flotilla: son suyos y se
+    // cobran a su precio negociado. Antes no aparecían y había que cobrarlos
+    // fuera de flotilla, a tarifa de lista.
+    const db = supabase as any
+    const [{ data: flota }, { data: propios }] = await Promise.all([
+      db.from('fleet_vehicles')
+        .select('id, vehicle_id, vehicles(plate, brand, model, year, color)')
+        .eq('fleet_id', company.fleet_id)
+        .eq('active', true),
+      company.customer_id
+        ? db.from('vehicles')
+            .select('id, plate, brand, model, year, color')
+            .eq('customer_id', company.customer_id)
+            .eq('active', true)
+        : Promise.resolve({ data: [] }),
+    ])
+    const lista: FleetVehicle[] = (flota ?? []).map((fv: any) => ({
       fv_id: fv.id, vehicle_id: fv.vehicle_id,
       plate: fv.vehicles?.plate ?? '—', brand: fv.vehicles?.brand ?? null,
       model: fv.vehicles?.model ?? null, year: fv.vehicles?.year ?? null, color: fv.vehicles?.color ?? null,
-    })))
+    }))
+    const enFlota = new Set(lista.map(v => v.vehicle_id))
+    for (const v of propios ?? []) {
+      if (enFlota.has(v.id)) continue
+      lista.push({
+        fv_id: `cliente:${v.id}`, vehicle_id: v.id,
+        plate: v.plate ?? '—', brand: v.brand ?? null, model: v.model ?? null, year: v.year ?? null, color: v.color ?? null,
+      })
+    }
+    setVehicles(lista)
     setLoadingVeh(false)
   }
 
