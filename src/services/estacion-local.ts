@@ -6,6 +6,7 @@
  */
 
 export const GATEWAY_STATION_URL = 'http://127.0.0.1:5055/station'
+export const GATEWAY_HACIENDA_URL = 'http://127.0.0.1:5055/station/hacienda'
 const TIMEOUT_MS = 4000
 
 export interface StationResponse {
@@ -76,6 +77,77 @@ export async function probarEstacion(fetcher: typeof fetch = fetch): Promise<Res
     return estado ? { detectado: true, estado } : { detectado: false, motivo: 'respuesta_invalida' }
   } catch {
     return { detectado: false, motivo: 'sin_respuesta' }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+// ── Probar conexión con Hacienda ──
+//
+// La prueba la hace el Gateway de esta PC, no el navegador: el Gateway hace un
+// login a /seguridad/auth de Hacienda y descarta el token. Nunca transmite
+// documentos (su HttpClient sólo deja salir el login y el /health del Worker).
+
+export type EstadoPaso = 'ok' | 'failed' | 'warning' | 'skipped'
+
+export interface PasoHacienda {
+  id: string
+  label: string
+  status: EstadoPaso
+  detail: string | null
+}
+
+export interface ResultadoHacienda {
+  ok: boolean
+  ambiente: string
+  failedStep: string | null
+  steps: PasoHacienda[]
+  documentsTransmitted: number
+  cached: boolean
+}
+
+const ESTADOS: EstadoPaso[] = ['ok', 'failed', 'warning', 'skipped']
+
+export function interpretarHacienda(body: unknown): ResultadoHacienda | null {
+  if (!body || typeof body !== 'object') return null
+  const b = body as Record<string, unknown>
+  if (b.product !== 'corsa-gateway' || !Array.isArray(b.steps) || typeof b.ambiente !== 'string') return null
+  const steps: PasoHacienda[] = b.steps.flatMap(x => {
+    if (!x || typeof x !== 'object') return []
+    const p = x as Record<string, unknown>
+    if (typeof p.id !== 'string' || typeof p.label !== 'string') return []
+    return [{
+      id: p.id,
+      label: p.label,
+      status: ESTADOS.includes(p.status as EstadoPaso) ? p.status as EstadoPaso : 'failed',
+      detail: typeof p.detail === 'string' ? p.detail : null,
+    }]
+  })
+  const failed = typeof b.failedStep === 'string' ? b.failedStep : null
+  return {
+    // Éxito sólo si el Gateway lo dice Y ningún paso falló.
+    ok: b.ok === true && failed === null && steps.length > 0 && steps.every(p => p.status !== 'failed'),
+    ambiente: b.ambiente,
+    failedStep: failed,
+    steps,
+    documentsTransmitted: typeof b.documentsTransmitted === 'number' ? b.documentsTransmitted : -1,
+    cached: b.cached === true,
+  }
+}
+
+export async function probarHacienda(fetcher: typeof fetch = fetch): Promise<ResultadoHacienda | null> {
+  const ctrl = new AbortController()
+  // El Gateway espera hasta 15 s a Hacienda y 15 s al Worker.
+  const timer = setTimeout(() => ctrl.abort(), 45_000)
+  try {
+    const init: RequestInit & { targetAddressSpace?: string } = {
+      method: 'POST', cache: 'no-store', credentials: 'omit', signal: ctrl.signal, targetAddressSpace: 'loopback',
+    }
+    const resp = await fetcher(GATEWAY_HACIENDA_URL, init)
+    if (!resp.ok) return null
+    return interpretarHacienda(await resp.json())
+  } catch {
+    return null
   } finally {
     clearTimeout(timer)
   }

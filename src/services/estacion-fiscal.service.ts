@@ -26,8 +26,9 @@ import { supabase } from '../lib/supabase'
 import { downloadRelease, type SoftwareRelease } from './software.service'
 
 export {
-  GATEWAY_STATION_URL, probarEstacion, interpretarEstacion, compararVersion,
-  type StationResponse, type ResultadoEstacion,
+  GATEWAY_STATION_URL, GATEWAY_HACIENDA_URL, probarEstacion, interpretarEstacion, compararVersion,
+  probarHacienda, interpretarHacienda,
+  type StationResponse, type ResultadoEstacion, type ResultadoHacienda, type PasoHacienda,
 } from './estacion-local'
 
 export const GATEWAY_PRODUCT = 'plc-gateway'

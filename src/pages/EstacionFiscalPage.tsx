@@ -12,8 +12,8 @@ import { useState } from 'react'
 import toast from 'react-hot-toast'
 import { useAuth } from '../hooks/useAuth'
 import {
-  probarEstacion, gatewayVigente, descargarGateway, compararVersion,
-  type ResultadoEstacion,
+  probarEstacion, gatewayVigente, descargarGateway, compararVersion, probarHacienda,
+  type ResultadoEstacion, type ResultadoHacienda,
 } from '../services/estacion-fiscal.service'
 import { formatBytes, type SoftwareRelease } from '../services/software.service'
 
@@ -56,6 +56,14 @@ export function EstacionFiscalPage() {
   const [resultado, setResultado] = useState<ResultadoEstacion | null>(null)
   const [release, setRelease] = useState<SoftwareRelease | null | undefined>(undefined)
   const [descargando, setDescargando] = useState(false)
+  const [probandoMh, setProbandoMh] = useState(false)
+  const [hacienda, setHacienda] = useState<ResultadoHacienda | null | undefined>(undefined)
+
+  const probarMh = async () => {
+    setProbandoMh(true)
+    setHacienda(await probarHacienda())
+    setProbandoMh(false)
+  }
 
   const probar = async () => {
     setProbando(true)
@@ -134,6 +142,39 @@ export function EstacionFiscalPage() {
                 {estado.ready && (
                   <div style={{ marginTop: 14, fontSize: 14, fontWeight: 700, color: 'var(--corsa-green)' }}>Estación fiscal lista</div>
                 )}
+
+                <div style={{ marginTop: 22, paddingTop: 18, borderTop: '1px solid var(--border)' }}>
+                  <button onClick={probarMh} disabled={probandoMh} style={boton(false)}>
+                    {probandoMh ? 'Probando con Hacienda…' : 'Probar conexión con Hacienda'}
+                  </button>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.6 }}>
+                    El Gateway de esta PC inicia sesión en Hacienda y descarta el token. No transmite documentos.
+                  </div>
+
+                  {hacienda === null && (
+                    <div style={{ marginTop: 12, fontSize: 13, color: 'var(--color-danger-text)' }}>
+                      ✗ El Gateway no respondió a la prueba. Si es v1.2.1 o anterior, descargá la actualización.
+                    </div>
+                  )}
+                  {hacienda && (
+                    <div style={{ marginTop: 10 }}>
+                      {hacienda.steps.map(p => (
+                        <Fila key={p.id} etiqueta={p.label}
+                              valor={p.status === 'ok' ? (p.id === 'ambiente' ? hacienda.ambiente : p.id === 'auth' ? 'Correcta' : p.id === 'recepcion' ? 'Configurada' : 'Correcto')
+                                : p.status === 'failed' ? 'Falló' : p.status === 'warning' ? 'Revisar' : 'No se probó'}
+                              tono={p.status === 'ok' ? 'ok' : p.status === 'failed' ? 'mal' : 'neutro'}
+                              detalle={p.detail} />
+                      ))}
+                      <div style={{ marginTop: 12, fontSize: 14, fontWeight: 700, color: hacienda.ok ? 'var(--corsa-green)' : 'var(--color-danger-text)' }}>
+                        {hacienda.ok ? 'Conexión con Hacienda verificada'
+                          : `Falló en: ${hacienda.steps.find(p => p.id === hacienda.failedStep)?.label ?? hacienda.failedStep ?? 'respuesta no válida'}`}
+                      </div>
+                      {hacienda.documentsTransmitted === 0 && (
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>No se transmitió ningún documento</div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </>
             )}
 

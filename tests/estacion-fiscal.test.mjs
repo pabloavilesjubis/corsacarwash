@@ -89,6 +89,43 @@ test('firma configurada pero la prueba falló: se distingue de «no configurada�
   assert.equal(e.ready, false)
 })
 
+const MH_OK = {
+  product: 'corsa-gateway', version: '1.2.2', ok: true, ambiente: 'PRODUCCIÓN', failedStep: null,
+  documentsTransmitted: 0, cached: false,
+  steps: [
+    { id: 'gateway', label: 'Gateway local', status: 'ok', detail: 'v1.2.2' },
+    { id: 'auth', label: 'Autenticación MH', status: 'ok', detail: 'Correcta' },
+    { id: 'recepcion', label: 'API recepción', status: 'ok', detail: 'Configurada' },
+  ],
+}
+
+test('Hacienda: POST a la URL fija del Gateway, sin credenciales', async () => {
+  const { f, llamadas } = fetcherQueResponde(MH_OK)
+  const r = await m.probarHacienda(f)
+  assert.equal(r.ok, true)
+  assert.equal(r.documentsTransmitted, 0)
+  assert.equal(llamadas[0].url, 'http://127.0.0.1:5055/station/hacienda')
+  assert.equal(llamadas[0].init.method, 'POST')
+  assert.equal(llamadas[0].init.credentials, 'omit')
+  assert.equal(llamadas[0].init.body, undefined)
+})
+
+test('Hacienda: ok del Gateway no alcanza si un paso falló', () => {
+  const r = m.interpretarHacienda({
+    ...MH_OK, ok: true,
+    steps: [...MH_OK.steps.slice(0, 1), { id: 'auth', label: 'Autenticación MH', status: 'failed', detail: 'código 101' }],
+  })
+  assert.equal(r.ok, false)
+})
+
+test('Hacienda: estado desconocido cuenta como falla; respuesta ajena es null', async () => {
+  const r = m.interpretarHacienda({ ...MH_OK, steps: [{ id: 'auth', label: 'x', status: 'quien-sabe', detail: null }] })
+  assert.equal(r.steps[0].status, 'failed')
+  assert.equal(r.ok, false)
+  assert.equal(m.interpretarHacienda({ ok: true }), null)
+  assert.equal(await m.probarHacienda(async () => { throw new TypeError('Failed to fetch') }), null)
+})
+
 test('compararVersion', () => {
   assert.ok(m.compararVersion('1.2.0', '1.1.9') > 0)
   assert.ok(m.compararVersion('1.2.0', '1.10.0') < 0)
