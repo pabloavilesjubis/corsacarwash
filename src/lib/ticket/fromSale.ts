@@ -245,3 +245,90 @@ export function buildTicketSeguroDeVenta(
     seguroLluvia: { placa: p.plate, desde: p.issued_at, hasta: p.valid_until, cortesia: !!p.courtesy },
   }
 }
+
+/** Un carro de una venta con varios (pos_register_sale_multi, 0057). */
+export interface LineaMulti {
+  vehicle_id: string
+  plate: string
+  service_name: string
+  machine_program: number | null
+  size: string
+  price: number
+  with_aspirado: boolean
+  aspirado_price: number
+}
+
+/** Lo que devuelve pos_register_sale_multi. */
+export interface PosSaleMultiResult {
+  order_id: string
+  order_number: string
+  invoice_id: string
+  subtotal: number
+  tax: number
+  total: number
+  doc_type: 'ticket' | 'ccf'
+  fcf_name: string | null
+  issued_at: string
+  lineas: LineaMulti[]
+}
+
+/**
+ * El ticket de cobro de una venta con varios carros: una línea por carro (y su
+ * aspirado), los totales y el DTE. La cabecera operativa es la del primer
+ * carro; los demás salen en su propia orden de lavado.
+ */
+export function buildTicketArgsFromPosMulti(
+  result: PosSaleMultiResult,
+  emisor: TicketEmisor,
+  extras: {
+    clienteNombre?: string
+    clienteDoc?: { tipo?: string; numero?: string; nrc?: string }
+    metodoPago?: string
+    branchName?: string
+  } = {},
+  dte: DteDeVenta | null = null,
+): TicketArgs {
+  const tipo = result.doc_type === 'ccf' ? '03' : '01'
+  const primero = result.lineas[0]
+  return {
+    emisor: emisorDelTicket(emisor, extras.branchName, dte),
+    operacion: {
+      servicio: primero?.service_name ?? '',
+      aspirado: Boolean(primero?.with_aspirado),
+      placa: result.lineas.length > 1 ? `${primero?.plate} +${result.lineas.length - 1}` : primero?.plate,
+      ordenNumero: result.order_number,
+    },
+    venta: {
+      id: result.order_id,
+      fecha: result.issued_at,
+      lineas: result.lineas.flatMap(l => [
+        { nombre: `${l.service_name} ${l.size} · ${l.plate}`, cantidad: 1, precioUnitario: Number(l.price), subtotal: Number(l.price) },
+        ...(l.with_aspirado
+          ? [{ nombre: `Aspirado · ${l.plate}`, cantidad: 1, precioUnitario: Number(l.aspirado_price), subtotal: Number(l.aspirado_price) }]
+          : []),
+      ]),
+      total: Number(result.total || 0),
+      iva: Number(result.tax || 0),
+      metodoPago: extras.metodoPago,
+    },
+    cliente: {
+      nombre: extras.clienteNombre ?? result.fcf_name ?? 'Consumidor Final',
+      tipoDocumento: extras.clienteDoc?.tipo,
+      numeroDocumento: extras.clienteDoc?.numero,
+      nrc: extras.clienteDoc?.nrc,
+    },
+    dte: dte ? dteParaTicket(dte, tipo) : { tipoDte: tipo },
+  }
+}
+
+/** La orden de lavado de un carro (del segundo en adelante) para el equipo en piso. */
+export function buildTicketOrdenDeLavado(
+  result: PosSaleMultiResult, linea: LineaMulti, indice: number, emisor: TicketEmisor, cliente?: string,
+): TicketArgs {
+  return {
+    emisor,
+    operacion: { servicio: linea.service_name, aspirado: linea.with_aspirado, placa: linea.plate, ordenNumero: result.order_number },
+    venta: { id: `${result.order_id}-${indice}`, fecha: result.issued_at, lineas: [], total: 0 },
+    ordenDeLavado: { orden: result.order_number, indice, total: result.lineas.length, cliente },
+  }
+}

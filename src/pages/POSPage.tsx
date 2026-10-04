@@ -22,7 +22,10 @@ import { FCF_IDENTIFICACION_OBLIGATORIA_DESDE } from '../lib/mh-catalogs'
 import { imprimirTicketEnSegundoPlano } from '../lib/ticket/corsaTicket'
 import { emitirConFirmaLocal, posEmiteDte } from '../services/fiscal.service'
 import { fetchDteDeVenta, type DteDeVenta } from '../services/sales.service'
-import { buildTicketArgsFromPos, buildTicketSeguroDeVenta, type PosSaleResult } from '../lib/ticket/fromSale'
+import {
+  buildTicketArgsFromPos, buildTicketArgsFromPosMulti, buildTicketOrdenDeLavado, buildTicketSeguroDeVenta,
+  type PosSaleMultiResult, type PosSaleResult,
+} from '../lib/ticket/fromSale'
 import { cargarEmisor, emisorParaTicket, MARCA } from '../lib/fiscal/emisor'
 import { lookupVoucher, redeemVoucher, type VoucherLookup } from '../services/vouchers.service'
 import { darCortesia, fetchPolizaVigente, tiempoRestante, type RainPolicy } from '../services/rain.service'
@@ -181,6 +184,18 @@ interface FleetVehicle {
   model: string | null
   year: number | null
   color: string | null
+}
+
+/** Un carro ya agregado a una orden con varios (0057). */
+interface LineaOrden {
+  vehiculo: { id: string; plate: string; brand?: string | null; model?: string | null }
+  servicioId: string
+  servicioNombre: string
+  tier: string
+  size: SizeId
+  precio: number
+  aspirado: boolean
+  aspiradoPrecio: number
 }
 
 /** El grupo empresarial del cliente en caja (0054). */
@@ -1067,6 +1082,10 @@ export function POSPage() {
   const [conCortesia, setConCortesia] = useState(false)
   // Grupo empresarial del cliente en caja (0054). Se pide al elegir el cliente.
   const [grupo, setGrupo] = useState<GrupoPos | null>(null)
+  // Varios carros en una orden (0057): los ya agregados. El que se está
+  // configurando en pantalla es el siguiente.
+  const [carrito, setCarrito] = useState<LineaOrden[]>([])
+  const multi = carrito.length > 0
   const [modalCortesia, setModalCortesia] = useState(false)
   // Póliza viva del vehículo elegido, si tiene una. La trae el servidor.
   const [polizaVigente, setPolizaVigente] = useState<RainPolicy | null>(null)
@@ -1167,15 +1186,47 @@ export function POSPage() {
    * —uno solo, pero existe— mostrando un total con un seguro que ya no se
    * puede vender.
    */
-  const seguroActivo = conSeguro && puedeVenderSeguro && !canjeandoSeguro
+  // Seguro, cortesía y canje son de UN carro: con varios en la orden se dan aparte.
+  const seguroActivo = conSeguro && puedeVenderSeguro && !canjeandoSeguro && !multi
   // La cortesía, igual: derivada. Sin cliente con placa no hay orden a la que
   // agregarla, y el botón pasa a abrir el modal de cortesía suelta.
   const puedeDarCortesia = hasPermission('rain.courtesy')
-  const cortesiaActiva = conCortesia && puedeVenderSeguro && !canjeandoSeguro && !seguroActivo && puedeDarCortesia
+  const cortesiaActiva = conCortesia && puedeVenderSeguro && !canjeandoSeguro && !seguroActivo && puedeDarCortesia && !multi
   const seguroPrice = seguroActivo ? ADDON_SEGURO.price : 0
 
   // Un lavado cobrado con el seguro no se cobra: es el derecho que ya se pagó.
-  const total = canjeandoSeguro ? 0 : servicePrice + aspiradoPrice + seguroPrice
+  const totalUnCarro = canjeandoSeguro && !multi ? 0 : servicePrice + aspiradoPrice + seguroPrice
+
+  // ── Varios carros ──
+  // El carro en pantalla: en flotilla el de la flotilla, si no el elegido.
+  const vehiculoActual = mode === 'flotilla'
+    ? (fleetVehicle ? { id: fleetVehicle.vehicle_id, plate: fleetVehicle.plate, brand: fleetVehicle.brand, model: fleetVehicle.model } : null)
+    : (vehiculoElegido ? { id: vehiculoElegido.id, plate: vehiculoElegido.plate, brand: vehiculoElegido.brand, model: vehiculoElegido.model } : null)
+  const actualEnCarrito = !!vehiculoActual && carrito.some(l => l.vehiculo.id === vehiculoActual.id)
+  const lineaActual: LineaOrden | null = vehiculoActual && !actualEnCarrito ? {
+    vehiculo: vehiculoActual, servicioId: svc.id, servicioNombre: svc.name, tier: svc.tier,
+    size: selectedSize, precio: servicePrice, aspirado: withAspirado, aspiradoPrecio: withAspirado ? aspiradoUnit : 0,
+  } : null
+  const lineasOrden = multi ? [...carrito, ...(lineaActual ? [lineaActual] : [])] : []
+  const total = multi
+    ? Math.round(lineasOrden.reduce((t, l) => t + l.precio + (l.aspirado ? l.aspiradoPrecio : 0), 0) * 100) / 100
+    : totalUnCarro
+  // Clientes con placas: sólo así hay a qué carro atar cada línea.
+  const puedeAgregarCarro = !!lineaActual && (mode === 'flotilla' ? !!fleetCompany : !!customer)
+
+  /** Guarda el carro en pantalla en la orden y deja elegir el siguiente. */
+  const agregarCarro = () => {
+    if (!lineaActual) return
+    const nuevo = [...carrito, lineaActual]
+    setCarrito(nuevo)
+    setConSeguro(false); setConCortesia(false); setCanjeandoSeguro(false)
+    if (mode === 'flotilla') { setShowFleetModal(true); return }
+    setWithAspirado(false)
+    // El siguiente carro del cliente que todavía no está en la orden.
+    const usados = new Set(nuevo.map(l => l.vehiculo.id))
+    setVehiculoElegido(vehiculos.find(v => !usados.has(v.id)) ?? null)
+    toast.success(`${lineaActual.vehiculo.plate} agregado · elegí la siguiente placa`)
+  }
   const received = parseFloat(keypadValue) || 0
   const change = Math.max(0, received - total)
 
@@ -1253,6 +1304,7 @@ export function POSPage() {
    */
   const canjearCupon = useCallback(async () => {
     if (!branchId || !voucherFound || voucherFound.status !== 'active') return
+    if (carrito.length > 0) { toast.error('Un cupón se canjea con un solo carro. Quitá los demás de la orden o cobralos aparte.'); return }
     setShowBillingModal(false)
     setSubmitting(true)
     try {
@@ -1291,10 +1343,86 @@ export function POSPage() {
       toast.error(err instanceof Error ? err.message : 'No se pudo canjear el cupón')
     }
     setSubmitting(false)
-  }, [branchId, voucherFound, customer])
+  }, [branchId, voucherFound, customer, carrito.length])
+
+  /**
+   * Cobro de una orden con varios carros (0057): una orden, una factura, un
+   * DTE con una línea por carro. Imprime el ticket de cobro y, del segundo
+   * carro en adelante, una orden de lavado por carro para el equipo en piso.
+   */
+  const cobrarVariosCarros = useCallback(async (billing: BillingInfo) => {
+    setSubmitting(true)
+    try {
+      const clienteId = mode === 'flotilla' ? (fleetCompany?.customer_id ?? null) : (customer?.id ?? null)
+      const { data, error } = await (supabase as any).rpc('pos_register_sale_multi', {
+        p_branch_id:       branchId,
+        p_lineas:          lineasOrden.map(l => ({
+          vehicle_id: l.vehiculo.id, service_code: l.tier.toUpperCase(), size: l.size,
+          price: l.precio, with_aspirado: l.aspirado, aspirado_price: l.aspirado ? l.aspiradoPrecio : 0,
+        })),
+        p_total:           total,
+        p_payment_method:  selectedPayment,
+        p_customer_id:     clienteId,
+        p_doc_type:        billing.docType,
+        p_fcf_name:        billing.fcfCustomer ? displayName(billing.fcfCustomer) : null,
+        p_ccf_customer_id: (billing.ccfCustomer ?? billing.fcfCustomer)?.id ?? null,
+        p_order_type:      mode,
+      })
+      if (error) throw error
+      const sale = data as PosSaleMultiResult
+      const receptor = billing.ccfCustomer ?? billing.fcfCustomer ?? null
+
+      let dte: DteDeVenta | null = null
+      if (emiteDte && sale.invoice_id) {
+        const espera = toast.loading('Firmando y emitiendo el DTE con Hacienda…')
+        try {
+          const r = await emitirConFirmaLocal(sale.invoice_id, { timeoutMs: ESPERA_DTE_MS })
+          if (r.estado === 'ACCEPTED') {
+            dte = await fetchDteDeVenta(sale.invoice_id)
+            if (r.mensaje) toast(r.mensaje, { duration: 8000 })
+            toast.success('DTE sellado por Hacienda', { id: espera })
+          } else {
+            toast.error(`DTE ${r.estado === 'REJECTED' ? 'rechazado' : 'pendiente'}: ${r.mensaje ?? 'revisalo en Contabilidad'}. El ticket sale sin sello.`,
+              { id: espera, duration: 8000 })
+          }
+        } catch (e) {
+          toast.error(`${e instanceof Error ? e.message : 'No se pudo emitir el DTE'} El ticket sale sin sello.`,
+            { id: espera, duration: 8000 })
+        }
+      }
+
+      const titular = mode === 'flotilla' ? (fleetCompany?.trade_name ?? undefined) : (customer ? displayName(customer) : undefined)
+      try {
+        const emisor = await emisorParaTicket(branchId, !!dte)
+        await imprimirTicketEnSegundoPlano(buildTicketArgsFromPosMulti(sale, emisor, {
+          clienteNombre: receptor ? displayName(receptor) : undefined,
+          clienteDoc: receptor
+            ? { tipo: receptor.nit ? 'NIT' : 'DUI', numero: receptor.nit ?? receptor.dui, nrc: receptor.nrc }
+            : undefined,
+          metodoPago: PAYMENT_METHODS.find(p => p.id === selectedPayment)?.label,
+          branchName: (currentBranch as any)?.name,
+        }, dte))
+        for (let i = 1; i < sale.lineas.length; i++) {
+          await imprimirTicketEnSegundoPlano(buildTicketOrdenDeLavado(sale, sale.lineas[i], i + 1, MARCA, titular))
+        }
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'La venta se guardó, pero no se pudo imprimir algún ticket')
+      }
+
+      toast.success(`Venta ${sale.order_number} registrada · ${sale.lineas.length} carros ✓`)
+      setCarrito([])
+      setCustomer(null); setFleetCompany(null); setFleetVehicle(null)
+      setMode('normal'); setSelectedService('elite'); setSelectedSize('M')
+      setWithAspirado(false); setKeypadValue(''); setConCortesia(false)
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Error al crear la orden')
+    }
+    setSubmitting(false)
+  }, [branchId, emiteDte, mode, fleetCompany, customer, lineasOrden, total, selectedPayment, currentBranch])
 
   const handleBillingConfirm = useCallback(async (billing: BillingInfo) => {
     setShowBillingModal(false)
+    if (multi) { await cobrarVariosCarros(billing); return }
     setSubmitting(true)
 
     // FCF y CCF esperan igual: el Worker emite el que corresponda según la
@@ -1426,7 +1554,7 @@ export function POSPage() {
     setSubmitting(false)
   }, [branchId, emiteDte, mode, fleetCompany, fleetVehicle, customer, svc, selectedSize, total, selectedPayment,
       withAspirado, aspiradoPrice, currentBranch, seguroActivo, seguroPrice,
-      canjeandoSeguro, polizaVigente, vehiculoElegido, cortesiaActiva, vehiculoId])
+      canjeandoSeguro, polizaVigente, vehiculoElegido, cortesiaActiva, vehiculoId, multi, cobrarVariosCarros])
 
   // Con cupón el botón sólo se habilita si el cupón existe y está sin usar:
   // canjear uno ya utilizado o inexistente falla en el servidor, y es mejor
@@ -1494,6 +1622,10 @@ export function POSPage() {
     return () => { vivo = false }
   }, [grupoId])
 
+  // La orden con varios carros es de UN cliente: si cambia, se vacía.
+  const clienteDeOrden = mode === 'flotilla' ? fleetCompany?.customer_id ?? null : customer?.id ?? null
+  useEffect(() => { setCarrito([]) }, [clienteDeOrden, mode])
+
   /**
    * ¿Este carro ya tiene seguro vigente?
    *
@@ -1511,7 +1643,7 @@ export function POSPage() {
 
   // La validez del cupón se resuelve dentro del modal de cobro; para abrirlo
   // basta con que la orden esté armada.
-  const canCharge = mode === 'flotilla' ? !!fleetVehicle : true
+  const canCharge = multi ? lineasOrden.length > 0 : mode === 'flotilla' ? !!fleetVehicle : true
 
   const abrirCobro = () => {
     // Cada cobro empieza con el monto en blanco: el de la venta anterior no
@@ -1859,8 +1991,8 @@ export function POSPage() {
 
               {/* ── Seguro de lluvia ── */}
               <button id="addon-seguro"
-                onClick={() => { if (puedeVenderSeguro && !canjeandoSeguro) { setConSeguro(v => !v); setConCortesia(false) } }}
-                disabled={!puedeVenderSeguro || canjeandoSeguro}
+                onClick={() => { if (puedeVenderSeguro && !canjeandoSeguro && !multi) { setConSeguro(v => !v); setConCortesia(false) } }}
+                disabled={!puedeVenderSeguro || canjeandoSeguro || multi}
                 style={{
                   width: '100%', display: 'flex', alignItems: 'center', gap: 10,
                   padding: '7px 12px', borderRadius: 12, marginTop: 6,
@@ -1897,7 +2029,7 @@ export function POSPage() {
                   abre el modal que emite la cortesía suelta con su ticket. */}
               {(() => {
                 const enOrden = puedeVenderSeguro && !canjeandoSeguro
-                const habilitado = puedeDarCortesia && (enOrden || !canjeandoSeguro)
+                const habilitado = puedeDarCortesia && (enOrden || !canjeandoSeguro) && !multi
                 return (
                   <button id="addon-cortesia"
                     onClick={() => {
@@ -1934,7 +2066,7 @@ export function POSPage() {
               })()}
 
               {/* ── Este carro ya tiene seguro vivo ── */}
-              {polizaVigente && (
+              {polizaVigente && !multi && (
                 <div style={{
                   marginTop: 10, padding: '11px 14px', borderRadius: 12,
                   border: `2px solid ${canjeandoSeguro ? 'var(--corsa-green)' : 'var(--corsa-orange)'}`,
@@ -1963,8 +2095,33 @@ export function POSPage() {
               que en el teléfono queda al final del recorrido — mirar el total y
               cobrar es lo último que se hace. */}
           <div className="card" style={{ flex: esMovil ? '1 1 100%' : '0 0 250px', display: 'flex', flexDirection: 'column', gap: 10, padding: 12 }}>
-            <div className="panel-section-label">Resumen</div>
+            <div className="panel-section-label">Resumen{multi ? ` · ${lineasOrden.length} carros` : ''}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {/* Los carros ya agregados a la orden; el de abajo es el que se está armando. */}
+              {carrito.map(l => (
+                <div key={l.vehiculo.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, paddingBottom: 6, borderBottom: '1px solid var(--border)' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="font-mono" style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text-primary)' }}>{l.vehiculo.plate}</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                      {l.servicioNombre} · {l.size}{l.aspirado ? ` + aspirado ${fmt(l.aspiradoPrecio)}` : ''}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 13.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmt(l.precio + (l.aspirado ? l.aspiradoPrecio : 0))}</span>
+                    <button onClick={() => setCarrito(c => c.filter(x => x.vehiculo.id !== l.vehiculo.id))} aria-label={`Quitar ${l.vehiculo.plate}`}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 16, padding: '0 2px' }}>×</button>
+                  </div>
+                </div>
+              ))}
+              {multi && !lineaActual && (
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                  {mode === 'flotilla' ? 'Elegí otro vehículo de la flotilla o cobrá.' : 'Elegí otra placa para agregarla, o cobrá.'}
+                </div>
+              )}
+              {multi && lineaActual && (
+                <div className="font-mono" style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text-primary)', marginBottom: -6 }}>{lineaActual.vehiculo.plate}</div>
+              )}
+              {(!multi || lineaActual) && (<>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{svc.name} · {selectedSize}</div>
@@ -1996,13 +2153,22 @@ export function POSPage() {
                   <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--corsa-green)' }}>sin costo</div>
                 </div>
               )}
-              {canjeandoSeguro && (
+              {canjeandoSeguro && !multi && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px solid var(--border)' }}>
                   <div style={{ fontSize: 13, color: 'var(--corsa-green)', fontWeight: 600 }}>Canje de seguro de lluvia</div>
                   <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--corsa-green)' }}>sin costo</div>
                 </div>
               )}
+              </>)}
             </div>
+
+            {/* Varios carros en la misma orden: guarda éste y deja elegir otra placa. */}
+            {(puedeAgregarCarro || multi) && (
+              <button id="btn-agregar-carro" className="btn btn-ghost" onClick={agregarCarro} disabled={!puedeAgregarCarro}
+                      style={{ width: '100%', justifyContent: 'center', border: '1.5px dashed var(--border)' }}>
+                + Agregar otro carro{lineaActual ? ` (${lineaActual.vehiculo.plate})` : ''}
+              </button>
+            )}
 
             <div className="divider"/>
 

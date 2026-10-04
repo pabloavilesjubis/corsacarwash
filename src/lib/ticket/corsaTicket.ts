@@ -147,6 +147,18 @@ export interface TicketCortesia {
   pagado?: { orden: string; precio: number }
 }
 
+/**
+ * Orden de lavado de UN carro de una venta con varios (0057). Sale la
+ * cabecera operativa —programa, aspirado, placa— y nada fiscal: la factura de
+ * todos los carros va en el ticket de cobro.
+ */
+export interface TicketOrdenDeLavado {
+  orden: string
+  indice: number
+  total: number
+  cliente?: string
+}
+
 export interface TicketArgs {
   emisor: TicketEmisor
   venta: TicketVenta
@@ -157,6 +169,7 @@ export interface TicketArgs {
   redencion?: TicketRedencion
   seguroLluvia?: TicketSeguroLluvia
   cortesia?: TicketCortesia
+  ordenDeLavado?: TicketOrdenDeLavado
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -208,7 +221,7 @@ function marcaAspirado(aspirado: boolean): string {
 // ─── Generador ───────────────────────────────────────────────
 
 export function buildCorsaTicketHTML(args: TicketArgs): string {
-  const { emisor: e, venta: v, operacion: op, dte: d = {}, cliente: cli, atendio, redencion, seguroLluvia, cortesia } = args
+  const { emisor: e, venta: v, operacion: op, dte: d = {}, cliente: cli, atendio, redencion, seguroLluvia, cortesia, ordenDeLavado } = args
 
   const programa = resolveServiceProgram(op.servicio)
   const tipoLabel = (d.tipoDte && DTE_LABELS[d.tipoDte])
@@ -369,6 +382,22 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
       </div>
     </div>` : ''
 
+  const lavadoBlock = ordenDeLavado ? `
+    <div class="redencion">
+      <div class="redencion-title">Orden de lavado</div>
+      <div class="redencion-code">Carro ${ordenDeLavado.indice} de ${ordenDeLavado.total}</div>
+      <div class="kv-block">
+        <div class="kv-row"><span class="k">Orden</span><span class="v">${esc(ordenDeLavado.orden)}</span></div>
+        ${ordenDeLavado.cliente ? `<div class="kv-row"><span class="k">Cliente</span><span class="v">${esc(ordenDeLavado.cliente)}</span></div>` : ''}
+        <div class="kv-row"><span class="k">Servicio</span><span class="v">${esc(op.servicio)}</span></div>
+        <div class="kv-row"><span class="k">Aspirado</span><span class="v">${op.aspirado ? 'Incluido' : 'No incluye'}</span></div>
+      </div>
+      <div class="redencion-note">
+        Comprobante interno de piso.<br/>
+        El cobro de todos los carros va en el ticket de la orden.
+      </div>
+    </div>` : ''
+
   const redencionBlock = redencion ? `
     <div class="redencion">
       <div class="redencion-title">Canje de cupón</div>
@@ -389,7 +418,7 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
 <html lang="es">
 <head>
 <meta charset="UTF-8"/>
-<title>${cortesia ? (cortesia.pagado ? 'Seguro de lluvia' : 'Cortesía seguro de lluvia') : redencion ? `Canje ${esc(redencion.codigoCupon)}` : `Ticket ${esc(d.numeroControl || v.id || 'CORSA')}`}</title>
+<title>${ordenDeLavado ? `Orden ${esc(ordenDeLavado.orden)} · carro ${ordenDeLavado.indice}` : cortesia ? (cortesia.pagado ? 'Seguro de lluvia' : 'Cortesía seguro de lluvia') : redencion ? `Canje ${esc(redencion.codigoCupon)}` : `Ticket ${esc(d.numeroControl || v.id || 'CORSA')}`}</title>
 <style>
   /* ════════════════════════════════════════════════════════
      REGLA DE ORO (heredada del ticket de BEON):
@@ -581,7 +610,7 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
 
     <hr class="sep-solid"/>
 
-    ${cortesia ? cortesiaBlock : redencion ? redencionBlock : `
+    ${cortesia ? cortesiaBlock : ordenDeLavado ? lavadoBlock : redencion ? redencionBlock : `
     <div class="doc-type">
       <div class="doc-type-name">${esc(tipoLabel)}</div>
       ${e.ambiente ? `<div class="doc-type-amb">${esc(e.ambiente)}</div>` : ''}
