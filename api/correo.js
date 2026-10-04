@@ -830,6 +830,159 @@ function estadoCuentaHTML(args) {
 </body></html>`;
 }
 
+// src/lib/caja/reporteCierre.ts
+var esc3 = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+var money3 = (n) => `$${(Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+var fechaHora = (iso) => iso ? new Date(iso).toLocaleString("es-SV", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "America/El_Salvador" }) : "\u2014";
+var hora = (iso) => new Date(iso).toLocaleTimeString("es-SV", { hour: "2-digit", minute: "2-digit", timeZone: "America/El_Salvador" });
+function diaDelTurno(iso) {
+  return new Date(iso).toLocaleDateString("es-SV", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "America/El_Salvador" });
+}
+function reporteCierreHTML(args) {
+  const { emisor: e, resumen: r } = args;
+  const logo = `<svg viewBox="0 0 ${LOGO_VIEWBOX.ancho} ${LOGO_VIEWBOX.alto}" style="width:150px;height:auto" role="img" aria-label="CORSA Carwash"><path d="${LOGO_PATH}" fill="#16191A" fill-rule="evenodd"/></svg>`;
+  const abierta = r.estado === "open";
+  const retiros = r.movimientos.filter((m) => m.tipo === "cash_out");
+  const filasRetiros = retiros.length === 0 ? `<tr><td colspan="5" class="vacio">Sin retiros de efectivo.</td></tr>` : retiros.map((m) => `<tr>
+        <td>${esc3(hora(m.fecha))}</td>
+        <td>${esc3(m.motivo)}</td>
+        <td>${esc3(m.registro)}</td>
+        <td>${esc3(m.autorizo ?? "\u2014")}</td>
+        <td class="num fuerte">${money3(m.monto)}</td>
+      </tr>`).join("");
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/>
+<title>Cierre de caja \xB7 ${esc3(r.sucursal)} \xB7 ${esc3(diaDelTurno(r.abierta_at))}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Outfit:wght@700;800&display=swap" rel="stylesheet"/>
+<style>
+  @page { size: letter; margin: 14mm 14mm 16mm; }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: Inter, Arial, sans-serif; color: #16191A; font-size: 11.5px; margin: 0; }
+  .top { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #16191A; padding-bottom: 12px; }
+  .emisor { text-align: right; font-size: 10.5px; line-height: 1.45; color: #3D4441; }
+  .emisor b { color: #16191A; font-size: 11.5px; }
+  h1 { font-family: Outfit, Arial; font-weight: 800; font-size: 26px; margin: 18px 0 2px; letter-spacing: -0.01em; }
+  .sub { color: #5E6661; font-size: 11px; text-transform: capitalize; }
+  .raya { display: inline-block; width: 46px; height: 5px; background: #2F6B4F; border-radius: 3px; margin-top: 8px; }
+  .abierta { display: inline-block; margin-left: 8px; font-size: 10px; font-weight: 700; color: #8A6414; background: #FBF1DC; padding: 2px 8px; border-radius: 99px; vertical-align: middle; }
+  .bloques { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 16px; }
+  .caja { border: 1px solid #DCE2D6; border-radius: 12px; padding: 12px 14px; }
+  .caja h3 { margin: 0 0 8px; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #5E6661; }
+  .kv { display: flex; justify-content: space-between; padding: 3px 0; }
+  .kv span:first-child { color: #5E6661; }
+  .kv.total { border-top: 1px solid #DCE2D6; margin-top: 4px; padding-top: 6px; font-weight: 700; }
+  .kv.total span:first-child { color: #16191A; }
+  .menos { color: #C2272D; }
+  .resumen { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 14px; }
+  .cifra { background: #F3F5F0; border-radius: 12px; padding: 10px 12px; }
+  .cifra small { display: block; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: #5E6661; font-weight: 700; }
+  .cifra b { font-family: Outfit, Arial; font-size: 19px; }
+  .cifra.tinta { background: #16191A; color: #fff; } .cifra.tinta small { color: #DFF56B; }
+  h2 { font-family: Outfit, Arial; font-size: 15px; margin: 20px 0 8px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: #5E6661; border-bottom: 2px solid #16191A; padding: 6px 6px; }
+  td { padding: 6px 6px; border-bottom: 1px solid #E3E8DE; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .fuerte { font-weight: 700; }
+  .vacio { text-align: center; color: #7A827D; padding: 14px; }
+  .firmas { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 46px; }
+  .firma { border-top: 1px solid #16191A; padding-top: 6px; text-align: center; font-size: 10.5px; color: #3D4441; }
+  .pie { margin-top: 22px; font-size: 10px; color: #5E6661; border-top: 1px solid #DCE2D6; padding-top: 10px; line-height: 1.5; }
+</style></head><body>
+  <div class="top">
+    ${logo}
+    <div class="emisor">
+      <b>${esc3(e.razonSocial || e.nombreComercial)}</b><br/>
+      ${e.nit ? `NIT ${esc3(e.nit)}` : ""}${e.nit && e.nrc ? " \xB7 " : ""}${e.nrc ? `NRC ${esc3(e.nrc)}` : ""}<br/>
+      ${esc3(r.sucursal)} \xB7 ${esc3(r.caja)}
+    </div>
+  </div>
+
+  <h1>Cierre de caja${abierta ? '<span class="abierta">CAJA ABIERTA \xB7 PARCIAL</span>' : ""}</h1>
+  <div class="sub">${esc3(diaDelTurno(r.abierta_at))}</div>
+  <div class="raya"></div>
+
+  <div class="resumen">
+    <div class="cifra"><small>Efectivo inicial</small><b>${money3(r.efectivo_inicial)}</b></div>
+    <div class="cifra"><small>Ventas del d\xEDa</small><b>${money3(r.ventas.total)}</b></div>
+    <div class="cifra"><small>Remesa</small><b>${money3(r.remesa)}</b></div>
+    <div class="cifra tinta"><small>${abierta ? "Efectivo en caja" : "Efectivo final"}</small><b>${money3(abierta ? r.efectivo_disponible : r.efectivo_final)}</b></div>
+  </div>
+
+  <div class="bloques">
+    <div class="caja">
+      <h3>Ventas por forma de pago</h3>
+      <div class="kv"><span>Efectivo</span><b>${money3(r.ventas.efectivo)}</b></div>
+      <div class="kv"><span>Tarjeta</span><b>${money3(r.ventas.tarjeta)}</b></div>
+      <div class="kv"><span>Transferencia</span><b>${money3(r.ventas.transferencia)}</b></div>
+      ${r.ventas.otros > 0 ? `<div class="kv"><span>Otros</span><b>${money3(r.ventas.otros)}</b></div>` : ""}
+      <div class="kv total"><span>Total cobrado (${r.ventas.cantidad} ventas)</span><span>${money3(r.ventas.total)}</span></div>
+    </div>
+    <div class="caja">
+      <h3>Movimiento del efectivo</h3>
+      <div class="kv"><span>Efectivo inicial</span><b>${money3(r.efectivo_inicial)}</b></div>
+      <div class="kv"><span>+ Ingresos en efectivo</span><b>${money3(r.ingresos_efectivo)}</b></div>
+      <div class="kv"><span>\u2212 Retiros de efectivo</span><b class="menos">${money3(r.egresos_efectivo)}</b></div>
+      <div class="kv"><span>= Efectivo antes de remesar</span><b>${money3(r.efectivo_disponible)}</b></div>
+      <div class="kv"><span>\u2212 Remesa</span><b class="menos">${money3(r.remesa)}</b></div>
+      <div class="kv total"><span>Efectivo final en caja</span><span>${money3(r.efectivo_final)}</span></div>
+    </div>
+  </div>
+
+  <h2>Retiros de efectivo (${retiros.length})</h2>
+  <table>
+    <tr><th>Hora</th><th>Motivo</th><th>Registr\xF3</th><th>Autoriz\xF3</th><th class="num">Monto</th></tr>
+    ${filasRetiros}
+  </table>
+
+  <div class="bloques">
+    <div class="caja">
+      <h3>Apertura</h3>
+      <div class="kv"><span>Fecha y hora</span><span>${esc3(fechaHora(r.abierta_at))}</span></div>
+      <div class="kv"><span>Abri\xF3</span><span>${esc3(r.abrio)}</span></div>
+    </div>
+    <div class="caja">
+      <h3>Cierre</h3>
+      <div class="kv"><span>Fecha y hora</span><span>${esc3(fechaHora(r.cerrada_at))}</span></div>
+      <div class="kv"><span>Cerr\xF3</span><span>${esc3(r.cerro ?? "\u2014")}</span></div>
+    </div>
+  </div>
+
+  <div class="firmas">
+    <div class="firma">Cajero \xB7 ${esc3(r.cerro ?? r.abrio)}</div>
+    <div class="firma">Recibe la remesa</div>
+  </div>
+
+  <div class="pie">
+    Las ventas se toman de los cobros registrados en el POS entre la apertura y el cierre de la caja, por forma de pago.
+    Las ventas al cr\xE9dito no entran en caja: van a cuentas por cobrar. Efectivo final = inicial + ingresos \u2212 retiros \u2212 remesa.
+  </div>
+</body></html>`;
+}
+
+// src/lib/caja/resumen.ts
+var num = (v) => Number(v ?? 0) || 0;
+function normalizarResumen(r) {
+  return {
+    ...r,
+    efectivo_inicial: num(r.efectivo_inicial),
+    ventas: {
+      efectivo: num(r.ventas?.efectivo),
+      tarjeta: num(r.ventas?.tarjeta),
+      transferencia: num(r.ventas?.transferencia),
+      otros: num(r.ventas?.otros),
+      total: num(r.ventas?.total),
+      cantidad: num(r.ventas?.cantidad)
+    },
+    ingresos_efectivo: num(r.ingresos_efectivo),
+    egresos_efectivo: num(r.egresos_efectivo),
+    remesa: num(r.remesa),
+    efectivo_disponible: num(r.efectivo_disponible),
+    efectivo_final: num(r.efectivo_final),
+    movimientos: (r.movimientos ?? []).map((m) => ({ ...m, monto: num(m.monto) }))
+  };
+}
+
 // server/correo/datos.ts
 import { createClient } from "@supabase/supabase-js";
 
@@ -936,7 +1089,7 @@ async function cliente(db, id, orgId) {
   };
 }
 async function datosCxc(db, customerId, orgId) {
-  const num = (r, ks) => {
+  const num2 = (r, ks) => {
     for (const k of ks) if (k in r) r[k] = Number(r[k] ?? 0);
     return r;
   };
@@ -947,7 +1100,7 @@ async function datosCxc(db, customerId, orgId) {
     db.from("v_lavados_credito").select("*").eq("customer_id", customerId).eq("organization_id", orgId).neq("status", "cancelled").order("created_at", { ascending: false }).limit(200)
   ]);
   return {
-    cuenta: cta ? num({ ...cta }, [
+    cuenta: cta ? num2({ ...cta }, [
       "credit_limit",
       "credit_days",
       "saldo",
@@ -1013,8 +1166,8 @@ var TINTA = "#16191A";
 var LIMA = "#DFF56B";
 var FONDO = "#EFF2EC";
 var GRIS = "#5E6661";
-var esc3 = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-var money3 = (n) => `$${(Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+var esc4 = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+var money4 = (n) => `$${(Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 function fechaSV(iso, conHora = false) {
   return new Date(iso).toLocaleString("es-SV", {
     timeZone: "America/El_Salvador",
@@ -1026,14 +1179,14 @@ function fechaSV(iso, conHora = false) {
 }
 function fila2(etiqueta, valor, fuerte = false) {
   return `<tr>
-    <td style="padding:7px 0;border-bottom:1px solid #EEF1EA;color:${GRIS};font-size:13px">${esc3(etiqueta)}</td>
+    <td style="padding:7px 0;border-bottom:1px solid #EEF1EA;color:${GRIS};font-size:13px">${esc4(etiqueta)}</td>
     <td style="padding:7px 0;border-bottom:1px solid #EEF1EA;text-align:right;font-size:13px;color:${TINTA};${fuerte ? "font-weight:700" : ""}">${valor}</td>
   </tr>`;
 }
 function tarjeta(titulo, filas) {
   return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:18px 0;border:1px solid #E3E8DE;border-radius:14px">
     <tr><td style="padding:14px 18px">
-      <div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${GRIS};margin-bottom:4px">${esc3(titulo)}</div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${GRIS};margin-bottom:4px">${esc4(titulo)}</div>
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0">${filas}</table>
     </td></tr>
   </table>`;
@@ -1045,24 +1198,24 @@ function aviso(texto, tono = "lima") {
 function layout(args) {
   const e = args.emisor ?? {};
   return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>${esc3(args.titulo)}</title></head>
+<title>${esc4(args.titulo)}</title></head>
 <body style="margin:0;padding:0;background:${FONDO};font-family:Inter,Segoe UI,Helvetica,Arial,sans-serif;color:${TINTA}">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0">${esc3(args.preheader)}</div>
+<div style="display:none;max-height:0;overflow:hidden;opacity:0">${esc4(args.preheader)}</div>
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:${FONDO}">
   <tr><td align="center" style="padding:24px 12px">
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;background:#ffffff;border-radius:18px;overflow:hidden;border:1px solid #E3E8DE">
       <tr><td style="background:${TINTA};padding:24px 28px 20px" align="left">
-        <img src="${esc3(args.appUrl)}/marca/corsa-email.png" width="150" alt="CORSA Carwash" style="display:block;width:150px;height:auto;border:0"/>
+        <img src="${esc4(args.appUrl)}/marca/corsa-email.png" width="150" alt="CORSA Carwash" style="display:block;width:150px;height:auto;border:0"/>
         <div style="width:44px;height:4px;background:${LIMA};border-radius:2px;margin-top:14px"></div>
       </td></tr>
       <tr><td style="padding:26px 28px 8px">
-        <h1 style="margin:0 0 6px;font-size:22px;line-height:1.25;font-weight:800;color:${TINTA}">${esc3(args.titulo)}</h1>
+        <h1 style="margin:0 0 6px;font-size:22px;line-height:1.25;font-weight:800;color:${TINTA}">${esc4(args.titulo)}</h1>
         ${args.cuerpo}
       </td></tr>
       <tr><td style="padding:18px 28px 24px;border-top:1px solid #EEF1EA;font-size:11.5px;line-height:1.55;color:${GRIS}">
-        <strong style="color:${TINTA}">${esc3(e.nombreComercial || "CORSA Carwash")}</strong>${e.razonSocial ? ` \xB7 ${esc3(e.razonSocial)}` : ""}<br/>
-        ${e.direccion ? `${esc3(e.direccion)}<br/>` : ""}
-        ${[e.telefono ? `Tel. ${esc3(e.telefono)}` : "", e.correo ? esc3(e.correo) : ""].filter(Boolean).join(" \xB7 ")}
+        <strong style="color:${TINTA}">${esc4(e.nombreComercial || "CORSA Carwash")}</strong>${e.razonSocial ? ` \xB7 ${esc4(e.razonSocial)}` : ""}<br/>
+        ${e.direccion ? `${esc4(e.direccion)}<br/>` : ""}
+        ${[e.telefono ? `Tel. ${esc4(e.telefono)}` : "", e.correo ? esc4(e.correo) : ""].filter(Boolean).join(" \xB7 ")}
       </td></tr>
     </table>
     <div style="font-size:11px;color:#8A928D;margin-top:12px">Este correo se envi\xF3 autom\xE1ticamente desde el sistema de CORSA Carwash.</div>
@@ -1074,12 +1227,13 @@ function parrafo(html) {
   return `<p style="margin:10px 0;font-size:14.5px;line-height:1.6;color:#2B302E">${html}</p>`;
 }
 function boton(texto, url) {
-  return `<a href="${esc3(url)}" style="display:inline-block;background:${TINTA};color:${LIMA};text-decoration:none;font-weight:700;font-size:13.5px;padding:11px 18px;border-radius:10px;margin:6px 0 4px">${esc3(texto)}</a>`;
+  return `<a href="${esc4(url)}" style="display:inline-block;background:${TINTA};color:${LIMA};text-decoration:none;font-weight:700;font-size:13.5px;padding:11px 18px;border-radius:10px;margin:6px 0 4px">${esc4(texto)}</a>`;
 }
 
 // server/correo/handler.ts
 var CORREO_CORSA = "corsacarwash@gmail.com";
 var COPIA_TEMPORAL = ["pabloavilesjubis@gmail.com"];
+var DESTINOS_CIERRE_CAJA = ["jubismauricio@gmail.com"];
 var ErrorHttp = class extends Error {
   constructor(status, mensaje) {
     super(mensaje);
@@ -1120,13 +1274,13 @@ var TIPO_DTE = {
 function saludo(c) {
   if (!c) return "Hola";
   const nombre = c.customer_type === "company" ? c.trade_name || c.nombre : c.nombre.split(" ")[0];
-  return `Hola, ${esc3(nombre)}`;
+  return `Hola, ${esc4(nombre)}`;
 }
 function serviciosDe(sale) {
   return (sale?.items ?? []).map((i) => String(i.descripcion).replace(/^Aspirado de interiores/, "Aspirado"));
 }
 async function enviarYRegistrar(args) {
-  const { to, bcc } = destinos(args.correoCliente);
+  const { to, bcc } = args.destinos ?? destinos(args.correoCliente);
   try {
     const info = await transporte().sendMail({
       from: remitente(),
@@ -1143,6 +1297,7 @@ async function enviarYRegistrar(args) {
       invoice_id: args.invoiceId ?? null,
       fiscal_document_id: args.fiscalDocumentId ?? null,
       customer_id: args.customerId ?? null,
+      cash_session_id: args.cashSessionId ?? null,
       destinatarios: to,
       bcc,
       asunto: args.asunto,
@@ -1160,6 +1315,7 @@ async function enviarYRegistrar(args) {
       invoice_id: args.invoiceId ?? null,
       fiscal_document_id: args.fiscalDocumentId ?? null,
       customer_id: args.customerId ?? null,
+      cash_session_id: args.cashSessionId ?? null,
       destinatarios: to,
       bcc,
       asunto: args.asunto,
@@ -1204,22 +1360,22 @@ async function correoDeVenta(db, orgId, userId, appUrl, workOrderId) {
           contentType: "application/pdf"
         });
       }
-      const facturado = sellado && doc ? aviso(`<strong>Facturado.</strong> Este servicio va en tu ${esc3(TIPO_DTE[doc.dte.tipoDte] ?? "DTE")} <strong>${esc3(doc.dte.numeroControl)}</strong>, adjunto en PDF y JSON.`) : aviso("<strong>Pendiente de facturar.</strong> Este lavado qued\xF3 cargado a tu cuenta y se incluye en tu pr\xF3ximo CCF consolidado.", "ambar");
+      const facturado = sellado && doc ? aviso(`<strong>Facturado.</strong> Este servicio va en tu ${esc4(TIPO_DTE[doc.dte.tipoDte] ?? "DTE")} <strong>${esc4(doc.dte.numeroControl)}</strong>, adjunto en PDF y JSON.`) : aviso("<strong>Pendiente de facturar.</strong> Este lavado qued\xF3 cargado a tu cuenta y se incluye en tu pr\xF3ximo CCF consolidado.", "ambar");
       const html2 = layout({
         appUrl,
         emisor,
         preheader: `Gracias por lavar tu carro ${placa} en CORSA.`,
         titulo: "\xA1Gracias por tu visita!",
-        cuerpo: parrafo(`${saludo(c)}: gracias por confiar en CORSA Carwash. Hoy dejamos listo tu carro${placa ? ` placa <strong>${esc3(placa)}</strong>` : ""}.`) + tarjeta("Tu lavado", [
-          fila2("Fecha", esc3(fechaSV(wo.created_at, true))),
-          ...placa ? [fila2("Placa", `<strong>${esc3(placa)}</strong>`)] : [],
-          fila2("Servicio", esc3(servicios.join(" + ") || "Lavado")),
-          fila2("Total del servicio", money3(Number(sale?.total ?? 0)), true)
+        cuerpo: parrafo(`${saludo(c)}: gracias por confiar en CORSA Carwash. Hoy dejamos listo tu carro${placa ? ` placa <strong>${esc4(placa)}</strong>` : ""}.`) + tarjeta("Tu lavado", [
+          fila2("Fecha", esc4(fechaSV(wo.created_at, true))),
+          ...placa ? [fila2("Placa", `<strong>${esc4(placa)}</strong>`)] : [],
+          fila2("Servicio", esc4(servicios.join(" + ") || "Lavado")),
+          fila2("Total del servicio", money4(Number(sale?.total ?? 0)), true)
         ].join("")) + facturado + (cxc.cuenta ? tarjeta("Tu cuenta a la fecha", [
-          fila2("Saldo acumulado", money3(cxc.cuenta.saldo), true),
-          fila2("Por vencer", money3(cxc.cuenta.por_vencer)),
-          ...cxc.cuenta.vencido > 0 ? [fila2("Vencido", `<span style="color:#C2272D;font-weight:700">${money3(cxc.cuenta.vencido)}</span>`)] : [],
-          fila2("Cr\xE9dito disponible", money3(cxc.cuenta.disponible)),
+          fila2("Saldo acumulado", money4(cxc.cuenta.saldo), true),
+          fila2("Por vencer", money4(cxc.cuenta.por_vencer)),
+          ...cxc.cuenta.vencido > 0 ? [fila2("Vencido", `<span style="color:#C2272D;font-weight:700">${money4(cxc.cuenta.vencido)}</span>`)] : [],
+          fila2("Cr\xE9dito disponible", money4(cxc.cuenta.disponible)),
           ...cxc.lavados.some((l) => !l.consolidated_invoice_id) ? [fila2("Lavados pendientes de facturar", String(cxc.lavados.filter((l) => !l.consolidated_invoice_id).length))] : []
         ].join("")) : "") + parrafo("Adjuntamos tu estado de cuenta con el historial de servicios. \xA1Te esperamos pronto!")
       });
@@ -1243,16 +1399,16 @@ async function correoDeVenta(db, orgId, userId, appUrl, workOrderId) {
     const html = layout({
       appUrl,
       emisor,
-      preheader: `${tipo} ${doc.dte.numeroControl} \xB7 ${money3(Number(sale?.total ?? 0))}`,
+      preheader: `${tipo} ${doc.dte.numeroControl} \xB7 ${money4(Number(sale?.total ?? 0))}`,
       titulo: `Tu ${tipo.toLowerCase()}`,
       cuerpo: parrafo(`${saludo(receptor)}: gracias por tu visita a CORSA Carwash. Adjuntamos tu documento tributario electr\xF3nico en PDF y su archivo JSON.`) + tarjeta("Documento", [
-        fila2("Tipo", esc3(tipo)),
-        fila2("N\xFAmero de control", `<span style="font-family:monospace">${esc3(doc.dte.numeroControl)}</span>`),
-        fila2("C\xF3digo de generaci\xF3n", `<span style="font-family:monospace;font-size:11.5px">${esc3(doc.dte.codigoGeneracion)}</span>`),
-        fila2("Fecha", esc3(fechaSV(wo.created_at, true))),
-        ...placa ? [fila2("Placa", `<strong>${esc3(placa)}</strong>`)] : [],
-        fila2("Servicio", esc3(servicios.join(" + ") || "Lavado")),
-        fila2("Total", money3(Number(sale?.total ?? 0)), true)
+        fila2("Tipo", esc4(tipo)),
+        fila2("N\xFAmero de control", `<span style="font-family:monospace">${esc4(doc.dte.numeroControl)}</span>`),
+        fila2("C\xF3digo de generaci\xF3n", `<span style="font-family:monospace;font-size:11.5px">${esc4(doc.dte.codigoGeneracion)}</span>`),
+        fila2("Fecha", esc4(fechaSV(wo.created_at, true))),
+        ...placa ? [fila2("Placa", `<strong>${esc4(placa)}</strong>`)] : [],
+        fila2("Servicio", esc4(servicios.join(" + ") || "Lavado")),
+        fila2("Total", money4(Number(sale?.total ?? 0)), true)
       ].join("")) + (doc.dte.qrUrl ? parrafo(boton("Verificar en Hacienda", doc.dte.qrUrl)) : "")
     });
     return enviarYRegistrar({
@@ -1324,13 +1480,13 @@ async function correoDeFactura(db, orgId, userId, appUrl, invoiceId) {
     const html = layout({
       appUrl,
       emisor,
-      preheader: `CCF consolidado ${doc.dte.numeroControl} \xB7 ${lineas.length} lavados \xB7 ${money3(Number(inv.total))}`,
+      preheader: `CCF consolidado ${doc.dte.numeroControl} \xB7 ${lineas.length} lavados \xB7 ${money4(Number(inv.total))}`,
       titulo: "Tu comprobante de cr\xE9dito fiscal",
       cuerpo: parrafo(`${saludo(c)}: adjuntamos el CCF consolidado de tus lavados, con el detalle de cada placa, en PDF y su archivo JSON.`) + tarjeta("Documento", [
-        fila2("N\xFAmero de control", `<span style="font-family:monospace">${esc3(doc.dte.numeroControl)}</span>`),
-        fila2("C\xF3digo de generaci\xF3n", `<span style="font-family:monospace;font-size:11.5px">${esc3(doc.dte.codigoGeneracion)}</span>`),
+        fila2("N\xFAmero de control", `<span style="font-family:monospace">${esc4(doc.dte.numeroControl)}</span>`),
+        fila2("C\xF3digo de generaci\xF3n", `<span style="font-family:monospace;font-size:11.5px">${esc4(doc.dte.codigoGeneracion)}</span>`),
         fila2("Lavados facturados", String(lineas.length)),
-        fila2("Total", money3(Number(inv.total)), true)
+        fila2("Total", money4(Number(inv.total)), true)
       ].join("")) + (doc.dte.qrUrl ? parrafo(boton("Verificar en Hacienda", doc.dte.qrUrl)) : "") + parrafo("\xA1Gracias por seguir confiando en CORSA Carwash!")
     });
     return enviarYRegistrar({
@@ -1365,13 +1521,13 @@ async function correoEstadoCuenta(db, orgId, userId, appUrl, customerId) {
     const html = layout({
       appUrl,
       emisor,
-      preheader: `Saldo a la fecha ${money3(cta.saldo)}`,
+      preheader: `Saldo a la fecha ${money4(cta.saldo)}`,
       titulo: "Tu estado de cuenta",
-      cuerpo: parrafo(`${saludo(c)}: gracias por ser cliente de CORSA Carwash. Te compartimos tu estado de cuenta al ${esc3(fechaSV(/* @__PURE__ */ new Date()))}.`) + tarjeta("Resumen", [
-        fila2("Saldo total", money3(cta.saldo), true),
-        fila2("Por vencer", money3(cta.por_vencer)),
-        fila2("Vencido", cta.vencido > 0 ? `<span style="color:#C2272D;font-weight:700">${money3(cta.vencido)}</span>` : money3(0)),
-        fila2("Cr\xE9dito disponible", money3(cta.disponible)),
+      cuerpo: parrafo(`${saludo(c)}: gracias por ser cliente de CORSA Carwash. Te compartimos tu estado de cuenta al ${esc4(fechaSV(/* @__PURE__ */ new Date()))}.`) + tarjeta("Resumen", [
+        fila2("Saldo total", money4(cta.saldo), true),
+        fila2("Por vencer", money4(cta.por_vencer)),
+        fila2("Vencido", cta.vencido > 0 ? `<span style="color:#C2272D;font-weight:700">${money4(cta.vencido)}</span>` : money4(0)),
+        fila2("Cr\xE9dito disponible", money4(cta.disponible)),
         ...pendientes ? [fila2("Lavados pendientes de facturar", String(pendientes))] : []
       ].join("")) + (cta.vencido > 0 ? aviso("Tienes saldo vencido. Si ya realizaste el pago, por favor comp\xE1rtenos el comprobante.", "ambar") : "") + parrafo("El detalle de documentos, lavados y abonos va en el PDF adjunto.")
     });
@@ -1390,6 +1546,53 @@ async function correoEstadoCuenta(db, orgId, userId, appUrl, customerId) {
     await navegador.close();
   }
 }
+async function correoCierreCaja(db, orgId, userId, appUrl, sessionId) {
+  const { data, error } = await db.rpc("caja_resumen_datos", { p_session_id: sessionId });
+  if (error || !data) throw new ErrorHttp(404, "No existe ese turno de caja");
+  if (data.organization_id !== orgId) throw new ErrorHttp(404, "No existe ese turno de caja");
+  const { data: s } = await db.from("cash_sessions").select("resumen").eq("id", sessionId).maybeSingle();
+  const r = normalizarResumen(s?.resumen ?? data);
+  const emisor = await emisorDeSucursal(db, r.branch_id);
+  const dia = diaDelTurno(r.abierta_at);
+  const navegador = await abrirNavegador();
+  try {
+    const pdf = await htmlAPdf(navegador, reporteCierreHTML({ emisor, resumen: r }));
+    const retiros = r.movimientos.filter((m) => m.tipo === "cash_out");
+    const html = layout({
+      appUrl,
+      emisor,
+      preheader: `${r.sucursal} \xB7 ventas ${money4(r.ventas.total)} \xB7 queda en caja ${money4(r.efectivo_final)}`,
+      titulo: "Cierre de caja",
+      cuerpo: parrafo(`Cierre de caja de <strong>${esc4(r.sucursal)}</strong>, ${esc4(dia)}. Cerr\xF3 ${esc4(r.cerro ?? "\u2014")}.`) + tarjeta("Ventas", [
+        fila2("Efectivo", money4(r.ventas.efectivo)),
+        fila2("Tarjeta", money4(r.ventas.tarjeta)),
+        fila2("Transferencia", money4(r.ventas.transferencia)),
+        ...r.ventas.otros > 0 ? [fila2("Otros", money4(r.ventas.otros))] : [],
+        fila2(`Total (${r.ventas.cantidad} ventas)`, money4(r.ventas.total), true)
+      ].join("")) + tarjeta("Efectivo", [
+        fila2("Efectivo inicial", money4(r.efectivo_inicial)),
+        fila2("Ingresos en efectivo", money4(r.ingresos_efectivo)),
+        fila2(`Retiros (${retiros.length})`, money4(r.egresos_efectivo)),
+        fila2("Remesa", money4(r.remesa)),
+        fila2("Efectivo final en caja", money4(r.efectivo_final), true)
+      ].join("")) + (retiros.length ? tarjeta("Retiros de efectivo", retiros.map((m) => fila2(`${esc4(m.motivo)} \xB7 autoriz\xF3 ${esc4(m.autorizo ?? "\u2014")}`, money4(m.monto))).join("")) : "") + parrafo("El reporte completo va en el PDF adjunto.")
+    });
+    return enviarYRegistrar({
+      db,
+      orgId,
+      userId,
+      tipo: "cierre_caja",
+      correoCliente: null,
+      destinos: { to: DESTINOS_CIERRE_CAJA, bcc: COPIA_TEMPORAL.filter((c) => !DESTINOS_CIERRE_CAJA.includes(c)) },
+      asunto: `Cierre de caja \xB7 ${r.sucursal} \xB7 ${dia}`,
+      html,
+      adjuntos: [{ filename: `cierre-de-caja-${r.abierta_at.slice(0, 10)}.pdf`, content: pdf, contentType: "application/pdf" }],
+      cashSessionId: sessionId
+    });
+  } finally {
+    await navegador.close();
+  }
+}
 async function manejar(args) {
   try {
     const jwt = (args.auth ?? "").replace(/^Bearer\s+/i, "").trim();
@@ -1403,6 +1606,7 @@ async function manejar(args) {
     if (b.accion === "venta" && uuid(b.workOrderId)) return await correoDeVenta(db, orgId, userId, args.appUrl, b.workOrderId);
     if (b.accion === "factura" && uuid(b.invoiceId)) return await correoDeFactura(db, orgId, userId, args.appUrl, b.invoiceId);
     if (b.accion === "estado_cuenta" && uuid(b.customerId)) return await correoEstadoCuenta(db, orgId, userId, args.appUrl, b.customerId);
+    if (b.accion === "cierre_caja" && uuid(b.sessionId)) return await correoCierreCaja(db, orgId, userId, args.appUrl, b.sessionId);
     throw new ErrorHttp(400, "Solicitud inv\xE1lida");
   } catch (e) {
     if (e instanceof ErrorHttp) return { status: e.status, body: { ok: false, error: e.message } };

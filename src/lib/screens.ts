@@ -59,6 +59,7 @@ export const SCREENS: readonly ScreenDef[] = [
   { key: 'machines',    path: '/machines',    label: 'Análisis de máquinas',     permission: 'plc.read',            section: 'administracion' },
   { key: 'customers',   path: '/customers',   label: 'Clientes',                 permission: 'screens.customers',   section: 'administracion' },
   { key: 'analytics',   path: '/analytics',   label: 'Inteligencia de negocio',  permission: 'screens.analytics',   section: 'administracion' },
+  { key: 'cash_closes', path: '/cierres-caja', label: 'Cierres de caja',          permission: 'screens.cash_closes', section: 'administracion' },
   { key: 'receivables', path: '/receivables', label: 'Cuentas por cobrar',       permission: 'screens.receivables', section: 'administracion' },
   { key: 'payables',    path: '/payables',    label: 'Cuentas por pagar',        permission: 'screens.payables',    section: 'administracion' },
   { key: 'fleets',      path: '/fleets',      label: 'Flotillas corporativas',   permission: 'screens.fleets',      section: 'administracion' },

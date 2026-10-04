@@ -144,6 +144,15 @@ const screenIcons: Record<string, React.ReactNode> = {
   customers: icons.customers,
   analytics: icons.analytics,
   receivables: icons.receivable,
+  // Cierres de caja: un billete.
+  cash_closes: (
+    <Icon>
+      <rect x="2" y="6" width="20" height="12" rx="2"/>
+      <circle cx="12" cy="12" r="2.5"/>
+      <path d="M6 10v4"/>
+      <path d="M18 10v4"/>
+    </Icon>
+  ),
   payables: icons.payable,
   fleets: icons.fleets,
   memberships: icons.memberships,

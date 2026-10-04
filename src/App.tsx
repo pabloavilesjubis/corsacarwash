@@ -28,6 +28,7 @@ const AnalisisMaquinasPage = lazy(() => import('./pages/AnalisisMaquinasPage').t
 const ConfiguracionPage = lazy(() => import('./pages/ConfiguracionPage').then(m => ({ default: m.ConfiguracionPage })))
 const NotificacionesPage = lazy(() => import('./pages/NotificacionesPage').then(m => ({ default: m.NotificacionesPage })))
 const EstacionFiscalPage = lazy(() => import('./pages/EstacionFiscalPage').then(m => ({ default: m.EstacionFiscalPage })))
+const CierresCajaPage = lazy(() => import('./pages/CierresCajaPage').then(m => ({ default: m.CierresCajaPage })))
 const CierreDiarioPage = lazy(() => import('./pages/CierreDiarioPage').then(m => ({ default: m.CierreDiarioPage })))
 // Contabilidad: un solo chunk para las cuatro pantallas del submenú.
 const contabilidad = () => import('./pages/contabilidad/ContabilidadPages')
@@ -122,6 +123,8 @@ export default function App() {
                 <Route path="/pos"         element={<ScreenGuard permission="screens.pos"><POSPage/></ScreenGuard>}/>
                 <Route path="/orders"      element={<ScreenGuard permission="screens.orders"><OrdersPage/></ScreenGuard>}/>
                 <Route path="/analytics"   element={<ScreenGuard permission="screens.analytics"><PlaceholderPage/></ScreenGuard>}/>
+                <Route path="/cierres-caja"     element={<ScreenGuard permission="screens.cash_closes"><CierresCajaPage/></ScreenGuard>}/>
+                <Route path="/cierres-caja/:id" element={<ScreenGuard permission="screens.cash_closes"><CierresCajaPage/></ScreenGuard>}/>
                 <Route path="/receivables" element={<ScreenGuard permission="screens.receivables"><CxcPage/></ScreenGuard>}/>
                 <Route path="/payables"    element={<ScreenGuard permission="screens.payables"><PlaceholderPage/></ScreenGuard>}/>
                 <Route path="/fleets"      element={<ScreenGuard permission="screens.fleets"><FlotillasPage/></ScreenGuard>}/>

@@ -5,6 +5,7 @@
  *                                              del lavado si es al crédito.
  *   POST { accion: 'factura', invoiceId }      DTE de una factura (CCF consolidado).
  *   POST { accion: 'estado_cuenta', customerId }
+ *   POST { accion: 'cierre_caja', sessionId }    Reporte de cierre de caja en PDF (0065).
  *
  * Con la sesión del usuario (Authorization: Bearer <JWT de Supabase>); las
  * lecturas van con el service role, filtradas por su organización.
@@ -19,6 +20,8 @@
 import nodemailer from 'nodemailer'
 import { buildFacturaHTML } from '../../src/lib/fiscal/facturaDocument'
 import { estadoCuentaHTML } from '../../src/lib/cxc/estadoCuenta'
+import { diaDelTurno, reporteCierreHTML } from '../../src/lib/caja/reporteCierre'
+import { normalizarResumen } from '../../src/lib/caja/resumen'
 import type { Sale } from '../../src/services/sales.service'
 import {
   admin, cliente, datosCxc, dteDeFactura, emisorDeSucursal, registrarEnvio, usuarioDe, ventaDeOrden, type Cliente,
@@ -33,6 +36,11 @@ const CORREO_CORSA = 'corsacarwash@gmail.com'
  * quitarla: se borra de esta lista.
  */
 const COPIA_TEMPORAL = ['pabloavilesjubis@gmail.com']
+/**
+ * A quién va el reporte de cierre de caja. La copia oculta es COPIA_TEMPORAL:
+ * al quitar a alguien de esa lista deja de recibir también los cierres.
+ */
+const DESTINOS_CIERRE_CAJA = ['jubismauricio@gmail.com']
 
 type Adjunto = { filename: string; content: Buffer | string; contentType: string }
 
@@ -84,8 +92,10 @@ async function enviarYRegistrar(args: {
   db: ReturnType<typeof admin>
   orgId: string
   userId: string
-  tipo: 'dte' | 'lavado_credito' | 'ccf_consolidado' | 'estado_cuenta'
+  tipo: 'dte' | 'lavado_credito' | 'ccf_consolidado' | 'estado_cuenta' | 'cierre_caja'
   correoCliente: string | null
+  /** Destinatarios fijos en lugar de la regla del cliente (cierre de caja). */
+  destinos?: { to: string[]; bcc: string[] }
   asunto: string
   html: string
   adjuntos: Adjunto[]
@@ -93,8 +103,9 @@ async function enviarYRegistrar(args: {
   invoiceId?: string | null
   fiscalDocumentId?: string | null
   customerId?: string | null
+  cashSessionId?: string | null
 }): Promise<Respuesta> {
-  const { to, bcc } = destinos(args.correoCliente)
+  const { to, bcc } = args.destinos ?? destinos(args.correoCliente)
   try {
     const info = await transporte().sendMail({
       from: remitente(), to, bcc, subject: args.asunto, html: args.html,
@@ -102,7 +113,7 @@ async function enviarYRegistrar(args: {
     })
     await registrarEnvio(args.db, {
       organization_id: args.orgId, tipo: args.tipo, work_order_id: args.workOrderId ?? null, invoice_id: args.invoiceId ?? null,
-      fiscal_document_id: args.fiscalDocumentId ?? null, customer_id: args.customerId ?? null,
+      fiscal_document_id: args.fiscalDocumentId ?? null, customer_id: args.customerId ?? null, cash_session_id: args.cashSessionId ?? null,
       destinatarios: to, bcc, asunto: args.asunto, status: 'sent', message_id: info.messageId ?? null, created_by: args.userId,
     })
     return { status: 200, body: { ok: true, estado: 'sent', destinatarios: to } }
@@ -110,7 +121,7 @@ async function enviarYRegistrar(args: {
     const error = e instanceof Error ? e.message : String(e)
     await registrarEnvio(args.db, {
       organization_id: args.orgId, tipo: args.tipo, work_order_id: args.workOrderId ?? null, invoice_id: args.invoiceId ?? null,
-      fiscal_document_id: args.fiscalDocumentId ?? null, customer_id: args.customerId ?? null,
+      fiscal_document_id: args.fiscalDocumentId ?? null, customer_id: args.customerId ?? null, cash_session_id: args.cashSessionId ?? null,
       destinatarios: to, bcc, asunto: args.asunto, status: 'failed', error: error.slice(0, 500), created_by: args.userId,
     })
     return { status: 502, body: { ok: false, estado: 'failed', error: `No se pudo enviar el correo: ${error}` } }
@@ -321,6 +332,56 @@ async function correoEstadoCuenta(db: ReturnType<typeof admin>, orgId: string, u
   }
 }
 
+async function correoCierreCaja(db: ReturnType<typeof admin>, orgId: string, userId: string, appUrl: string, sessionId: string): Promise<Respuesta> {
+  const { data, error } = await db.rpc('caja_resumen_datos', { p_session_id: sessionId })
+  if (error || !data) throw new ErrorHttp(404, 'No existe ese turno de caja')
+  if ((data as any).organization_id !== orgId) throw new ErrorHttp(404, 'No existe ese turno de caja')
+  // El cerrado se reporta con su foto del cierre, igual que en la pantalla.
+  const { data: s } = await db.from('cash_sessions').select('resumen').eq('id', sessionId).maybeSingle()
+  const r = normalizarResumen((s as any)?.resumen ?? data)
+  const emisor = await emisorDeSucursal(db, r.branch_id)
+  const dia = diaDelTurno(r.abierta_at)
+  const navegador = await abrirNavegador()
+  try {
+    const pdf = await htmlAPdf(navegador, reporteCierreHTML({ emisor, resumen: r }))
+    const retiros = r.movimientos.filter(m => m.tipo === 'cash_out')
+    const html = layout({
+      appUrl, emisor,
+      preheader: `${r.sucursal} · ventas ${money(r.ventas.total)} · queda en caja ${money(r.efectivo_final)}`,
+      titulo: 'Cierre de caja',
+      cuerpo: parrafo(`Cierre de caja de <strong>${esc(r.sucursal)}</strong>, ${esc(dia)}. Cerró ${esc(r.cerro ?? '—')}.`)
+        + tarjeta('Ventas', [
+          fila('Efectivo', money(r.ventas.efectivo)),
+          fila('Tarjeta', money(r.ventas.tarjeta)),
+          fila('Transferencia', money(r.ventas.transferencia)),
+          ...(r.ventas.otros > 0 ? [fila('Otros', money(r.ventas.otros))] : []),
+          fila(`Total (${r.ventas.cantidad} ventas)`, money(r.ventas.total), true),
+        ].join(''))
+        + tarjeta('Efectivo', [
+          fila('Efectivo inicial', money(r.efectivo_inicial)),
+          fila('Ingresos en efectivo', money(r.ingresos_efectivo)),
+          fila(`Retiros (${retiros.length})`, money(r.egresos_efectivo)),
+          fila('Remesa', money(r.remesa)),
+          fila('Efectivo final en caja', money(r.efectivo_final), true),
+        ].join(''))
+        + (retiros.length
+          ? tarjeta('Retiros de efectivo', retiros.map(m =>
+              fila(`${esc(m.motivo)} · autorizó ${esc(m.autorizo ?? '—')}`, money(m.monto))).join(''))
+          : '')
+        + parrafo('El reporte completo va en el PDF adjunto.'),
+    })
+    return enviarYRegistrar({
+      db, orgId, userId, tipo: 'cierre_caja', correoCliente: null,
+      destinos: { to: DESTINOS_CIERRE_CAJA, bcc: COPIA_TEMPORAL.filter(c => !DESTINOS_CIERRE_CAJA.includes(c)) },
+      asunto: `Cierre de caja · ${r.sucursal} · ${dia}`, html,
+      adjuntos: [{ filename: `cierre-de-caja-${r.abierta_at.slice(0, 10)}.pdf`, content: pdf, contentType: 'application/pdf' }],
+      cashSessionId: sessionId,
+    })
+  } finally {
+    await navegador.close()
+  }
+}
+
 // ─── Entrada ─────────────────────────────────────────────────
 
 export async function manejar(args: { auth: string | undefined; cuerpo: any; appUrl: string }): Promise<Respuesta> {
@@ -334,6 +395,7 @@ export async function manejar(args: { auth: string | undefined; cuerpo: any; app
     if (b.accion === 'venta' && uuid(b.workOrderId)) return await correoDeVenta(db, orgId, userId, args.appUrl, b.workOrderId)
     if (b.accion === 'factura' && uuid(b.invoiceId)) return await correoDeFactura(db, orgId, userId, args.appUrl, b.invoiceId)
     if (b.accion === 'estado_cuenta' && uuid(b.customerId)) return await correoEstadoCuenta(db, orgId, userId, args.appUrl, b.customerId)
+    if (b.accion === 'cierre_caja' && uuid(b.sessionId)) return await correoCierreCaja(db, orgId, userId, args.appUrl, b.sessionId)
     throw new ErrorHttp(400, 'Solicitud inválida')
   } catch (e) {
     if (e instanceof ErrorHttp) return { status: e.status, body: { ok: false, error: e.message } }

@@ -12,7 +12,7 @@
 import { supabase } from '../lib/supabase'
 
 export type TipoNotificacion =
-  | 'WASH_COMPLETED' | 'MACHINE_ERROR' | 'DAILY_CLOSE' | 'TEST' | string
+  | 'WASH_COMPLETED' | 'MACHINE_ERROR' | 'DAILY_CLOSE' | 'CASH_CLOSE' | 'TEST' | string
 
 export interface Notificacion {
   id: string
@@ -218,6 +218,7 @@ export function iconoDe(tipo: TipoNotificacion): string {
     case 'WASH_COMPLETED': return '🚗'
     case 'MACHINE_ERROR':  return '⚠️'
     case 'DAILY_CLOSE':    return '🌙'
+    case 'CASH_CLOSE':     return '💵'
     case 'TEST':           return '🔔'
     default:               return '•'
   }

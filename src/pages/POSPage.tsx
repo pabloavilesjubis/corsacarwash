@@ -9,6 +9,7 @@
  * Modal de cobro: Ticket (FCF) o CCF
  */
 
+import { CajaModal } from '../components/caja/CajaModal'
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import toast from 'react-hot-toast'
@@ -1181,6 +1182,7 @@ export function POSPage() {
   const [carrito, setCarrito] = useState<LineaOrden[]>([])
   const multi = carrito.length > 0
   const [modalCortesia, setModalCortesia] = useState(false)
+  const [modalCaja, setModalCaja] = useState(false)
   // Póliza viva del vehículo elegido, si tiene una. La trae el servidor.
   const [polizaVigente, setPolizaVigente] = useState<RainPolicy | null>(null)
   // Los vehículos del cliente elegido, y con cuál entra. Un cliente con tres
@@ -1959,7 +1961,14 @@ export function POSPage() {
       {/* Title */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
         <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 24, letterSpacing: '-0.025em', margin: 0, color: 'var(--text-primary)' }}>Nueva orden</h1>
-        <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>Selecciona el tipo de servicio para continuar</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>Selecciona el tipo de servicio para continuar</div>
+          {branchId && (hasPermission('cash.open') || hasPermission('cash.close')) && (
+            <button id="btn-caja" className="btn btn-ghost btn-sm" onClick={() => setModalCaja(true)}>
+              Cierre de caja y manejo de efectivo
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ── Mode selector (3 cards) ── */}
@@ -2430,6 +2439,8 @@ export function POSPage() {
           }}
         />
       )}
+
+      {modalCaja && branchId && <CajaModal branchId={branchId} onCerrar={() => setModalCaja(false)}/>}
 
       {modalCortesia && branchId && (
         <ModalCortesiaSeguro branchId={branchId} orgId={orgId} onCerrar={() => setModalCortesia(false)}/>

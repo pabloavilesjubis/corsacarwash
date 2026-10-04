@@ -166,8 +166,9 @@ export async function datosCxc(db: SupabaseClient, customerId: string, orgId: st
 /** Deja constancia del intento: de acá sale la tarjeta verde/roja de la venta. */
 export async function registrarEnvio(db: SupabaseClient, fila: {
   organization_id: string
-  tipo: 'dte' | 'lavado_credito' | 'ccf_consolidado' | 'estado_cuenta'
+  tipo: 'dte' | 'lavado_credito' | 'ccf_consolidado' | 'estado_cuenta' | 'cierre_caja'
   work_order_id?: string | null
+  cash_session_id?: string | null
   invoice_id?: string | null
   fiscal_document_id?: string | null
   customer_id?: string | null

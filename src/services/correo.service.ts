@@ -29,3 +29,5 @@ export const enviarCorreoVenta = (workOrderId: string) => pedir({ accion: 'venta
 /** El correo de una factura sin venta propia (CCF consolidado). */
 export const enviarCorreoFactura = (invoiceId: string) => pedir({ accion: 'factura', invoiceId })
 export const enviarEstadoCuenta = (customerId: string) => pedir({ accion: 'estado_cuenta', customerId })
+/** El reporte de cierre de caja en PDF (0065), a la gerencia. */
+export const enviarCierreCaja = (sessionId: string) => pedir({ accion: 'cierre_caja', sessionId })
