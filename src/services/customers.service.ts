@@ -276,3 +276,65 @@ export async function fetchMapaTamanos(organizationId: string): Promise<Record<s
   for (const t of (data ?? []) as any[]) mapa[t.id] = tamanoDeCategoria(t.size_category)
   return mapa
 }
+
+// ─── Carga masiva ───────────────────────────────────────────
+
+/**
+ * Los documentos y nombres de todos los clientes, para marcar duplicados en
+ * la carga masiva. Se pide en páginas: PostgREST corta en 1000 filas.
+ */
+export async function fetchClientesParaDuplicados(organizationId: string) {
+  const todos: { normalized_nit: string | null; normalized_dui: string | null; nombre: string }[] = []
+  for (let desde = 0; ; desde += 1000) {
+    const { data, error } = await (supabase as any)
+      .from('customers')
+      .select('normalized_nit, normalized_dui, customer_type, first_name, last_name, legal_name')
+      .eq('organization_id', organizationId)
+      .range(desde, desde + 999)
+    if (error) throw error
+    for (const c of data ?? []) {
+      todos.push({
+        normalized_nit: c.normalized_nit || null,
+        normalized_dui: c.normalized_dui || null,
+        nombre: c.customer_type === 'company'
+          ? (c.legal_name ?? '')
+          : `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim(),
+      })
+    }
+    if (!data || data.length < 1000) return todos
+  }
+}
+
+/**
+ * Inserta las fichas en lotes de 50. Si un lote falla (un CHECK de la base
+ * que la validación de la pantalla no anticipó), se reintenta fila por fila
+ * para que una sola ficha mala no deje afuera a las otras 49, y el error
+ * quede atado a su fila.
+ */
+export async function insertarClientesEnLote(
+  organizationId: string,
+  fichas: { fila: number; ficha: CustomerWritableFields }[],
+  alAvanzar?: (hechos: number) => void,
+): Promise<{ creados: number; fallidos: { fila: number; error: string }[] }> {
+  let creados = 0
+  const fallidos: { fila: number; error: string }[] = []
+  for (let i = 0; i < fichas.length; i += 50) {
+    const lote = fichas.slice(i, i + 50)
+    const { error } = await (supabase as any)
+      .from('customers')
+      .insert(lote.map(f => ({ ...f.ficha, organization_id: organizationId, source: 'other' })))
+    if (!error) {
+      creados += lote.length
+    } else {
+      for (const f of lote) {
+        const { error: e } = await (supabase as any)
+          .from('customers')
+          .insert([{ ...f.ficha, organization_id: organizationId, source: 'other' }])
+        if (e) fallidos.push({ fila: f.fila, error: e.message })
+        else creados++
+      }
+    }
+    alAvanzar?.(Math.min(i + 50, fichas.length))
+  }
+  return { creados, fallidos }
+}

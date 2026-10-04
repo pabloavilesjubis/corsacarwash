@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth'
 import { ClipButton } from '../components/ui/ClipButton'
 import { useEsMovil } from '../hooks/useEsMovil'
 import { CustomerFormPanel } from '../components/CustomerFormPanel'
+import { CargaMasivaClientes } from '../components/CargaMasivaClientes'
 import {
   searchCustomers,
   getCustomerVehicles,
@@ -309,8 +310,9 @@ const FILTER_DEFS: { id: FilterType; label: string }[] = [
 ]
 
 export function CustomersPage() {
-  const { profile } = useAuth()
+  const { profile, hasPermission } = useAuth()
   const orgId = (profile as any)?.organization_id ?? ''
+  const [cargaMasiva, setCargaMasiva] = useState(false)
 
   const [customers, setCustomers] = useState<CustomerWithStats[]>([])
   const [loading, setLoading] = useState(true)
@@ -357,12 +359,27 @@ export function CustomersPage() {
             {customers.length} clientes · {totalVehicles} vehículos registrados
           </div>
         </div>
-        <ClipButton
-          id="btn-new-customer"
-          label="+ Nuevo cliente"
-          onClick={() => setPanel({ type: 'new' })}
-        />
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {hasPermission('customers.create') && !esMovil && (
+            <button id="btn-carga-masiva" className="btn btn-ghost" onClick={() => setCargaMasiva(true)}>
+              Carga masiva
+            </button>
+          )}
+          <ClipButton
+            id="btn-new-customer"
+            label="+ Nuevo cliente"
+            onClick={() => setPanel({ type: 'new' })}
+          />
+        </div>
       </div>
+
+      {cargaMasiva && orgId && (
+        <CargaMasivaClientes
+          orgId={orgId}
+          onCerrar={() => setCargaMasiva(false)}
+          onImportado={() => loadCustomers(search)}
+        />
+      )}
 
       {/* Filters + Search */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
