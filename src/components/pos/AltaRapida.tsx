@@ -328,11 +328,15 @@ export function ModalNuevoCliente({ orgId, onCreado, onCancelar }: {
 
 // ─── Alta de vehículo para un cliente existente ───────────────
 
-export function ModalNuevoVehiculo({ orgId, clienteId, onCreado, onCancelar }: {
+export function ModalNuevoVehiculo({ orgId, clienteId, onCreado, onCancelar, onPlacaDeOtro, textoGuardar }: {
   orgId: string
   clienteId: string
   onCreado: (vehiculo: VehiculoPos) => void
   onCancelar: () => void
+  /** Si viene, una placa de otro cliente se ofrece transferir en vez de sólo avisar (Clientes). */
+  onPlacaDeOtro?: (c: { placa: string; vehicleId: string; duenoId: string }) => void
+  /** Rótulo del botón: en caja «Agregar y usar»; en Clientes, «Agregar vehículo». */
+  textoGuardar?: string
 }) {
   const [placa, setPlaca] = useState('')
   const [marca, setMarca] = useState('')
@@ -360,7 +364,8 @@ export function ModalNuevoVehiculo({ orgId, clienteId, onCreado, onCancelar }: {
       // la misma placa dejan el historial partido en dos para siempre.
       const conflicto = await checkPlateConflict(placa, clienteId)
       if (conflicto) {
-        toast.error('Esa placa ya está registrada con otro cliente. Transferila desde la pantalla de Clientes.')
+        if (onPlacaDeOtro) onPlacaDeOtro({ placa, vehicleId: conflicto.id, duenoId: conflicto.customer_id })
+        else toast.error('Esa placa ya está registrada con otro cliente. Transferila desde la pantalla de Clientes.')
         setGuardando(false)
         return
       }
@@ -410,7 +415,7 @@ export function ModalNuevoVehiculo({ orgId, clienteId, onCreado, onCancelar }: {
         </button>
         <button className="btn btn-primary" style={{ flex: 2, justifyContent: 'center' }}
                 onClick={guardar} disabled={guardando}>
-          {guardando ? 'Guardando…' : 'Agregar y usar'}
+          {guardando ? 'Guardando…' : textoGuardar ?? 'Agregar y usar'}
         </button>
       </div>
     </Dialogo>

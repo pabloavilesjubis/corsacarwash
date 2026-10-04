@@ -145,13 +145,16 @@ export async function getMembershipPlans(organizationId: string) {
 }
 
 export async function checkPlateConflict(plate: string, currentCustomerId: string) {
-  const normalized = plate.toUpperCase().replace(/\s+/g, ' ').trim()
+  // Igual que la columna generada (0008): mayúsculas, sólo letras y números.
+  // Con espacios o guiones «P 123-456» no encontraba «P123456» y se duplicaba.
+  const normalized = plate.toUpperCase().replace(/[^A-Z0-9]/g, '')
   const { data, error } = await supabase
     .from('vehicles' as any)
-    .select('id, customer_id, customers:customer_id(first_name, last_name, legal_name, trade_name)')
+    .select('id, customer_id, customers:customer_id(customer_type, first_name, last_name, legal_name, trade_name)')
     .eq('normalized_plate', normalized)
     .eq('active', true)
     .neq('customer_id', currentCustomerId)
+    .limit(1)
     .maybeSingle()
   if (error) throw error
   return data as any

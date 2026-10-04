@@ -7,15 +7,13 @@ import { CustomerFormPanel } from '../components/CustomerFormPanel'
 import { CargaMasivaClientes } from '../components/CargaMasivaClientes'
 import { GruposEmpresarialesModal } from '../components/GruposEmpresarialesModal'
 import { QrRegistroModal } from '../components/QrRegistroModal'
+import { VehiculosClienteModal } from '../components/VehiculosClienteModal'
 import {
   searchCustomers,
   getCustomerVehicles,
   getCustomerMetrics,
   getMembershipPlans,
   updateCustomer,
-  checkPlateConflict,
-  addVehicleToCustomer,
-  transferVehicleOwnership,
   type CustomerWithStats,
 } from '../services/customers.service'
 import type { Vehicle } from '../types'
@@ -72,10 +70,7 @@ function ViewPanel({
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [metrics, setMetrics] = useState<any>(null)
   const [plans, setPlans] = useState<any[]>([])
-  const [newPlate, setNewPlate] = useState('')
-  const [newBrand, setNewBrand] = useState('')
-  const [conflict, setConflict] = useState<any>(null)
-  const [saving, setSaving] = useState(false)
+  const [modalVehiculos, setModalVehiculos] = useState(false)
 
   const displayName = getDisplayName(customer)
   const ms = getMembershipStyle(customer.membership_status)
@@ -92,42 +87,9 @@ function ViewPanel({
     }).catch(() => {})
   }, [customer.id, orgId])
 
-  const handleAddVehicle = async () => {
-    const plate = newPlate.trim()
-    if (!plate) return
-    setConflict(null)
-
-    // Check conflict
-    const existing = await checkPlateConflict(plate, customer.id).catch(() => null)
-    if (existing) {
-      setConflict({ plate, vehicleId: existing.id, ownerId: existing.customer_id, ownerName: getDisplayName(existing.customers as any) })
-      return
-    }
-
-    setSaving(true)
-    try {
-      await addVehicleToCustomer({ customer_id: customer.id, organization_id: orgId, plate, brand: newBrand || undefined })
-      setNewPlate(''); setNewBrand('')
-      const updated = await getCustomerVehicles(customer.id)
-      setVehicles(updated)
-      toast.success('Vehículo agregado')
-      onUpdated()
-    } catch { toast.error('No se pudo agregar el vehículo') }
-    setSaving(false)
-  }
-
-  const handleTransfer = async () => {
-    if (!conflict) return
-    setSaving(true)
-    try {
-      await transferVehicleOwnership(conflict.vehicleId, customer.id)
-      setConflict(null); setNewPlate(''); setNewBrand('')
-      const updated = await getCustomerVehicles(customer.id)
-      setVehicles(updated)
-      toast.success('Vehículo transferido')
-      onUpdated()
-    } catch { toast.error('Error al transferir vehículo') }
-    setSaving(false)
+  const recargarVehiculos = async () => {
+    setVehicles(await getCustomerVehicles(customer.id).catch(() => []))
+    onUpdated()
   }
 
   /** Guarda un campo suelto; si la base lo rechaza, avisa y restaura. */
@@ -225,47 +187,18 @@ function ViewPanel({
           )}
         </div>
 
-        {/* Add vehicle */}
-        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-          <input
-            className="corsa-input"
-            value={newPlate}
-            onChange={e => setNewPlate(e.target.value)}
-            placeholder="Placa (P 123-456)"
-            style={{ flex: 1 }}
-          />
-          <input
-            className="corsa-input"
-            value={newBrand}
-            onChange={e => setNewBrand(e.target.value)}
-            placeholder="Marca / modelo"
-            style={{ flex: 1 }}
-          />
-        </div>
+        {/* Alta y transferencia en el modal general: sólo los carros de este
+            cliente, con su tamaño (que es la tarifa del POS). */}
         <button
-          onClick={handleAddVehicle}
-          disabled={saving || !newPlate.trim()}
-          style={{ marginTop: 6, width: '100%', textAlign: 'center', fontSize: 12.5, fontWeight: 600, color: 'var(--corsa-green)', border: '1px solid var(--border)', borderRadius: 10, padding: 7, cursor: 'pointer', background: 'transparent' }}
+          id="btn-vehiculos-cliente"
+          onClick={() => setModalVehiculos(true)}
+          style={{ marginTop: 8, width: '100%', textAlign: 'center', fontSize: 12.5, fontWeight: 600, color: 'var(--corsa-green)', border: '1px solid var(--border)', borderRadius: 10, padding: 7, cursor: 'pointer', background: 'transparent' }}
         >
-          {saving ? 'Guardando…' : 'Agregar vehículo'}
+          Agregar vehículo
         </button>
-
-        {/* Conflict */}
-        {conflict && (
-          <div className="alert-banner danger" style={{ marginTop: 8 }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-danger-text)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/>
-              <line x1="12" y1="9" x2="12" y2="13"/>
-              <line x1="12" y1="17" x2="12.01" y2="17"/>
-            </svg>
-            <div className="alert-body">
-              <div style={{ fontSize: 12 }}>La placa {conflict.plate} ya está registrada a nombre de {conflict.ownerName}.</div>
-              <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
-                <a href="#" onClick={e => { e.preventDefault(); handleTransfer() }} style={{ fontSize: 12, fontWeight: 600 }}>Transferir a este cliente</a>
-                <a href="#" onClick={e => { e.preventDefault(); setConflict(null) }} style={{ fontSize: 12 }}>Cancelar</a>
-              </div>
-            </div>
-          </div>
+        {modalVehiculos && (
+          <VehiculosClienteModal orgId={orgId} customerId={customer.id} customerName={displayName}
+            onCerrar={() => setModalVehiculos(false)} onCambio={recargarVehiculos}/>
         )}
       </div>
 
