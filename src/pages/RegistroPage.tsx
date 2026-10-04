@@ -28,10 +28,22 @@ const TAMANOS: { id: Tamano; nombre: string; ejemplo: string }[] = [
 const vacio = (): Vehiculo => ({ placa: '', marca: '', modelo: '', color: '', tamano: '' })
 const digitos = (s: string) => s.replace(/[^0-9]/g, '')
 
-/** 7777-8888 mientras se escribe. */
-function formatoTelefono(s: string) {
+/** 7777-8888 mientras se escribe si es de El Salvador; de otro país, sólo dígitos. */
+function formatoTelefono(s: string, pais: string) {
+  if (digitos(pais) !== '503') return digitos(s).slice(0, 14)
   const d = digitos(s).slice(0, 8)
   return d.length > 4 ? `${d.slice(0, 4)}-${d.slice(4)}` : d
+}
+/** «+503» mientras se escribe: el + fijo y hasta 4 dígitos. */
+function formatoPais(s: string) {
+  return '+' + digitos(s).slice(0, 4)
+}
+/** ¿El teléfono es válido para ese país? Igual que en public_customer_signup (0056). */
+function telefonoValido(tel: string, pais: string) {
+  const p = digitos(pais), t = digitos(tel)
+  if (!p) return false
+  if (p === '503') return t.length === 8
+  return t.length >= 4 && (p + t).length <= 15
 }
 /** 01234567-8 mientras se escribe. */
 function formatoDui(s: string) {
@@ -52,6 +64,7 @@ export function RegistroPage() {
   const [nit, setNit] = useState('')
   const [nrc, setNrc] = useState('')
   const [telefono, setTelefono] = useState('')
+  const [pais, setPais] = useState('+503')
   const [correo, setCorreo] = useState('')
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([vacio()])
   const [acepta, setAcepta] = useState(false)
@@ -73,7 +86,7 @@ export function RegistroPage() {
     if (tipo === 'company' && !/^(\d{14}|\d{9})$/.test(digitos(nit))) return 'Revisá el NIT (14 dígitos)'
     if (tipo === 'individual' && dui && digitos(dui).length !== 9) return 'Revisá el DUI (9 dígitos)'
     if (tipo === 'company' && nrc && !/^\d{1,8}$/.test(digitos(nrc))) return 'Revisá el NRC'
-    if (digitos(telefono).length !== 8) return 'Falta tu teléfono (8 dígitos)'
+    if (!telefonoValido(telefono, pais)) return digitos(pais) === '503' ? 'Falta tu teléfono (8 dígitos)' : 'Revisá el teléfono'
     if (correo && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo.trim())) return 'Revisá el correo'
     for (const v of vehiculos) {
       if (v.placa.replace(/[^A-Za-z0-9]/g, '').length < 3) return 'Falta la placa de un vehículo'
@@ -81,7 +94,7 @@ export function RegistroPage() {
     }
     if (!acepta) return 'Aceptá el uso de tus datos'
     return null
-  }, [tipo, nombre, apellido, razon, nit, dui, nrc, telefono, correo, vehiculos, acepta])
+  }, [tipo, nombre, apellido, razon, nit, dui, nrc, telefono, pais, correo, vehiculos, acepta])
 
   const enviar = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -93,7 +106,7 @@ export function RegistroPage() {
       p_datos: {
         tipo, nombre, apellido, razon_social: razon, nombre_comercial: comercial,
         dui: tipo === 'individual' ? dui : '', nit: tipo === 'company' ? nit : '', nrc: tipo === 'company' ? nrc : '',
-        telefono, correo, acepta,
+        telefono, codigo_pais: pais, correo, acepta,
         vehiculos: vehiculos.map(v => ({ placa: v.placa, marca: v.marca, modelo: v.modelo, color: v.color, tamano: v.tamano })),
       },
     })
@@ -175,7 +188,7 @@ export function RegistroPage() {
                       <input id="reg-apellido" value={apellido} onChange={e => setApellido(e.target.value)} autoComplete="family-name" maxLength={60}/>
                     </Campo>
                   </div>
-                  <Campo label="DUI" ayuda="Opcional. Para facturarte a tu nombre.">
+                  <Campo label="DUI (opcional)" ayuda="Si no tenés DUI o preferís no darlo, dejalo en blanco.">
                     <input id="reg-dui" value={dui} onChange={e => setDui(formatoDui(e.target.value))} inputMode="numeric" placeholder="00000000-0"/>
                   </Campo>
                 </>) : (<>
@@ -196,7 +209,13 @@ export function RegistroPage() {
                 </>)}
                 <div className="reg-fila">
                   <Campo label="Teléfono" requerido>
-                    <input id="reg-telefono" value={telefono} onChange={e => setTelefono(formatoTelefono(e.target.value))} inputMode="tel" autoComplete="tel" placeholder="7777-8888"/>
+                    <div className="reg-telefono">
+                      <input id="reg-pais" className="reg-pais" value={pais} aria-label="Código de país"
+                             onChange={e => { const p = formatoPais(e.target.value); setPais(p); setTelefono(t => formatoTelefono(t, p)) }}
+                             inputMode="tel" autoComplete="tel-country-code"/>
+                      <input id="reg-telefono" value={telefono} onChange={e => setTelefono(formatoTelefono(e.target.value, pais))}
+                             inputMode="tel" autoComplete="tel-national" placeholder={digitos(pais) === '503' ? '7777-8888' : 'Número'}/>
+                    </div>
                   </Campo>
                   <Campo label="Correo" ayuda={tipo === 'company' ? 'Donde reciben las facturas.' : 'Para tu factura electrónica.'}>
                     <input id="reg-correo" type="email" value={correo} onChange={e => setCorreo(e.target.value)} autoComplete="email" inputMode="email" maxLength={100}/>

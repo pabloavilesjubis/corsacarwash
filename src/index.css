@@ -1282,3 +1282,6 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
   .reg-fila-3 .reg-campo:last-child { grid-column: 1 / -1; }
   .reg-title { font-size: 26px; }
 }
+.reg-telefono { display: flex; gap: 6px; min-width: 0; }
+.reg-telefono .reg-pais { flex: 0 0 74px; width: 74px; text-align: center; font-weight: 600; }
+.reg-telefono input:last-child { flex: 1; }
