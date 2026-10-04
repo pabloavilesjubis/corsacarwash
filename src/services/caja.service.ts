@@ -36,6 +36,31 @@ export async function fetchEstadoCaja(branchId: string): Promise<EstadoCaja> {
 export const abrirCaja = (branchId: string, monto: number) =>
   llamar<string>('caja_abrir', { p_branch_id: branchId, p_monto: monto })
 
+const diaSV = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'America/El_Salvador' })
+
+/** Si el último cierre fue hoy (hora de El Salvador). */
+export function cerradaHoy(estado: EstadoCaja): boolean {
+  const c = estado.ultimo_cierre?.cerrada_at
+  return !!c && diaSV(new Date(c)) === diaSV(new Date())
+}
+
+/**
+ * Abre la caja sola si está cerrada y hay un cierre anterior: el efectivo
+ * inicial es lo que quedó en ese cierre, no se le pregunta a nadie. Devuelve
+ * el estado ya actualizado. Sin cierre anterior (primera apertura) no abre:
+ * ahí sí hace falta el monto.
+ */
+export async function asegurarCajaAbierta(branchId: string): Promise<{ estado: EstadoCaja; abrioAhora: number | null }> {
+  const estado = await fetchEstadoCaja(branchId)
+  if (estado.sesion || !estado.ultimo_cierre) return { estado, abrioAhora: null }
+  // Cerrada HOY: no se reabre sola (las ventas de mañana caerían en un turno
+  // con fecha de hoy). Se reabre a mano desde el modal si hace falta.
+  if (cerradaHoy(estado)) return { estado, abrioAhora: null }
+  const monto = estado.ultimo_cierre.efectivo_final
+  await abrirCaja(branchId, monto)
+  return { estado: await fetchEstadoCaja(branchId), abrioAhora: monto }
+}
+
 export async function retirarEfectivo(sessionId: string, monto: number, motivo: string, autorizadoPor: string): Promise<ResumenCaja> {
   return normalizarResumen(await llamar('caja_retiro', {
     p_session_id: sessionId, p_monto: monto, p_motivo: motivo, p_autorizado_por: autorizadoPor,

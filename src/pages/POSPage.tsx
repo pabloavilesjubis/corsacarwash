@@ -9,6 +9,7 @@
  * Modal de cobro: Ticket (FCF) o CCF
  */
 
+import { asegurarCajaAbierta } from '../services/caja.service'
 import { CajaModal } from '../components/caja/CajaModal'
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
@@ -1269,6 +1270,18 @@ export function POSPage() {
   // memoria y la impresión no espera a la red. Un fallo acá no importa: la
   // impresión lo vuelve a pedir.
   useEffect(() => { cargarEmisor(branchId).catch(() => {}) }, [branchId])
+  // La caja abre sola al entrar al POS con lo que quedó en el último cierre
+  // (0065/0069): nadie escribe el efectivo inicial. Si ya se cerró hoy, o es
+  // la primera apertura de la sucursal, no abre: eso se hace desde el modal.
+  const puedeAbrirCaja = hasPermission('cash.open')
+  useEffect(() => {
+    if (!branchId || !puedeAbrirCaja) return
+    let vivo = true
+    asegurarCajaAbierta(branchId)
+      .then(r => { if (vivo && r.abrioAhora != null) toast.success(`Caja abierta con ${fmt(r.abrioAhora)} del último cierre`) })
+      .catch(() => {})
+    return () => { vivo = false }
+  }, [branchId, puedeAbrirCaja])
   useEffect(() => {
     if (!branchId) { setEmiteDte(false); return }
     let vivo = true

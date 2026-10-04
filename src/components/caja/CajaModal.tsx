@@ -2,8 +2,8 @@
  * CORSA — Cierre de caja y manejo de efectivo (0065).
  *
  * Desde el POS. Tres momentos de la misma caja:
- *   · sin turno abierto: se abre con el efectivo inicial (sugiere lo que quedó
- *     en el último cierre);
+ *   · sin turno abierto: se abre sola con lo que quedó en el último cierre
+ *     (sólo la primera apertura de la sucursal pide el monto);
  *   · abierta: ventas por forma de pago, el efectivo que debería haber y los
  *     retiros del día; se registra un retiro con motivo, monto y quién autoriza;
  *   · al cerrar: la remesa, el efectivo final, el reporte en PDF por correo y
@@ -13,7 +13,7 @@ import { useCallback, useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useAuth } from '../../hooks/useAuth'
 import {
-  abrirCaja, cerrarCaja, fetchAutorizadores, fetchEstadoCaja, retirarEfectivo, type EstadoCaja, type ResumenCaja,
+  abrirCaja, asegurarCajaAbierta, cerradaHoy, cerrarCaja, fetchAutorizadores, fetchEstadoCaja, retirarEfectivo, type EstadoCaja, type ResumenCaja,
 } from '../../services/caja.service'
 import { enviarCierreCaja } from '../../services/correo.service'
 import { emisorParaTicket } from '../../lib/fiscal/emisor'
@@ -44,14 +44,19 @@ export function CajaModal({ branchId, onCerrar }: { branchId: string; onCerrar: 
   const cargar = useCallback(async () => {
     setCargando(true)
     try {
-      const e = await fetchEstadoCaja(branchId)
-      setEstado(e)
-      if (!e.sesion && e.ultimo_cierre) setInicial(e.ultimo_cierre.efectivo_final.toFixed(2))
+      // Cerrada y con un cierre anterior: se abre sola con lo que quedó ahí.
+      if (hasPermission('cash.open')) {
+        const r = await asegurarCajaAbierta(branchId)
+        setEstado(r.estado)
+        if (r.abrioAhora != null) toast.success(`Caja abierta con ${money(r.abrioAhora)} del último cierre`)
+      } else {
+        setEstado(await fetchEstadoCaja(branchId))
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'No se pudo cargar la caja')
     }
     setCargando(false)
-  }, [branchId])
+  }, [branchId, hasPermission])
   useEffect(() => { cargar() }, [cargar])
 
   useEffect(() => {
@@ -68,9 +73,12 @@ export function CajaModal({ branchId, onCerrar }: { branchId: string; onCerrar: 
   const s = estado?.sesion ?? null
 
   const abrir = async () => {
-    const m = monto(inicial)
-    if (m < 0 || inicial.trim() === '') { toast.error('Ingresá el efectivo inicial'); return }
-    if (!window.confirm(`¿Abrir la caja con ${money(m)} de efectivo inicial?`)) return
+    // Con un cierre anterior el monto es lo que quedó ahí; sólo la primera
+    // apertura de la caja lo pide.
+    const previo = estado?.ultimo_cierre?.efectivo_final
+    const m = previo ?? monto(inicial)
+    if (previo == null && (m < 0 || inicial.trim() === '')) { toast.error('Ingresá el efectivo inicial'); return }
+    if (!window.confirm(`¿Abrir la caja con ${money(m)} de efectivo inicial${previo != null ? ' (lo que quedó en el último cierre)' : ''}?`)) return
     setOcupado(true)
     try {
       await abrirCaja(branchId, m)
@@ -177,8 +185,24 @@ export function CajaModal({ branchId, onCerrar }: { branchId: string; onCerrar: 
           /* ── Sin turno: abrir ── */
           <div className="ficha-cuerpo" style={{ gridTemplateColumns: '1fr' }}>
             <section className="cxc-seccion">
-              <div className="cxc-seccion-titulo">Abrir la caja</div>
+              {estado?.ultimo_cierre && estado && cerradaHoy(estado) ? (<>
+                <div className="cxc-seccion-titulo">La caja ya se cerró hoy</div>
+                <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 10 }}>
+                  Quedaron {money(estado.ultimo_cierre.efectivo_final)} en caja. Mañana abre sola con ese monto.
+                  Si hace falta seguir vendiendo hoy, se puede abrir de nuevo con lo que quedó.
+                </div>
+              </>) : (<>
+                <div className="cxc-seccion-titulo">Primera apertura de la caja</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                  Esta caja todavía no tiene cierres. Indicá el efectivo con el que arranca; desde el próximo día abre sola con lo que quede en cada cierre.
+                </div>
+              </>)}
               {hasPermission('cash.open') ? (
+                estado?.ultimo_cierre ? (
+                  <button id="caja-abrir" className="btn btn-ghost btn-sm" onClick={abrir} disabled={ocupado}>
+                    {ocupado ? 'Abriendo…' : `Abrir de nuevo con ${money(estado.ultimo_cierre.efectivo_final)}`}
+                  </button>
+                ) : (
                 <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
                   <label className="ficha-campo" style={{ flex: '1 1 200px' }}>
                     <span>Efectivo inicial (US$)</span>
@@ -189,12 +213,8 @@ export function CajaModal({ branchId, onCerrar }: { branchId: string; onCerrar: 
                     {ocupado ? 'Abriendo…' : 'Abrir caja'}
                   </button>
                 </div>
+                )
               ) : <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>No tenés permiso para abrir la caja (cash.open).</div>}
-              {estado?.ultimo_cierre && (
-                <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 8 }}>
-                  En el último cierre quedaron {money(estado.ultimo_cierre.efectivo_final)} en caja.
-                </div>
-              )}
             </section>
           </div>
         ) : (
