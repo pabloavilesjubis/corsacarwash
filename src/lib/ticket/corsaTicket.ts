@@ -264,10 +264,9 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
         <span class="line-total">${money(l.subtotal)}</span>
       </div>`).join('')
 
-  // ── Cabecera operativa: servicio, aspirado y el carro, en una franja ──
-  // La placa va en la tercera celda y no en una fila aparte: el operario lee
-  // los tres datos de un vistazo y el papel no crece.
-  const conCarro = !!(op.placa || op.vehiculo || op.ordenNumero)
+  // ── Cabecera operativa: sólo programa y aspirado ──
+  // Es lo único que el operario necesita leer desde la máquina. La placa, el
+  // vehículo y la orden bajan a una fila junto al cliente.
   const opBlock = `
     <div class="op-grid">
       <div class="op-cell">
@@ -287,13 +286,15 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
         <div class="op-label">Aspirado</div>
         ${marcaAspirado(op.aspirado)}
       </div>
-      ${conCarro ? `
-      <div class="op-cell op-cell-car">
-        ${op.placa ? `<span class="op-plate">${esc(op.placa)}</span>` : ''}
-        ${op.vehiculo ? `<span class="op-car">${esc(op.vehiculo)}</span>` : ''}
-        ${op.ordenNumero ? `<span class="op-order">Orden ${esc(op.ordenNumero)}</span>` : ''}
-      </div>` : ''}
     </div>`
+
+  const filaCarro = (conOrden: boolean) => (op.placa || op.vehiculo || (conOrden && op.ordenNumero)) ? `
+    <div class="kv-row carro-row">
+      ${op.placa ? `<span class="op-plate">${esc(op.placa)}</span>` : ''}
+      ${op.vehiculo ? `<span class="op-car">${esc(op.vehiculo)}</span>` : ''}
+      ${conOrden && op.ordenNumero ? `<span><b>Orden</b> ${esc(op.ordenNumero)}</span>` : ''}
+    </div>` : ''
+  const carroRow = filaCarro(true)
 
   // Atendió va en la misma fila que el cliente de mostrador; con un receptor
   // identificado los datos del CCF van de a dos por fila.
@@ -312,8 +313,9 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
            ${cli.telefono ? `<span><b>Tel</b> ${esc(cli.telefono)}</span>` : ''}
            ${cli.correo ? `<span class="wrap"><b>Correo</b> ${esc(cli.correo)}</span>` : ''}
          </div>` : ''}
+         ${carroRow}
        </div>`
-    : `<div class="kv-block"><div class="kv-row"><span><b>Cliente</b> Consumidor Final</span>${atendioHTML}</div></div>`
+    : `<div class="kv-block"><div class="kv-row"><span><b>Cliente</b> Consumidor Final</span>${atendioHTML}</div>${carroRow}</div>`
 
   /**
    * El seguro, impreso con marco grueso.
@@ -437,6 +439,7 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
         ${ordenDeLavado.cliente ? `<div class="kv-row"><span class="k">Cliente</span><span class="v">${esc(ordenDeLavado.cliente)}</span></div>` : ''}
         <div class="kv-row"><span class="k">Servicio</span><span class="v">${esc(op.servicio)}</span></div>
         <div class="kv-row"><span class="k">Aspirado</span><span class="v">${op.aspirado ? 'Incluido' : 'No incluye'}</span></div>
+        ${filaCarro(false)}
       </div>
       <div class="redencion-note">
         Comprobante interno de piso.<br/>
@@ -452,6 +455,7 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
         <div class="kv-row"><span class="k">Cliente</span><span class="v">${esc(redencion.clienteNombre)}</span></div>
         <div class="kv-row"><span class="k">Servicio</span><span class="v">${esc(op.servicio)}</span></div>
         <div class="kv-row"><span class="k">Aspirado</span><span class="v">${op.aspirado ? 'Incluido' : 'No incluye'}</span></div>
+        ${carroRow}
         <div class="kv-row"><span class="k">Fecha</span><span class="v">${esc(redencion.fecha)}</span></div>
       </div>
       <div class="redencion-note">
@@ -497,8 +501,7 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
     flex: 1 1 0; padding: 3px 2px 4px; min-width: 0;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
   }
-  .op-cell-mid { flex: 0 0 24%; border-left: 3px solid #000; }
-  .op-cell-car { flex: 1.25 1 0; border-left: 3px solid #000; gap: 2px; }
+  .op-cell-mid { border-left: 3px solid #000; }
   .op-label {
     font-size: 8.5px; font-weight: 900; letter-spacing: 0.14em;
     text-transform: uppercase;
@@ -513,13 +516,16 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
     font-size: 9.5px; font-weight: 900; letter-spacing: 0.06em;
     margin-top: 1px; text-align: center; line-height: 1.1;
   }
+
+  /* Placa, vehículo y orden: una fila bajo el cliente */
+  .carro-row { align-items: center; margin-top: 1px; }
   .op-plate {
-    border: 2px solid #000; padding: 0 4px;
+    border: 2px solid #000; padding: 0 4px; flex-shrink: 0;
     font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
-    font-size: 13px; font-weight: 900;
+    font-size: 11px; font-weight: 900;
   }
-  .op-car { font-size: 9px; font-weight: 700; line-height: 1.15; }
-  .op-order { font-size: 9.5px; font-weight: 900; }
+  .op-car { flex: 1 1 auto; font-size: 9px; font-weight: 700; text-align: left; min-width: 0; }
+  .carro-row > span:last-child:not(.op-car) { white-space: nowrap; }
 
   /* ── Seguro de lluvia ── */
   .seguro-block {
@@ -613,7 +619,8 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
   .line-total { flex-shrink: 0; font-family: 'SF Mono', monospace; font-size: 10px; font-weight: 900; }
 
   /* Cierre: el QR a la izquierda y los totales al lado, en la misma franja. */
-  .cierre { display: flex; align-items: center; gap: 6px; border-top: 2px solid #000; padding-top: 3px; margin-top: 2px; }
+  /* El margen en blanco entre el QR y los totales separa las dos lecturas. */
+  .cierre { display: flex; align-items: center; gap: 6mm; border-top: 2px solid #000; padding-top: 3px; margin-top: 2px; }
   .totals { flex: 1 1 auto; min-width: 0; font-size: 10px; text-align: left; }
   .totals-row { display: flex; justify-content: space-between; font-weight: 600; }
   .totals-row.total {
