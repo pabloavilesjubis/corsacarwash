@@ -10,8 +10,12 @@
  *   puro y la jerarquía se construye con font-weight, font-size y bordes.
  *
  * Espaciado: comprimido al mínimo sin quitar información — el ticket se
- * imprime decenas de veces por día y cada milímetro es papel. El bloque
- * operativo de arriba queda intacto a propósito: ahí el tamaño ES la función.
+ * imprime decenas de veces por día y cada milímetro es papel. Lo que se
+ * puede poner lado a lado va lado a lado: el carro junto a los cuadrantes,
+ * los datos legales junto al logo, rótulo y valor del DTE en una fila, el QR
+ * junto a los totales. Una FCF típica mide ~116 mm (antes ~248 mm). El número
+ * del programa sigue siendo lo más grande del papel: ahí el tamaño ES la
+ * función.
  *
  * Diferencia con BEON: la cabecera operativa. El ticket de CORSA además de
  * comprobante fiscal es la orden que lee el equipo en piso, así que arriba de
@@ -251,16 +255,19 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
   const subSinIva = (v.total ?? 0) - iva
   const descuento = v.descuento ?? 0
 
+  // Una fila por línea: nombre, cantidad × precio e importe lado a lado. En dos
+  // filas cada servicio gastaba el doble de papel sin decir nada más.
   const lineasHTML = v.lineas.map(l => `
       <div class="line">
-        <div class="line-name">${esc(l.nombre)}</div>
-        <div class="line-row">
-          <span class="line-qty">${l.cantidad} × ${money(l.precioUnitario)}</span>
-          <span class="line-total">${money(l.subtotal)}</span>
-        </div>
+        <span class="line-name">${esc(l.nombre)}</span>
+        <span class="line-qty">${l.cantidad} × ${money(l.precioUnitario)}</span>
+        <span class="line-total">${money(l.subtotal)}</span>
       </div>`).join('')
 
-  // ── Cabecera operativa: los dos cuadrantes ──
+  // ── Cabecera operativa: servicio, aspirado y el carro, en una franja ──
+  // La placa va en la tercera celda y no en una fila aparte: el operario lee
+  // los tres datos de un vistazo y el papel no crece.
+  const conCarro = !!(op.placa || op.vehiculo || op.ordenNumero)
   const opBlock = `
     <div class="op-grid">
       <div class="op-cell">
@@ -276,30 +283,37 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
           : `<div class="op-number op-number-unknown">?</div>
              <div class="op-sub">${esc(op.servicio)}</div>`}
       </div>
-      <div class="op-cell op-cell-right">
+      <div class="op-cell op-cell-mid">
         <div class="op-label">Aspirado</div>
         ${marcaAspirado(op.aspirado)}
       </div>
-    </div>
-    ${(op.placa || op.vehiculo || op.ordenNumero) ? `
-    <div class="op-meta">
-      ${op.placa ? `<span class="op-plate">${esc(op.placa)}</span>` : ''}
-      ${op.vehiculo ? `<span>${esc(op.vehiculo)}</span>` : ''}
-      ${op.ordenNumero ? `<span>Orden ${esc(op.ordenNumero)}</span>` : ''}
-    </div>` : ''}`
+      ${conCarro ? `
+      <div class="op-cell op-cell-car">
+        ${op.placa ? `<span class="op-plate">${esc(op.placa)}</span>` : ''}
+        ${op.vehiculo ? `<span class="op-car">${esc(op.vehiculo)}</span>` : ''}
+        ${op.ordenNumero ? `<span class="op-order">Orden ${esc(op.ordenNumero)}</span>` : ''}
+      </div>` : ''}
+    </div>`
 
+  // Atendió va en la misma fila que el cliente de mostrador; con un receptor
+  // identificado los datos del CCF van de a dos por fila.
+  const atendioHTML = atendio ? `<span><b>Atendió</b> ${esc(atendio)}</span>` : ''
   const clienteBlock = cli?.nombre && cli.nombre !== 'Consumidor Final'
     ? `<div class="kv-block">
-         <div class="kv-label-row">Receptor</div>
-         <div class="kv-row"><span class="k">Nombre</span><span class="v">${esc(cli.nombre)}</span></div>
-         ${cli.numeroDocumento ? `<div class="kv-row"><span class="k">${esc(cli.tipoDocumento || 'Doc')}</span><span class="v mono">${esc(cli.numeroDocumento)}</span></div>` : ''}
-         ${cli.nrc ? `<div class="kv-row"><span class="k">NRC</span><span class="v mono">${esc(cli.nrc)}</span></div>` : ''}
-         ${cli.actividad ? `<div class="kv-row"><span class="k">Actividad</span><span class="v">${esc(cli.actividad)}</span></div>` : ''}
-         ${cli.direccion ? `<div class="kv-row"><span class="k">Dirección</span><span class="v">${esc(cli.direccion)}</span></div>` : ''}
-         ${cli.telefono ? `<div class="kv-row"><span class="k">Teléfono</span><span class="v">${esc(cli.telefono)}</span></div>` : ''}
-         ${cli.correo ? `<div class="kv-row"><span class="k">Correo</span><span class="v wrap">${esc(cli.correo)}</span></div>` : ''}
+         <div class="kv-label-row"><span>Receptor</span>${atendioHTML}</div>
+         <div class="kv-row"><span class="v strong">${esc(cli.nombre)}</span></div>
+         ${(cli.numeroDocumento || cli.nrc) ? `<div class="kv-row">
+           ${cli.numeroDocumento ? `<span><b>${esc(cli.tipoDocumento || 'Doc')}</b> <span class="mono">${esc(cli.numeroDocumento)}</span></span>` : ''}
+           ${cli.nrc ? `<span><b>NRC</b> <span class="mono">${esc(cli.nrc)}</span></span>` : ''}
+         </div>` : ''}
+         ${cli.actividad ? `<div class="kv-row"><span><b>Actividad</b> ${esc(cli.actividad)}</span></div>` : ''}
+         ${cli.direccion ? `<div class="kv-row"><span><b>Dirección</b> ${esc(cli.direccion)}</span></div>` : ''}
+         ${(cli.telefono || cli.correo) ? `<div class="kv-row">
+           ${cli.telefono ? `<span><b>Tel</b> ${esc(cli.telefono)}</span>` : ''}
+           ${cli.correo ? `<span class="wrap"><b>Correo</b> ${esc(cli.correo)}</span>` : ''}
+         </div>` : ''}
        </div>`
-    : `<div class="kv-block"><div class="kv-row"><span class="k">Cliente</span><span class="v">Consumidor Final</span></div></div>`
+    : `<div class="kv-block"><div class="kv-row"><span><b>Cliente</b> Consumidor Final</span>${atendioHTML}</div></div>`
 
   /**
    * El seguro, impreso con marco grueso.
@@ -311,10 +325,13 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
    */
   const seguroBlock = seguroLluvia ? `
     <div class="seguro-block">
-      <div class="seguro-title">SEGURO DE LLUVIA</div>
-      ${seguroLluvia.cortesia ? `<div class="seguro-cortesia">CORTESÍA</div>` : ''}
-      <div class="seguro-sub">Un lavado PRO sin costo si llueve</div>
-      <div class="seguro-plate">${esc(seguroLluvia.placa)}</div>
+      <div class="seguro-head">
+        <div>
+          <div class="seguro-title">SEGURO DE LLUVIA${seguroLluvia.cortesia ? ` <span class="seguro-cortesia">CORTESÍA</span>` : ''}</div>
+          <div class="seguro-sub">Un lavado PRO sin costo si llueve</div>
+        </div>
+        <div class="seguro-plate">${esc(seguroLluvia.placa)}</div>
+      </div>
       <div class="seguro-rows">
         <div class="seguro-row"><span>Desde</span><span>${esc(formatearFechaHora(seguroLluvia.desde, {
           day: '2-digit', month: '2-digit', year: 'numeric',
@@ -345,6 +362,8 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
   // configuración fiscal está incompleta: no es ni será un documento
   // tributario, y el papel lo dice en vez de prometer una transmisión.
   const sinValidezFiscal = !d.numeroControl && !e.nit
+  // Con DTE la fecha de emisión es una fila más del recuadro; sin él, va suelta.
+  const fechaEnDte = !creditoDiferido && !!d.numeroControl
   const dteBlock = creditoDiferido
     ? `<div class="dte-block dte-pending">
          <div class="dte-title">Venta al crédito</div>
@@ -356,21 +375,27 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
          <div class="dte-pending-text">Sin validez fiscal</div>
        </div>`
     : d.numeroControl
+    // Rótulo y valor en la misma fila: los tres identificadores caben enteros
+    // en el ancho del papel con la mono chica, y la emisión cierra el recuadro.
     ? `<div class="dte-block">
          <div class="dte-title">Documento tributario electrónico</div>
          ${invalidado ? `<div class="dte-void">DOCUMENTO INVALIDADO</div>` : ''}
          <div class="dte-row">
-           <div class="dte-label">Número de control</div>
-           <div class="dte-value mono strong wrap">${esc(d.numeroControl)}</div>
+           <span class="dte-label">N° control</span>
+           <span class="dte-value mono strong wrap">${esc(d.numeroControl)}</span>
          </div>
          <div class="dte-row">
-           <div class="dte-label">Código de generación</div>
-           <div class="dte-value mono wrap">${esc(d.codigoGeneracion)}</div>
+           <span class="dte-label">Cód. gen.</span>
+           <span class="dte-value mono wrap">${esc(d.codigoGeneracion)}</span>
          </div>
          <div class="dte-row">
-           <div class="dte-label">Sello de recepción</div>
-           <div class="dte-value mono wrap">${d.selloRecibido ? esc(d.selloRecibido) : 'Pendiente'}</div>
+           <span class="dte-label">Sello</span>
+           <span class="dte-value mono wrap">${d.selloRecibido ? esc(d.selloRecibido) : 'Pendiente'}</span>
          </div>
+         ${fechaEmision ? `<div class="dte-row">
+           <span class="dte-label">Emisión</span>
+           <span class="dte-value mono">${esc(fechaEmision)}</span>
+         </div>` : ''}
        </div>`
     : `<div class="dte-block dte-pending">
          <div class="dte-title">Documento tributario electrónico</div>
@@ -380,7 +405,7 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
   const qrBlock = d.qrUrl
     ? `<div class="qr-block">
          <div class="qr-img">${qrSvg(d.qrUrl, { margen: 0 })}</div>
-         <div class="qr-caption">Verificá este documento en<br/>admin.factura.gob.sv</div>
+         <div class="qr-caption">Verificá en<br/>admin.factura.gob.sv</div>
        </div>`
     : ''
 
@@ -452,167 +477,183 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
   html, body { margin: 0; padding: 0; background: #fff; }
   body {
     font-family: 'Helvetica Neue', Arial, sans-serif;
-    font-size: 12px; line-height: 1.25;
-    padding: 3mm 2mm; width: 100%;
+    font-size: 10px; line-height: 1.2;
+    padding: 2mm 1.5mm; width: 100%;
     -webkit-font-smoothing: none;   /* anti-aliasing apagado: nitidez térmica */
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
   .ticket { width: 100%; text-align: center; }
+  b { font-weight: 900; }
 
-  /* ── Cabecera operativa ── */
+  /* ── Cabecera operativa: una franja de tres celdas ──
+     El número del programa sigue siendo lo más grande del papel: es lo que
+     el operario lee desde la máquina. Lo que se achicó es el aire alrededor. */
   .op-grid {
     display: flex; width: 100%;
-    border: 3px solid #000; margin-bottom: 6px;
+    border: 3px solid #000; margin-bottom: 4px;
   }
   .op-cell {
-    flex: 1 1 50%; padding: 6px 2px 7px;
-    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+    flex: 1 1 0; padding: 3px 2px 4px; min-width: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
   }
-  /* Divisoria entre cuadrantes */
-  .op-cell-right { border-left: 3px solid #000; }
+  .op-cell-mid { flex: 0 0 24%; border-left: 3px solid #000; }
+  .op-cell-car { flex: 1.25 1 0; border-left: 3px solid #000; gap: 2px; }
   .op-label {
-    font-size: 10px; font-weight: 900; letter-spacing: 0.16em;
+    font-size: 8.5px; font-weight: 900; letter-spacing: 0.14em;
     text-transform: uppercase;
   }
   .op-number {
-    font-size: 62px; font-weight: 900; line-height: 0.95;
-    margin: 2px 0 0; font-variant-numeric: tabular-nums;
+    font-size: 46px; font-weight: 900; line-height: 0.95;
+    margin: 1px 0 0; font-variant-numeric: tabular-nums;
   }
-  .op-number-unknown { font-size: 48px; }
-  .mark { width: 70px; height: 70px; margin: 4px 0 2px; display: block; }
+  .op-number-unknown { font-size: 38px; }
+  .mark { width: 42px; height: 42px; margin: 3px 0 0; display: block; }
   .op-sub {
-    font-size: 11px; font-weight: 900; letter-spacing: 0.08em;
-    margin-top: 3px; text-align: center; line-height: 1.15;
-  }
-  .op-meta {
-    display: flex; justify-content: center; gap: 8px; flex-wrap: wrap;
-    font-size: 11px; font-weight: 700; margin-bottom: 6px;
+    font-size: 9.5px; font-weight: 900; letter-spacing: 0.06em;
+    margin-top: 1px; text-align: center; line-height: 1.1;
   }
   .op-plate {
-    border: 2px solid #000; padding: 1px 6px;
-    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; font-weight: 900;
+    border: 2px solid #000; padding: 0 4px;
+    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+    font-size: 13px; font-weight: 900;
   }
+  .op-car { font-size: 9px; font-weight: 700; line-height: 1.15; }
+  .op-order { font-size: 9.5px; font-weight: 900; }
 
   /* ── Seguro de lluvia ── */
   .seguro-block {
-    border: 3px solid #000; padding: 6px 8px; margin: 6px 0;
-    text-align: center;
+    border: 3px solid #000; padding: 3px 5px; margin: 4px 0;
+    text-align: left;
   }
-  .seguro-title { font-size: 14px; font-weight: 900; letter-spacing: 0.1em; }
-  .seguro-sub { font-size: 10px; font-weight: 700; margin-top: 2px; }
+  .seguro-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  .seguro-title { font-size: 12px; font-weight: 900; letter-spacing: 0.08em; }
+  .seguro-sub { font-size: 9px; font-weight: 700; }
   .seguro-cortesia {
-    display: inline-block; border: 2px solid #000; padding: 0 8px; margin-top: 3px;
-    font-size: 12px; font-weight: 900; letter-spacing: 0.14em;
+    display: inline-block; border: 2px solid #000; padding: 0 4px;
+    font-size: 10px; font-weight: 900; letter-spacing: 0.12em;
   }
   .seguro-plate {
-    border: 2px solid #000; display: inline-block;
-    padding: 2px 10px; margin: 5px 0 4px;
+    border: 2px solid #000; padding: 1px 6px; flex-shrink: 0;
     font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
-    font-size: 17px; font-weight: 900; letter-spacing: 0.08em;
+    font-size: 15px; font-weight: 900; letter-spacing: 0.06em;
   }
-  .seguro-rows { font-size: 11px; font-weight: 700; }
-  .seguro-row { display: flex; justify-content: space-between; padding: 1px 2px; }
+  .seguro-rows { font-size: 10px; font-weight: 700; margin-top: 2px; }
+  .seguro-row { display: flex; justify-content: space-between; padding: 0 1px; }
   .seguro-row .strong { font-weight: 900; text-decoration: underline; }
-  .seguro-legal { font-size: 9.5px; font-weight: 600; margin-top: 4px; line-height: 1.25; }
+  .seguro-legal { font-size: 8.5px; font-weight: 600; margin-top: 1px; line-height: 1.2; }
 
-  /* ── Branding ── */
-  .brand-block { text-align: center; margin-bottom: 4px; }
-  .brand-logo { width: 30mm; height: auto; display: block; margin: 2px auto 3px; }
-  .brand-tag { font-size: 10px; font-weight: 700; letter-spacing: 0.24em; margin-top: 3px; text-transform: uppercase; }
-  .legal-name { font-size: 11px; font-weight: 700; margin-top: 4px; }
-  .legal-meta { font-size: 10px; font-weight: 600; margin-top: 2px; }
-  .legal-addr { font-size: 10px; font-weight: 400; margin-top: 2px; padding: 0 2px; }
+  /* ── Branding: el logo a la izquierda y los datos legales al lado ── */
+  .brand-block { display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 2px; }
+  .brand-logo { width: 21mm; height: auto; display: block; flex-shrink: 0; }
+  .legal { text-align: left; min-width: 0; }
+  .legal-name { font-size: 9.5px; font-weight: 900; line-height: 1.15; }
+  .legal-meta { font-size: 8.5px; font-weight: 700; }
+  .legal-addr { font-size: 8px; font-weight: 400; line-height: 1.15; }
 
   /* Separadores: siempre negro sólido (los dashed claros desaparecen) */
-  .sep       { border: none; border-top: 1px solid #000; margin: 4px 0; }
-  .sep-solid { border: none; border-top: 2px solid #000; margin: 4px 0; }
+  .sep       { border: none; border-top: 1px solid #000; margin: 3px 0; }
+  .sep-solid { border: none; border-top: 2px solid #000; margin: 2px 0 3px; }
 
-  .doc-type { text-align: center; margin: 5px 0 3px; }
-  .doc-type-name { font-size: 13px; font-weight: 900; letter-spacing: 0.06em; }
-  .doc-type-amb { font-size: 10px; font-weight: 700; letter-spacing: 0.14em; margin-top: 2px; }
+  .doc-type { text-align: center; margin: 2px 0; }
+  .doc-type-name { font-size: 11.5px; font-weight: 900; letter-spacing: 0.05em; }
+  .doc-type-amb { font-size: 8.5px; font-weight: 700; letter-spacing: 0.12em; }
 
   /* Recuadro del DTE: mismo marco que la cabecera operativa, más fino. */
-  .dte-block { margin: 5px 0; padding: 4px 6px 3px; border: 2px solid #000; text-align: left; }
+  .dte-block { margin: 2px 0; padding: 2px 4px; border: 2px solid #000; text-align: left; }
   .dte-title {
-    font-size: 9px; font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase;
-    text-align: center; border-bottom: 1px solid #000; padding-bottom: 2px; margin-bottom: 3px;
+    font-size: 7.5px; font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase;
+    text-align: center; border-bottom: 1px solid #000; padding-bottom: 1px; margin-bottom: 1px;
   }
   .dte-void {
-    font-size: 12px; font-weight: 900; letter-spacing: 0.08em; text-align: center;
-    border: 2px solid #000; padding: 2px 0; margin-bottom: 3px;
+    font-size: 11px; font-weight: 900; letter-spacing: 0.08em; text-align: center;
+    border: 2px solid #000; padding: 1px 0; margin-bottom: 2px;
   }
-  .dte-row { margin-bottom: 3px; }
-  .dte-label { font-size: 9px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 1px; }
-  .dte-value { font-size: 10.5px; line-height: 1.2; font-weight: 700; }
-  .dte-pending-text { font-size: 10px; font-weight: 700; text-align: center; padding: 1px 0 2px; }
+  .dte-row { display: flex; align-items: baseline; gap: 4px; }
+  .dte-label {
+    flex: 0 0 54px; white-space: nowrap; font-size: 7.5px; font-weight: 900; letter-spacing: 0.02em; text-transform: uppercase;
+  }
+  .dte-value { flex: 1 1 auto; min-width: 0; font-size: 8.5px; line-height: 1.25; font-weight: 700; }
+  .dte-pending-text { font-size: 9px; font-weight: 700; text-align: center; }
   .mono { font-family: 'SF Mono', 'Menlo', 'Consolas', 'Courier New', monospace; }
   .strong { font-weight: 900; }
-  .small { font-size: 10px; font-weight: 400; }
+  .small { font-size: 9px; font-weight: 400; }
   .wrap { word-break: break-all; overflow-wrap: anywhere; }
-  .fecha-row { font-size: 10px; font-weight: 700; text-align: right; margin-top: 2px; }
+  .fecha-row { font-size: 9px; font-weight: 700; text-align: right; }
 
-  .kv-block { margin: 3px 0; text-align: left; }
+  .kv-block { margin: 2px 0; text-align: left; }
   .kv-label-row {
-    font-size: 9px; font-weight: 900; letter-spacing: 0.1em;
+    display: flex; justify-content: space-between; gap: 6px;
+    font-size: 8px; font-weight: 900; letter-spacing: 0.1em;
     text-transform: uppercase; border-bottom: 1px solid #000;
-    padding-bottom: 1px; margin-bottom: 2px;
+    padding-bottom: 1px; margin-bottom: 1px;
   }
-  .kv-row { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; font-weight: 700; padding: 1px 0; }
-  .kv-row .k { flex-shrink: 0; }
+  .kv-label-row span:last-child { text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 9.5px; }
+  .kv-label-row b { font-weight: 900; }
+  .kv-row { display: flex; justify-content: space-between; gap: 6px; font-size: 9.5px; font-weight: 400; line-height: 1.25; }
+  .kv-row .k { flex-shrink: 0; font-weight: 700; }
   .kv-row .v { text-align: right; word-break: break-word; font-weight: 400; }
+  .kv-row .v.strong { text-align: left; font-weight: 900; }
 
   /* Detalle: una línea por servicio. El operario y el cliente tienen que ver
      el lavado y el aspirado por separado, no un único importe agregado. */
-  .items { margin: 2px 0; text-align: left; }
+  .items { margin: 3px 0 2px; text-align: left; }
   .items-head {
     display: flex; justify-content: space-between;
-    font-size: 9px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase;
-    border-bottom: 1px solid #000; padding-bottom: 2px; margin-bottom: 4px;
+    font-size: 8px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase;
+    border-bottom: 1px solid #000; padding-bottom: 1px; margin-bottom: 1px;
   }
-  .line { margin-bottom: 4px; padding-bottom: 3px; border-bottom: 1px dotted #000; }
+  .line {
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 1px 0; border-bottom: 1px dotted #000;
+  }
   .line:last-child { border-bottom: none; }
-  .line-name { font-size: 12px; line-height: 1.2; font-weight: 700; }
-  .line-row { display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; margin-top: 1px; }
-  .line-qty { font-family: 'SF Mono', monospace; }
-  .line-total { font-family: 'SF Mono', monospace; font-weight: 900; }
+  .line-name { flex: 1 1 auto; min-width: 0; font-size: 10px; line-height: 1.2; font-weight: 700; }
+  .line-qty { flex-shrink: 0; font-family: 'SF Mono', monospace; font-size: 9px; font-weight: 600; }
+  .line-total { flex-shrink: 0; font-family: 'SF Mono', monospace; font-size: 10px; font-weight: 900; }
 
-  .totals { margin: 2px 0; font-size: 12px; text-align: left; }
-  .totals-row { display: flex; justify-content: space-between; padding: 1px 0; font-weight: 600; }
+  /* Cierre: el QR a la izquierda y los totales al lado, en la misma franja. */
+  .cierre { display: flex; align-items: center; gap: 6px; border-top: 2px solid #000; padding-top: 3px; margin-top: 2px; }
+  .totals { flex: 1 1 auto; min-width: 0; font-size: 10px; text-align: left; }
+  .totals-row { display: flex; justify-content: space-between; font-weight: 600; }
   .totals-row.total {
-    font-size: 18px; font-weight: 900; padding: 5px 0 4px; margin-top: 4px;
+    font-size: 16px; font-weight: 900; padding: 2px 0 1px; margin-top: 2px;
     border-top: 2px solid #000; border-bottom: 2px solid #000;
   }
   .totals-row .v { font-family: 'SF Mono', monospace; }
-  .pay-row { display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; margin-top: 4px; padding: 2px 0; }
+  .pay-row { display: flex; justify-content: space-between; font-size: 9.5px; font-weight: 700; margin-top: 1px; }
 
-  .qr-block { text-align: center; margin: 7px 0 4px; }
-  .qr-img { width: 38mm; height: 38mm; max-width: 100%; display: inline-block; }
+  /* 26 mm siguen dando cuatro puntos de la térmica por módulo: se escanea. */
+  .qr-block { flex: 0 0 26mm; text-align: center; }
+  .qr-img { width: 26mm; height: 26mm; display: block; }
   .qr-img svg { width: 100%; height: 100%; display: block; }
-  .qr-caption { font-size: 10px; font-weight: 600; margin-top: 3px; line-height: 1.3; }
+  .qr-caption { font-size: 7px; font-weight: 700; margin-top: 1px; line-height: 1.15; }
 
-  .footer { text-align: center; margin-top: 6px; padding-top: 4px; border-top: 1px solid #000; }
-  .footer-thanks { font-size: 12px; font-weight: 900; }
-  .footer-meta { font-size: 10px; font-weight: 600; margin-top: 2px; letter-spacing: 0.04em; }
+  .footer {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 6px;
+    margin-top: 4px; padding-top: 2px; border-top: 1px solid #000;
+  }
+  .footer-thanks { font-size: 9.5px; font-weight: 900; white-space: nowrap; }
+  .footer-meta { font-size: 8px; font-weight: 600; white-space: nowrap; }
 
-  /* Canje de cupón */
-  .redencion { margin: 8px 0 4px; text-align: center; }
+  /* Canje de cupón, orden de lavado y cortesía */
+  .redencion { margin: 3px 0 2px; text-align: center; }
   .redencion-title {
-    font-size: 12px; font-weight: 900; letter-spacing: 0.12em;
+    font-size: 11px; font-weight: 900; letter-spacing: 0.12em;
     text-transform: uppercase; border-top: 2px solid #000; border-bottom: 2px solid #000;
-    padding: 5px 0;
+    padding: 2px 0;
   }
   .redencion-code {
     font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
-    font-size: 30px; font-weight: 900; letter-spacing: 0.06em; margin: 6px 0 2px;
+    font-size: 24px; font-weight: 900; letter-spacing: 0.06em; margin: 2px 0 0;
   }
-  .redencion-note { font-size: 10px; font-weight: 600; line-height: 1.35; margin-top: 6px; }
+  .redencion-note { font-size: 8.5px; font-weight: 600; line-height: 1.25; margin-top: 3px; }
 
   /* Espacio para que la cuchilla no corte información */
-  .bottom-pad { height: 12px; }
+  .bottom-pad { height: 8px; }
 
   @media print {
-    body { padding: 1.5mm 1mm; }
+    body { padding: 1mm 1mm; }
     @page { margin: 0; }
   }
 </style>
@@ -623,10 +664,12 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
 
     <div class="brand-block">
       ${LOGO_SVG}
-      ${e.razonSocial ? `<div class="legal-name">${esc(e.razonSocial)}</div>` : ''}
-      ${(e.nit || e.nrc) ? `<div class="legal-meta">${e.nit ? `NIT ${esc(e.nit)}` : ''}${(e.nit && e.nrc) ? ' · ' : ''}${e.nrc ? `NRC ${esc(e.nrc)}` : ''}</div>` : ''}
-      ${e.direccion ? `<div class="legal-addr">${esc(e.direccion)}</div>` : ''}
-      ${e.telefono ? `<div class="legal-meta">Tel: ${esc(e.telefono)}</div>` : ''}
+      ${(e.razonSocial || e.nit || e.nrc || e.direccion || e.telefono) ? `<div class="legal">
+        ${e.razonSocial ? `<div class="legal-name">${esc(e.razonSocial)}</div>` : ''}
+        ${(e.nit || e.nrc) ? `<div class="legal-meta">${e.nit ? `NIT ${esc(e.nit)}` : ''}${(e.nit && e.nrc) ? ' · ' : ''}${e.nrc ? `NRC ${esc(e.nrc)}` : ''}</div>` : ''}
+        ${e.direccion ? `<div class="legal-addr">${esc(e.direccion)}</div>` : ''}
+        ${e.telefono ? `<div class="legal-meta">Tel: ${esc(e.telefono)}</div>` : ''}
+      </div>` : ''}
     </div>
 
     <hr class="sep-solid"/>
@@ -638,36 +681,34 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
     </div>
 
     ${dteBlock}
-    ${fechaEmision ? `<div class="fecha-row">Emisión: ${esc(fechaEmision)}</div>` : ''}
-    ${consolidado ? `<div class="kv-block"><div class="kv-row"><span class="k">Lavados</span><span class="v">${consolidado.lavados}</span></div>
-      <div class="kv-row"><span class="k">Período</span><span class="v">${esc(consolidado.desde)} – ${esc(consolidado.hasta)}</span></div></div>` : ''}
+    ${fechaEmision && !fechaEnDte ? `<div class="fecha-row">Emisión: ${esc(fechaEmision)}</div>` : ''}
+    ${consolidado ? `<div class="kv-block"><div class="kv-row"><span><b>Lavados</b> ${consolidado.lavados}</span>
+      <span><b>Período</b> ${esc(consolidado.desde)} – ${esc(consolidado.hasta)}</span></div></div>` : ''}
 
     <hr class="sep"/>
     ${clienteBlock}
-    ${atendio ? `<div class="kv-block"><div class="kv-row"><span class="k">Atendió</span><span class="v">${esc(atendio)}</span></div></div>` : ''}
 
     ${seguroBlock}
 
-    <hr class="sep"/>
     <div class="items">
       <div class="items-head"><span>Detalle</span><span>Importe</span></div>
       ${lineasHTML}
     </div>
 
-    <hr class="sep"/>
-    <div class="totals">
-      <div class="totals-row"><span class="k">Subtotal s/IVA</span><span class="v">${money(subSinIva)}</span></div>
-      <div class="totals-row"><span class="k">IVA 13%</span><span class="v">${money(iva)}</span></div>
-      ${descuento > 0 ? `<div class="totals-row"><span class="k">Descuento</span><span class="v">−${money(descuento)}</span></div>` : ''}
-      <div class="totals-row total"><span class="k">TOTAL</span><span class="v">${money(v.total)}</span></div>
-      ${v.metodoPago ? `<div class="pay-row"><span>Pago</span><span>${esc(v.metodoPago)}</span></div>` : ''}
-    </div>
-
-    ${qrBlock}`}
+    <div class="cierre">
+      ${qrBlock}
+      <div class="totals">
+        <div class="totals-row"><span class="k">Subtotal s/IVA</span><span class="v">${money(subSinIva)}</span></div>
+        <div class="totals-row"><span class="k">IVA 13%</span><span class="v">${money(iva)}</span></div>
+        ${descuento > 0 ? `<div class="totals-row"><span class="k">Descuento</span><span class="v">−${money(descuento)}</span></div>` : ''}
+        <div class="totals-row total"><span class="k">TOTAL</span><span class="v">${money(v.total)}</span></div>
+        ${v.metodoPago ? `<div class="pay-row"><span>Pago</span><span>${esc(v.metodoPago)}</span></div>` : ''}
+      </div>
+    </div>`}
 
     <div class="footer">
-      <div class="footer-thanks">¡Gracias por su preferencia!</div>
-      <div class="footer-meta">CORSA Carwash · ${new Date().toLocaleDateString('es-SV')}</div>
+      <span class="footer-thanks">¡Gracias por su preferencia!</span>
+      <span class="footer-meta">CORSA Carwash · ${new Date().toLocaleDateString('es-SV')}</span>
     </div>
 
     <div class="bottom-pad"></div>
