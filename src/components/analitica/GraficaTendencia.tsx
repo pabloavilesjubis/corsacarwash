@@ -14,11 +14,14 @@ import { dinero, entero } from '../../lib/analitica/variacion'
 
 const W = 800, H = 250, M = { top: 14, right: 44, bottom: 30, left: 58 }
 
+/** Máximo del eje: cuatro pasos redondos (1, 2 o 5 × 10ⁿ) que cubren n. */
 function tope(n: number): number {
-  if (n <= 0) return 1
-  const p = Math.pow(10, Math.floor(Math.log10(n)))
-  const f = n / p
-  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p
+  if (n <= 0) return 4
+  const crudo = n / 4
+  const p = Math.pow(10, Math.floor(Math.log10(crudo)))
+  const f = crudo / p
+  const paso = Math.max(1, (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p)
+  return paso * 4
 }
 
 export function GraficaTendencia({ actual, anterior, granularidad }: {
@@ -47,6 +50,7 @@ export function GraficaTendencia({ actual, anterior, granularidad }: {
         <span><span style={{ display: 'inline-block', width: 14, height: 3, background: 'var(--corsa-orange)', borderRadius: 2, marginRight: 5, verticalAlign: 'middle' }}/>Lavados</span>
         <span><span style={{ display: 'inline-block', width: 10, height: 10, background: 'var(--border)', borderRadius: 2, marginRight: 5 }}/>Período anterior</span>
       </div>
+      <div className="bi-grafica">
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }} role="img"
            aria-label="Facturación y lavados por período, contra el período anterior"
            onMouseLeave={() => setFoco(null)}>
@@ -82,6 +86,7 @@ export function GraficaTendencia({ actual, anterior, granularidad }: {
           <circle key={pt.bucket} cx={x(i)} cy={yL(pt.lavados)} r={foco === i ? 4.5 : 3} style={{ fill: 'var(--corsa-orange)' }} pointerEvents="none"/>
         ))}
       </svg>
+      </div>
       <div style={{ minHeight: 20, fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 4 }}>
         {p ? (
           <>

@@ -1523,9 +1523,16 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 @keyframes bi-brillo { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .bi-skeleton { animation: none; } }
 .bi-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.bi-kpi-valor { font-size: 30px; }
+/* La gráfica no se encoge por debajo de lo legible: se desliza dentro de su tarjeta. */
+.bi-grafica { overflow-x: auto; }
+.bi-grafica svg { min-width: 560px; }
 .bi-filtros { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .bi-filtros input[type="date"] { width: auto; }
 .bi-dos-columnas { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 16px; }
 @media (max-width: 760px) {
   .bi-dos-columnas { grid-template-columns: 1fr; }
+  .bi-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .bi-kpis > div { padding: 14px !important; }
+  .bi-kpi-valor { font-size: 22px; }
 }

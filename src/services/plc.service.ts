@@ -148,3 +148,10 @@ export function duracionLarga(segundos: number | null | undefined): string {
   const m = Math.round((s % 3600) / 60)
   return h > 0 ? `${h} h ${String(m).padStart(2, '0')} m` : `${m} m`
 }
+
+/** «Máquina 1» a partir de machine-1, salvo que la máquina tenga nombre propio. */
+export function nombreMaquina(machineId: string, nombre?: string | null): string {
+  if (nombre && nombre !== machineId) return nombre
+  const n = machineId.match(/(\d+)\s*$/)
+  return n ? `Máquina ${n[1]}` : machineId
+}

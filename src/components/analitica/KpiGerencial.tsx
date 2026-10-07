@@ -32,7 +32,7 @@ export function KpiGerencial({ label, valor, variacion, sub, cargando, id }: {
         </>
       ) : (
         <>
-          <div style={{ marginTop: 8, fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 30, fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)', lineHeight: 1.1, overflowWrap: 'anywhere' }}>{valor}</div>
+          <div className="bi-kpi-valor" style={{ marginTop: 8, fontFamily: 'var(--font-heading)', fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)', lineHeight: 1.1, overflowWrap: 'anywhere' }}>{valor}</div>
           {variacion && (
             hayCambio ? (
               <div title="Contra el período anterior" style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: c.color, background: c.fondo, padding: '3px 8px', borderRadius: 4 }}>

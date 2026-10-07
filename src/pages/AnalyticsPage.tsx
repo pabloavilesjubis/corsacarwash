@@ -24,7 +24,8 @@ import {
 import {
   dinero, dividir, entero, porcentaje, textoVariacion, variacion, variacionEnPuntos,
 } from '../lib/analitica/variacion'
-import { fetchProyeccion, fetchResumen, fetchSerie } from '../services/analitica.service'
+import { fetchClientesBi, fetchCuadre, fetchMaquinasBi, fetchProyeccion, fetchResumen, fetchSerie } from '../services/analitica.service'
+import { nombreMaquina } from '../services/plc.service'
 import { useConsulta } from '../lib/analitica/useConsulta'
 import { premiumDe } from '../lib/analitica/mix'
 import { Bloque, ErrorBloque, Esqueleto, Vacio } from '../components/analitica/Bloque'
@@ -32,6 +33,9 @@ import { KpiGerencial } from '../components/analitica/KpiGerencial'
 import { GraficaTendencia } from '../components/analitica/GraficaTendencia'
 import { MixServicios } from '../components/analitica/MixServicios'
 import { ProyeccionCierre } from '../components/analitica/ProyeccionCierre'
+import { RendimientoMaquinas } from '../components/analitica/RendimientoMaquinas'
+import { CuadrePeriodo } from '../components/analitica/CuadrePeriodo'
+import { ClientesRecurrencia } from '../components/analitica/ClientesRecurrencia'
 
 export function AnalyticsPage() {
   const { profile, hasPermission } = useAuth()
@@ -52,6 +56,11 @@ export function AnalyticsPage() {
     return { actual, anterior }
   })
   const proy = useConsulta('proyeccion', fetchProyeccion)
+  const maq = useConsulta(claveRango, () => fetchMaquinasBi(periodo.actual, periodo.anterior))
+  const cuadre = useConsulta(`${periodo.actual.desde}|${periodo.actual.hasta}`, () => fetchCuadre(periodo.actual))
+  const cli = useConsulta(claveRango, () => fetchClientesBi(periodo.actual, periodo.anterior))
+  // Filtro de máquina: sólo afecta la sección de máquinas.
+  const [maquina, setMaquina] = useState<string | null>(null)
   const cargarResumen = resumen.reintentar
   const cargarSerie = serie.reintentar
   const cargarProyeccion = proy.reintentar
@@ -80,6 +89,13 @@ export function AnalyticsPage() {
   const metaPct = p?.meta_ventas ? dividir(p.ventas_acumuladas, p.meta_ventas) : null
 
   const sinMovimiento = a && a.ventas === 0 && a.lavados === 0
+
+  // Las máquinas tienen su propia historia: el PLC registra desde antes que el POS.
+  const primerCiclo = maq.datos?.actual.primer_ciclo ?? null
+  const sinBaseMaq = !maq.datos ? null
+    : !primerCiclo ? 'Sin lavados de máquina registrados'
+    : periodo.anterior.hasta < primerCiclo ? 'Sin datos de máquinas del período anterior'
+    : null
 
   return (
     <div className="page-inner" style={{ gap: 18 }}>
@@ -123,7 +139,7 @@ export function AnalyticsPage() {
         <ErrorBloque mensaje={`No se pudo cargar el resumen: ${resumen.error}`} onReintentar={cargarResumen}/>
       ) : (
         <div className="bi-kpis">
-          <KpiGerencial id="bi-kpi-ventas" label="Ventas" cargando={resumen.cargando} valor={dinero(a?.ventas)} variacion={vVentas}
+          <KpiGerencial id="bi-kpi-ventas" label="Ventas" cargando={resumen.cargando} valor={dinero(a?.ventas, (a?.ventas ?? 0) >= 1000 ? 0 : 2)} variacion={vVentas}
             sub={a ? `Facturado ${dinero(a.ventas_facturadas)}${a.ventas > a.ventas_facturadas ? ` · ${dinero(a.ventas - a.ventas_facturadas)} por facturar` : ''}` : null}/>
           <KpiGerencial id="bi-kpi-lavados" label="Lavados" cargando={resumen.cargando} valor={entero(a?.lavados)} variacion={vLavados}
             sub={a && a.lavados_sin_cobro > 0 ? `${a.lavados_sin_cobro} sin cobro (canjes)` : 'Un lavado = un carro'}/>
@@ -178,6 +194,42 @@ export function AnalyticsPage() {
             : <ProyeccionCierre p={p} orgId={orgId} puedeConfigurar={hasPermission('settings.manage')} onRecargar={cargarProyeccion}/>}
         </Bloque>
       </div>
+
+      <div className="bi-dos-columnas">
+        {/* ── 4. Rendimiento de máquinas ── */}
+        <Bloque id="bi-maquinas" titulo="Rendimiento de máquinas" subtitulo="Lavados registrados por el PLC en el período"
+          accion={maq.datos && maq.datos.actual.maquinas.length > 1 ? (
+            <div className="filter-pills">
+              <button className={`filter-pill${maquina === null ? ' active' : ''}`} onClick={() => setMaquina(null)}>Todas</button>
+              {maq.datos.actual.maquinas.map(m => (
+                <button key={m.machine_id} className={`filter-pill${maquina === m.machine_id ? ' active' : ''}`} onClick={() => setMaquina(m.machine_id)}>
+                  {nombreMaquina(m.machine_id, m.nombre)}
+                </button>
+              ))}
+            </div>
+          ) : undefined}>
+          {maq.error ? <ErrorBloque mensaje={`No se pudo cargar el rendimiento de las máquinas: ${maq.error}`} onReintentar={maq.reintentar}/>
+            : maq.cargando || !maq.datos ? <Esqueleto filas={7}/>
+            : maq.datos.actual.maquinas.length === 0 ? <Vacio titulo="Sin lavados de máquina en este período"/>
+            : <RendimientoMaquinas actual={maq.datos.actual} anterior={maq.datos.anterior} maquina={maquina} sinBase={sinBaseMaq}/>}
+        </Bloque>
+
+        {/* ── Cuadre caja vs máquinas del período ── */}
+        <Bloque id="bi-cuadre" titulo="Cuadre caja vs máquinas" subtitulo="Lavados cobrados contra lavados hechos, por servicio">
+          {cuadre.error ? <ErrorBloque mensaje={`No se pudo cargar el cuadre: ${cuadre.error}`} onReintentar={cuadre.reintentar}/>
+            : cuadre.cargando || !cuadre.datos || resumen.cargando ? <Esqueleto filas={5}/>
+            : <CuadrePeriodo filas={cuadre.datos} desde={primera}/>}
+        </Bloque>
+      </div>
+
+      {/* ── 5. Clientes y recurrencia ── */}
+      <Bloque id="bi-clientes" titulo="Clientes y recurrencia" subtitulo="Sólo clientes identificados · visita = carro lavado">
+        {cli.error ? <ErrorBloque mensaje={`No se pudieron cargar los clientes: ${cli.error}`} onReintentar={cli.reintentar}/>
+          : cli.cargando || !cli.datos ? <Esqueleto filas={6}/>
+          : cli.datos.actual.lavados === 0 ? <Vacio titulo="Sin lavados en este período"/>
+          : cli.datos.actual.clientes_activos === 0 ? <Vacio titulo="Ningún lavado del período tiene cliente identificado" detalle="Las ventas a Consumidor Final no se pueden seguir como clientes."/>
+          : <ClientesRecurrencia actual={cli.datos.actual} anterior={cli.datos.anterior} sinBase={sinBase}/>}
+      </Bloque>
 
       {sinMovimiento && !resumen.cargando && (
         <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>

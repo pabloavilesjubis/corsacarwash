@@ -133,3 +133,92 @@ export async function guardarCalendario(organizationId: string, abiertos: number
   const { error } = await db().from('business_calendar').insert(filas)
   if (error) throw error
 }
+
+// ─── Etapa 2: máquinas, cuadre y clientes (0076) ─────────────
+
+export interface MetricasMaquina {
+  machine_id: string
+  nombre: string | null
+  lavados: number
+  pro: number
+  elite: number
+  signature: number
+  sin_clasificar: number
+  ciclos_validos: number
+  ciclos_fuera_de_rango: number
+  segundos_lavando: number
+  segundos_jornada: number
+  dias_activos: number
+  fallas: number
+  segundos_en_falla: number
+}
+
+export interface MaquinasPeriodo {
+  reglas: { min_valid_seconds: number; max_valid_seconds: number }
+  maquinas: MetricasMaquina[]
+  primer_ciclo: string | null
+}
+
+function normalizarMaquinas(d: any): MaquinasPeriodo {
+  return {
+    reglas: { min_valid_seconds: num(d?.reglas?.min_valid_seconds), max_valid_seconds: num(d?.reglas?.max_valid_seconds) },
+    maquinas: ((d?.maquinas ?? []) as any[]).map(m => ({
+      machine_id: String(m.machine_id), nombre: m.nombre ?? null,
+      lavados: num(m.lavados), pro: num(m.pro), elite: num(m.elite), signature: num(m.signature), sin_clasificar: num(m.sin_clasificar),
+      ciclos_validos: num(m.ciclos_validos), ciclos_fuera_de_rango: num(m.ciclos_fuera_de_rango),
+      segundos_lavando: num(m.segundos_lavando), segundos_jornada: num(m.segundos_jornada), dias_activos: num(m.dias_activos),
+      fallas: num(m.fallas), segundos_en_falla: num(m.segundos_en_falla),
+    })),
+    primer_ciclo: d?.primer_ciclo ?? null,
+  }
+}
+
+export async function fetchMaquinasBi(actual: Rango, anterior: Rango): Promise<{ actual: MaquinasPeriodo; anterior: MaquinasPeriodo }> {
+  const { data, error } = await db().rpc('bi_maquinas', {
+    p_desde: actual.desde, p_hasta: actual.hasta, p_ant_desde: anterior.desde, p_ant_hasta: anterior.hasta,
+  })
+  if (error) throw error
+  return { actual: normalizarMaquinas(data?.actual), anterior: normalizarMaquinas(data?.anterior) }
+}
+
+export interface FilaCuadre { fecha: string; servicio: string; caja: number; maquinas: number }
+
+export async function fetchCuadre(r: Rango): Promise<FilaCuadre[]> {
+  const { data, error } = await db().rpc('bi_cuadre', { p_desde: r.desde, p_hasta: r.hasta })
+  if (error) throw error
+  return ((data ?? []) as any[]).map(f => ({ fecha: String(f.fecha), servicio: String(f.servicio), caja: num(f.caja), maquinas: num(f.maquinas) }))
+}
+
+export interface ClientesPeriodo {
+  lavados: number
+  lavados_identificados: number
+  clientes_activos: number
+  clientes_nuevos: number
+  clientes_recurrentes: number
+  brechas: number
+  dias_entre_lavados: number | null
+  vehiculos_activos: number
+  vehiculos_que_repiten: number
+  ventas_identificadas: number
+  retencion: Record<'30' | '60' | '90', { cohorte: number; retenidos: number } | undefined>
+}
+
+function normalizarClientes(d: any): ClientesPeriodo {
+  const ret = (k: string) => d?.retencion?.[k] ? { cohorte: num(d.retencion[k].cohorte), retenidos: num(d.retencion[k].retenidos) } : undefined
+  return {
+    lavados: num(d?.lavados), lavados_identificados: num(d?.lavados_identificados),
+    clientes_activos: num(d?.clientes_activos), clientes_nuevos: num(d?.clientes_nuevos), clientes_recurrentes: num(d?.clientes_recurrentes),
+    brechas: num(d?.brechas), dias_entre_lavados: d?.dias_entre_lavados == null ? null : Number(d.dias_entre_lavados),
+    vehiculos_activos: num(d?.vehiculos_activos), vehiculos_que_repiten: num(d?.vehiculos_que_repiten),
+    ventas_identificadas: num(d?.ventas_identificadas),
+    retencion: { '30': ret('30'), '60': ret('60'), '90': ret('90') },
+  }
+}
+
+export async function fetchClientesBi(actual: Rango, anterior: Rango): Promise<{ actual: ClientesPeriodo; anterior: ClientesPeriodo }> {
+  const { data, error } = await db().rpc('bi_clientes', {
+    p_desde: actual.desde, p_hasta: actual.hasta, p_ant_desde: anterior.desde, p_ant_hasta: anterior.hasta,
+  })
+  if (error) throw error
+  return { actual: normalizarClientes(data?.actual), anterior: normalizarClientes(data?.anterior) }
+}

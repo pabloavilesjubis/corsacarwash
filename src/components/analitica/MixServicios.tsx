@@ -76,7 +76,7 @@ export function MixServicios({ actual, anterior, sinBase, serie, granularidad }:
               const v = variacion(a.lavados, sinBase ? null : b.lavados, 'neutro', sinBase)
               return (
                 <tr key={s.code}>
-                  <td style={{ fontWeight: 700 }}><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: s.color, marginRight: 7 }}/>{s.label}</td>
+                  <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: s.color, marginRight: 7 }}/>{s.label}</td>
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{entero(a.lavados)}</td>
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{porcentaje(dividir(a.lavados, actual.lavados))}</td>
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{dinero(a.ingresos)}</td>
