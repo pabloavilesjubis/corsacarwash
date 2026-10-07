@@ -561,6 +561,89 @@ function ServiciosDelDia({ servicios, total, porHora }: {
   )
 }
 
+/**
+ * Cuadre del día: lavados cobrados en caja contra lavados que hicieron las
+ * máquinas, por tipo de servicio.
+ *
+ * El total es el número que vale: cada ciclo del PLC es un carro que pasó por
+ * el túnel. El tipo, en cambio, la máquina lo deduce por la DURACIÓN del ciclo
+ * (plc_service_rules), así que un ÉLITE cobrado puede aparecer como SIGNATURE
+ * o al revés sin que falte plata. Por eso las diferencias por tipo se muestran
+ * pero no se marcan como alarma si el total cuadra.
+ */
+const TIPOS_CUADRE: { code: string; label: string }[] = [
+  { code: 'PRO', label: 'PRO' },
+  { code: 'ELITE', label: 'ÉLITE' },
+  { code: 'SIGNATURE', label: 'SIGNATURE' },
+]
+
+function CuadreCajaMaquinas({ cobrados, maquinas }: {
+  cobrados: Record<string, number>
+  maquinas: { tipo: string; washes: number }[]
+}) {
+  const plc = (tipo: string) => maquinas.filter(m => m.tipo === tipo).reduce((n, m) => n + m.washes, 0)
+  const sinClasificar = maquinas.filter(m => !TIPOS_CUADRE.some(t => t.code === m.tipo)).reduce((n, m) => n + m.washes, 0)
+  const totalCaja = TIPOS_CUADRE.reduce((n, t) => n + (cobrados[t.code] ?? 0), 0)
+  const totalPlc = TIPOS_CUADRE.reduce((n, t) => n + plc(t.code), 0) + sinClasificar
+  const dif = totalPlc - totalCaja
+
+  const filas = [
+    ...TIPOS_CUADRE.map(t => ({ label: t.label, caja: cobrados[t.code] ?? 0, plc: plc(t.code) })),
+    ...(sinClasificar > 0 ? [{ label: 'Sin clasificar', caja: 0, plc: sinClasificar }] : []),
+  ]
+  const signo = (n: number) => (n > 0 ? `+${n}` : String(n))
+  const colorTotal = dif === 0 ? 'var(--color-success-text)' : 'var(--color-warning-text)'
+
+  return (
+    <div id="cuadre-caja-maquinas" style={{ marginTop: 16, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '18px 20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, color: 'var(--text-primary)' }}>Cuadre caja vs máquinas · hoy</div>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: colorTotal }}>
+          {dif === 0 ? 'Cuadra' : dif > 0 ? `${dif} ${dif === 1 ? 'lavado' : 'lavados'} sin cobrar` : `${-dif} cobrado${-dif === 1 ? '' : 's'} sin lavado registrado`}
+        </div>
+      </div>
+      <div className="table-wrap">
+        <table className="corsa-table" style={{ border: 'none' }}>
+          <thead>
+            <tr>
+              <th>Servicio</th>
+              <th style={{ textAlign: 'right' }}>Cobrado en caja</th>
+              <th style={{ textAlign: 'right' }}>Hecho por máquinas</th>
+              <th style={{ textAlign: 'right' }}>Diferencia</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filas.map(f => {
+              const d = f.plc - f.caja
+              return (
+                <tr key={f.label}>
+                  <td style={{ fontWeight: 600 }}>{f.label}</td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{f.caja}</td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{f.plc}</td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: d === 0 ? 'var(--text-secondary)' : 'var(--text-primary)', fontWeight: d === 0 ? 400 : 700 }}>
+                    {d === 0 ? '—' : signo(d)}
+                  </td>
+                </tr>
+              )
+            })}
+            <tr style={{ borderTop: '2px solid var(--border)' }}>
+              <td style={{ fontWeight: 800 }}>Total</td>
+              <td style={{ textAlign: 'right', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{totalCaja}</td>
+              <td style={{ textAlign: 'right', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{totalPlc}</td>
+              <td style={{ textAlign: 'right', fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: colorTotal }}>{dif === 0 ? '0' : signo(dif)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div style={{ marginTop: 10, fontSize: 11.5, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+        Caja cuenta un lavado por carro (un CCF con tres carros son tres). La máquina deduce el tipo por la duración del ciclo,
+        así que una diferencia entre ÉLITE y SIGNATURE con el total cuadrado suele ser de clasificación, no de cobro.
+        Diferencia positiva: la máquina lavó más de lo cobrado. Negativa: se cobró algo que la máquina todavía no registró.
+      </div>
+    </div>
+  )
+}
+
 function ServiceKPIRow({ svc, idx, max }: { svc: ServiceKPI; idx: number; max: number }) {
   const style = CAT_COLORS[idx % 5]
   const barPct = Math.max(4, Math.round(svc.count / max * 100))
@@ -783,6 +866,8 @@ export function DashboardPage() {
   const [machines, setMachines] = useState<MachineCard[]>([])
   const [lavadosPorHora, setLavadosPorHora] = useState<Map<number, number>>(new Map())
   const [serviciosPlc, setServiciosPlc] = useState<{ tipo: string; washes: number; avg_seconds: number }[]>([])
+  // Lavados cobrados hoy por tipo, uno por carro (null: todavía no cargó o falló).
+  const [lavadosCobrados, setLavadosCobrados] = useState<Record<string, number> | null>(null)
 
   /**
    * Estado de las máquinas, desde el gateway PLC.
@@ -976,6 +1061,28 @@ export function DashboardPage() {
       // No se usa v_service_performance: esa vista agrupa por MES, y la
       // consulta anterior filtraba por `order_date`, columna que no existe —
       // fallaba en silencio y dejaba a la vista los datos de relleno.
+      // Lavados cobrados por tipo, para cuadrar contra las máquinas. Se cuenta
+      // la línea (un carro), no la orden: un CCF con tres carros son tres
+      // lavados. Sólo los servicios con programa de máquina; el aspirado y el
+      // seguro no pasan por el túnel. Un canje de cupón o de seguro es una
+      // línea de $0 y también cuenta: la máquina igual lo lava.
+      const { data: lav, error: lavError } = await (supabase as any)
+        .from('work_order_items')
+        .select('quantity, services!inner(code, machine_program), work_orders!inner(branch_id, status, created_at)')
+        .eq('work_orders.branch_id', branchId)
+        .neq('work_orders.status', 'cancelled')
+        .gte('work_orders.created_at', desdeMedianoche)
+      if (lavError) setLavadosCobrados(null)
+      else {
+        const porTipo: Record<string, number> = {}
+        for (const r of (lav ?? []) as any[]) {
+          if (r.services?.machine_program == null) continue
+          const code = String(r.services?.code ?? '').toUpperCase()
+          porTipo[code] = (porTipo[code] ?? 0) + Number(r.quantity ?? 1)
+        }
+        setLavadosCobrados(porTipo)
+      }
+
       const { data: svcData } = await (supabase as any)
         .from('work_order_items')
         .select('service_id, description_snapshot, total, work_orders!inner(branch_id, status, created_at)')
@@ -1093,7 +1200,10 @@ export function DashboardPage() {
   // es igual al total y la tarjeta diría «33 sin cobrar» todos los días
   // mientras el local no use el POS: una alarma que suena siempre deja de
   // significar algo.
-  const facturados = kpis?.completed_orders ?? 0
+  // Por carro, no por orden (una orden puede llevar varios carros); si la
+  // consulta de líneas falló, cae a las órdenes como antes.
+  const lavadosCobradosTotal = lavadosCobrados ? Object.values(lavadosCobrados).reduce((a, b) => a + b, 0) : null
+  const facturados = lavadosCobradosTotal ?? kpis?.completed_orders ?? 0
   const brechaConCaja = facturados > 0 ? Math.max(0, totalLavadosPlc - facturados) : 0
 
   // Labels
@@ -1247,6 +1357,10 @@ export function DashboardPage() {
               total={totalLavadosPlc}
               porHora={lavadosPorHora}
             />
+          )}
+
+          {lavadosCobrados && (totalLavadosPlc > 0 || (lavadosCobradosTotal ?? 0) > 0) && (
+            <CuadreCajaMaquinas cobrados={lavadosCobrados} maquinas={serviciosPlc}/>
           )}
         </div>
       )}
