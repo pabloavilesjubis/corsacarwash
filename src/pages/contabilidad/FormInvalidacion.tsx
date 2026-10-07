@@ -4,8 +4,9 @@
  * Una factura mal emitida no se borra: se invalida con un evento firmado. El
  * número de control, la fecha y el sello del original NO se escriben acá: el
  * servicio fiscal los toma del JSON que Hacienda selló. Lo único que aporta
- * este formulario es lo que el original no tiene — el motivo, quién responde,
- * quién lo pide y, en una FCF de mostrador, a quién se identifica.
+ * este formulario es lo que el original no tiene — el motivo, quién responde y
+ * quién lo pide. El receptor tampoco: Hacienda lo compara con el DTE, así que
+ * el servicio lo copia del original (en una FCF de mostrador, va vacío).
  *
  * Un rechazo de Hacienda acá no cuesta nada: la invalidación no gasta
  * correlativo. Se corrige y se vuelve a intentar.
@@ -14,7 +15,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import {
-  invalidar, fetchResponsableFijo, dinero, tieneContraparte, ErrorFiscal, NOMBRE_TIPO, TIPO_ANULACION_ETIQUETA,
+  invalidar, fetchResponsableFijo, dinero, ErrorFiscal, NOMBRE_TIPO, TIPO_ANULACION_ETIQUETA,
   type DocumentoFiscal, type Persona,
 } from '../../services/fiscal.service'
 import { formatearFecha } from '../../utils/fecha'
@@ -58,7 +59,6 @@ export function FormInvalidacion({ documentos, inicial, onListo, onCancelar }: {
   const [tipo, setTipo] = useState<1 | 2 | 3>(2)
   const [reemplazoId, setReemplazoId] = useState('')
   const [motivo, setMotivo] = useState('')
-  const [receptor, setReceptor] = useState<Persona>({ nombre: '', tipoDocumento: '13', numDocumento: '' })
   const [responsable, setResponsable] = useState<Persona>(responsableRecordado)
   // El responsable fijo de CORSA (Configuración fiscal). Si está, no se pide:
   // el Worker lo pone en el evento.
@@ -95,19 +95,12 @@ export function FormInvalidacion({ documentos, inicial, onListo, onCancelar }: {
     }
   }
 
-  const pideReceptor = doc !== null && !tieneContraparte(doc)
-
   const problemas = useMemo(() => {
     const p: string[] = []
     if (!doc) { p.push('Elegí el documento a invalidar'); return p }
     if ((tipo === 1 || tipo === 3) && !reemplazoId) p.push('Elegí el documento que lo reemplaza (emitilo primero si no existe)')
     if (tipo === 3 && motivo.trim().length < 5) p.push('Escribí el motivo (al menos 5 caracteres)')
     if (motivo.trim() && (motivo.trim().length < 5 || motivo.trim().length > 250)) p.push('El motivo va de 5 a 250 caracteres')
-    if (pideReceptor) {
-      if (receptor.nombre.trim().length < 5) p.push('Escribí el nombre del cliente (al menos 5 caracteres)')
-      const r = problemaDeDocumento(receptor.tipoDocumento, receptor.numDocumento)
-      if (r) p.push(`Cliente: ${r}`)
-    }
     const personas = fijo ? [['Solicitante', solicitante]] as const : [['Responsable', responsable], ['Solicitante', solicitante]] as const
     for (const [quien, per] of personas) {
       if (per.nombre.trim().length < 5) p.push(`${quien}: el nombre va de 5 a 100 caracteres`)
@@ -115,7 +108,7 @@ export function FormInvalidacion({ documentos, inicial, onListo, onCancelar }: {
       if (r) p.push(`${quien}: ${r}`)
     }
     return p
-  }, [doc, tipo, reemplazoId, motivo, pideReceptor, receptor, responsable, solicitante, fijo])
+  }, [doc, tipo, reemplazoId, motivo, responsable, solicitante, fijo])
 
   const enviar = async () => {
     if (problemas.length > 0) { setError(problemas[0]!); return }
@@ -135,7 +128,6 @@ export function FormInvalidacion({ documentos, inicial, onListo, onCancelar }: {
         tipoAnulacion: tipo,
         motivoAnulacion: motivo.trim() || null,
         documentoReemplazoId: tipo === 2 ? null : reemplazoId,
-        receptor: pideReceptor ? { ...receptor, nombre: receptor.nombre.trim() } : null,
         // Con responsable fijo no se manda: lo pone el Worker desde la configuración.
         responsable: fijo ? null : { ...responsable, nombre: responsable.nombre.trim() },
         solicitante: { ...solicitante, nombre: solicitante.nombre.trim() },
@@ -216,12 +208,6 @@ export function FormInvalidacion({ documentos, inicial, onListo, onCancelar }: {
           <input className="corsa-input" value={motivo} maxLength={250} onChange={e => setMotivo(e.target.value)}/>
         </Campo>
       </Seccion>
-
-      {pideReceptor && (
-        <Seccion titulo="Cliente (la factura fue de mostrador; Hacienda exige identificarlo)">
-          <CamposPersona valor={receptor} onChange={setReceptor}/>
-        </Seccion>
-      )}
 
       <Seccion titulo="Responsable de la invalidación">
         {fijo

@@ -380,7 +380,8 @@ export interface SolicitudInvalidacion {
   tipoAnulacion: 1 | 2 | 3
   motivoAnulacion: string | null
   documentoReemplazoId: string | null
-  receptor: (Persona & { telefono?: string | null; correo?: string | null }) | null
+  // Sin receptor: el Worker lo copia del DTE original, que es con lo que
+  // Hacienda lo compara.
   responsable: Persona
   /** Null: el Worker usa el responsable fijo (CORSA pide sus propias anulaciones). */
   solicitante: Persona | null
@@ -533,15 +534,6 @@ export const reintentarInvalidacion = (invalidacionId: string) =>
   llamarWorker('/v1/app/reintentar', { invalidacionId })
 
 // ─── Utilidades de pantalla ──────────────────────────────────
-
-/**
- * ¿El documento identifica a su contraparte? Si no (FCF de mostrador), el
- * formulario de invalidación tiene que pedirla: Hacienda la exige.
- */
-export function tieneContraparte(doc: DocumentoFiscal): boolean {
-  // El evento de invalidación exige un nombre de al menos 5 caracteres.
-  return (doc.contraparte_nombre?.length ?? 0) >= 5 && !!doc.contraparte_documento
-}
 
 /**
  * ¿Quedó en duda si el envío llegó? Sin conexión, o el servicio no pudo

@@ -112,7 +112,6 @@ export async function anularVenta(
       tipoAnulacion: 2,
       motivoAnulacion: motivo,
       documentoReemplazoId: null,
-      receptor: null,
       responsable: null,
       solicitante: null,
     }, { token: aut.token })
