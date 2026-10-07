@@ -3,8 +3,12 @@ import type { Customer, Vehicle } from '../types'
 
 export interface CustomerWithStats extends Customer {
   vehicle_count?: number
-  last_visit_days?: number
+  /** Días desde su última orden (hora de El Salvador); null si nunca vino. */
+  last_visit_days?: number | null
   lifetime_value?: number
+  /** Lavados (PRO/ÉLITE/SIGNATURE) en órdenes no anuladas, contado y crédito (0072). */
+  total_washes?: number
+  total_orders?: number
   membership_status?: 'active' | 'expiring' | 'none'
   membership_plan?: string
 }
@@ -16,7 +20,7 @@ export interface CustomerWithStats extends Customer {
 export async function searchCustomers(
   query: string,
   _segment?: string,
-  limit = 100
+  limit = 1000
 ): Promise<CustomerWithStats[]> {
   let q = supabase
     .from('customers' as any)
@@ -31,6 +35,7 @@ export async function searchCustomers(
     .eq('active', true)
     .order('created_at', { ascending: false })
     .limit(limit)
+    // La pantalla ordena por nombre; el límite sólo evita traer de más.
 
   if (query.trim()) {
     const s = query.trim()
@@ -42,7 +47,21 @@ export async function searchCustomers(
   const { data, error } = await q
   if (error) throw error
 
+  // Lavados, visitas y acumulado (v_customer_metrics, 0072). Si la vista no
+  // está, la lista sale igual, sin esas columnas.
+  // Se piden las de toda la organización (el RLS ya la acota): pasar los ids
+  // en la URL crecería con cada cliente.
+  const metricas = new Map<string, any>()
+  if ((data ?? []).length > 0) {
+    const { data: m } = await supabase
+      .from('v_customer_metrics' as any)
+      .select('customer_id, total_washes, total_orders, lifetime_value, days_since_last_visit')
+      .limit(5000)
+    for (const r of (m ?? []) as any[]) metricas.set(r.customer_id, r)
+  }
+
   return (data ?? []).map((c: any) => {
+    const m = metricas.get(c.id)
     const memberships = c.customer_memberships ?? []
     const activeMembership = memberships.find((m: any) => m.status === 'active')
     const expiringMembership = memberships.find((m: any) => m.status === 'past_due')
@@ -50,6 +69,10 @@ export async function searchCustomers(
     return {
       ...c,
       vehicle_count: Array.isArray(c.vehicles) ? c.vehicles.length : (c.vehicles?.[0]?.count ?? 0),
+      total_washes: m ? Number(m.total_washes) : undefined,
+      total_orders: m ? Number(m.total_orders) : undefined,
+      lifetime_value: m ? Number(m.lifetime_value) : undefined,
+      last_visit_days: m ? m.days_since_last_visit : undefined,
       membership_status: activeMembership ? 'active' : expiringMembership ? 'expiring' : 'none',
       membership_plan: activeMembership?.membership_plans?.name ?? expiringMembership?.membership_plans?.name ?? null,
     }

@@ -42,10 +42,95 @@ function getMembershipStyle(status?: string): { color: string; tint: string; lab
 
 function classifySegment(c: CustomerWithStats): FilterType {
   if (c.customer_type === 'company') return 'corporativo'
-  const days = c.last_visit_days ?? 999
+  // Sin visitas todavía es un cliente nuevo, no uno que se fue.
+  if (c.last_visit_days == null) return 'nuevo'
+  const days = c.last_visit_days
   if (days > 45) return 'riesgo'
   if (days <= 7) return 'frecuente'
   return 'nuevo'
+}
+
+const SEG_LABELS: Partial<Record<FilterType, string>> = { frecuente: 'Frecuente', riesgo: 'Riesgo de fuga', nuevo: 'Nuevo', corporativo: 'Corporativo' }
+
+function membresiaTexto(c: CustomerWithStats): string {
+  return c.membership_status === 'active' || c.membership_status === 'expiring'
+    ? (c.membership_plan ? `${c.membership_plan} · ${getMembershipStyle(c.membership_status).label}` : getMembershipStyle(c.membership_status).label)
+    : ''
+}
+
+// ─── Columnas: orden y filtros ───────────────────────────────
+
+type Columna = 'cliente' | 'tipo' | 'correo' | 'telefono' | 'doc' | 'vehiculos' | 'lavados' | 'visita' | 'membresia'
+
+/** Lo que se compara al ordenar. null va siempre al final. */
+function valorDe(c: CustomerWithStats, col: Columna): string | number | null {
+  switch (col) {
+    case 'cliente':   return getDisplayName(c) || null
+    case 'tipo':      return SEG_LABELS[classifySegment(c)] ?? null
+    case 'correo':    return c.email || null
+    case 'telefono':  return c.phone || null
+    case 'doc':       return requiereCcf(c) ? 'CCF' : 'CF'
+    case 'vehiculos': return c.vehicle_count ?? 0
+    case 'lavados':   return c.total_washes ?? null
+    // Por días desde la visita: ascendente es «la más reciente primero».
+    case 'visita':    return c.last_visit_days ?? null
+    case 'membresia': return membresiaTexto(c) || null
+  }
+}
+
+const colator = new Intl.Collator('es', { sensitivity: 'base', numeric: true })
+
+function comparar(a: CustomerWithStats, b: CustomerWithStats, col: Columna, dir: 1 | -1): number {
+  const va = valorDe(a, col), vb = valorDe(b, col)
+  if (va === null && vb === null) return colator.compare(getDisplayName(a), getDisplayName(b))
+  if (va === null) return 1
+  if (vb === null) return -1
+  const r = typeof va === 'number' && typeof vb === 'number' ? va - vb : colator.compare(String(va), String(vb))
+  // Empate: por nombre, para que el orden no salte entre recargas.
+  return r !== 0 ? r * dir : colator.compare(getDisplayName(a), getDisplayName(b))
+}
+
+/** Sin tildes ni mayúsculas: «jose» encuentra a «José». */
+const normalizar = (v: string | null | undefined) =>
+  (v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+
+interface FiltrosColumna {
+  cliente: string
+  tipo: string
+  correo: string
+  telefono: string
+  doc: '' | 'CCF' | 'CF'
+  membresia: '' | 'con' | 'sin'
+}
+
+const FILTROS_VACIOS: FiltrosColumna = { cliente: '', tipo: '', correo: '', telefono: '', doc: '', membresia: '' }
+
+function pasaFiltros(c: CustomerWithStats, f: FiltrosColumna): boolean {
+  if (f.cliente && !normalizar(getDisplayName(c)).includes(normalizar(f.cliente))) return false
+  if (f.tipo && classifySegment(c) !== f.tipo) return false
+  if (f.correo && !normalizar(c.email).includes(normalizar(f.correo))) return false
+  if (f.telefono && !(c.phone ?? '').replace(/\D/g, '').includes(f.telefono.replace(/\D/g, ''))) return false
+  if (f.doc && (requiereCcf(c) ? 'CCF' : 'CF') !== f.doc) return false
+  if (f.membresia && (membresiaTexto(c) ? 'con' : 'sin') !== f.membresia) return false
+  return true
+}
+
+/** Encabezado que ordena: un clic, ascendente; otro, descendente. */
+function Th({ col, orden, onOrdenar, children, derecha }: {
+  col: Columna
+  orden: { col: Columna; dir: 1 | -1 }
+  onOrdenar: (col: Columna) => void
+  children: React.ReactNode
+  derecha?: boolean
+}) {
+  const activa = orden.col === col
+  return (
+    <th style={{ textAlign: derecha ? 'right' : undefined, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+        onClick={() => onOrdenar(col)} aria-sort={activa ? (orden.dir === 1 ? 'ascending' : 'descending') : 'none'}>
+      {children}
+      <span style={{ marginLeft: 4, opacity: activa ? 1 : 0.25, fontSize: 10 }}>{activa && orden.dir === -1 ? '▼' : '▲'}</span>
+    </th>
+  )
 }
 
 // ─── Main Customers Page ─────────────────────────────────────
@@ -70,6 +155,9 @@ export function CustomersPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<FilterType>('todos')
+  // Por nombre, de la A a la Z, salvo que se elija otra columna.
+  const [orden, setOrden] = useState<{ col: Columna; dir: 1 | -1 }>({ col: 'cliente', dir: 1 })
+  const [filtrosCol, setFiltrosCol] = useState<FiltrosColumna>(FILTROS_VACIOS)
   const [panel, setPanel] = useState<Panel | null>({ type: 'view', customerId: undefined })
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -89,10 +177,22 @@ export function CustomersPage() {
   }, [search, loadCustomers])
 
   // Filter clients
-  const filtered = customers.filter(c => {
-    if (filter === 'todos') return true
-    return classifySegment(c) === filter
-  })
+  const filtered = customers
+    .filter(c => filter === 'todos' || classifySegment(c) === filter)
+    .filter(c => pasaFiltros(c, filtrosCol))
+    .sort((a, b) => comparar(a, b, orden.col, orden.dir))
+  const hayFiltrosCol = Object.values(filtrosCol).some(Boolean)
+
+  const ordenarPor = (col: Columna) =>
+    setOrden(o => o.col === col ? { col, dir: o.dir === 1 ? -1 : 1 } : { col, dir: 1 })
+  const filtrar = <K extends keyof FiltrosColumna>(k: K, v: FiltrosColumna[K]) => setFiltrosCol(f => ({ ...f, [k]: v }))
+
+  const filtroTexto = (k: 'cliente' | 'correo' | 'telefono', placeholder: string) => (
+    <input className="corsa-input" value={filtrosCol[k]} placeholder={placeholder} aria-label={`Filtrar por ${placeholder.toLowerCase()}`}
+           onChange={e => filtrar(k, e.target.value)}
+           style={{ padding: '4px 8px', fontSize: 12, minWidth: 0, width: '100%' }}/>
+  )
+  const estiloSelect = { padding: '4px 6px', fontSize: 12, minWidth: 0, width: '100%' }
 
   const selectedCustomer = panel?.customerId
     ? customers.find(c => c.id === panel.customerId) ?? null
@@ -218,7 +318,7 @@ export function CustomersPage() {
 
           {loading ? (
             <div className="loading-center"><div className="spinner"/><span>Cargando…</span></div>
-          ) : filtered.length === 0 ? (
+          ) : filtered.length === 0 && !hayFiltrosCol ? (
             <div className="empty-state">
               <div className="empty-state-title">{search ? 'No encontramos clientes con esos datos' : 'Sin clientes registrados'}</div>
               <div className="empty-state-sub">{search ? 'Probá con el nombre completo, el DUI o la placa del vehículo.' : ''}</div>
@@ -281,17 +381,55 @@ export function CustomersPage() {
             <table className="corsa-table ventas-tabla clientes-tabla" style={{ border: 'none' }}>
               <thead>
                 <tr>
-                  <th>Cliente</th><th>Tipo</th><th>Correo</th><th>Teléfono</th><th>Doc.</th>
-                  <th style={{ textAlign: 'right' }}>Vehíc.</th><th>Última visita</th><th>Membresía</th>
+                  <Th col="cliente" orden={orden} onOrdenar={ordenarPor}>Cliente</Th><Th col="tipo" orden={orden} onOrdenar={ordenarPor}>Tipo</Th><Th col="correo" orden={orden} onOrdenar={ordenarPor}>Correo</Th>
+                  <Th col="telefono" orden={orden} onOrdenar={ordenarPor}>Teléfono</Th><Th col="doc" orden={orden} onOrdenar={ordenarPor}>Doc.</Th>
+                  <Th col="vehiculos" orden={orden} onOrdenar={ordenarPor} derecha>Vehíc.</Th><Th col="lavados" orden={orden} onOrdenar={ordenarPor} derecha>Lavados</Th>
+                  <Th col="visita" orden={orden} onOrdenar={ordenarPor}>Última visita</Th><Th col="membresia" orden={orden} onOrdenar={ordenarPor}>Membresía</Th>
+                </tr>
+                <tr className="clientes-filtros">
+                  <th>{filtroTexto('cliente', 'Nombre')}</th>
+                  <th>
+                    <select className="corsa-input" value={filtrosCol.tipo} onChange={e => filtrar('tipo', e.target.value)}
+                            aria-label="Filtrar por tipo" style={estiloSelect}>
+                      <option value="">Todos</option>
+                      {FILTER_DEFS.filter(f => f.id !== 'todos').map(f => <option key={f.id} value={f.id}>{SEG_LABELS[f.id]}</option>)}
+                    </select>
+                  </th>
+                  <th>{filtroTexto('correo', 'Correo')}</th>
+                  <th>{filtroTexto('telefono', 'Teléfono')}</th>
+                  <th>
+                    <select className="corsa-input" value={filtrosCol.doc} onChange={e => filtrar('doc', e.target.value as FiltrosColumna['doc'])}
+                            aria-label="Filtrar por documento" style={estiloSelect}>
+                      <option value="">Todos</option><option value="CCF">CCF</option><option value="CF">CF</option>
+                    </select>
+                  </th>
+                  <th/><th/>
+                  <th>
+                    {hayFiltrosCol && (
+                      <button className="btn btn-ghost btn-sm" style={{ fontSize: 11.5, padding: '3px 8px' }}
+                              onClick={() => setFiltrosCol(FILTROS_VACIOS)}>Limpiar filtros</button>
+                    )}
+                  </th>
+                  <th>
+                    <select className="corsa-input" value={filtrosCol.membresia} onChange={e => filtrar('membresia', e.target.value as FiltrosColumna['membresia'])}
+                            aria-label="Filtrar por membresía" style={estiloSelect}>
+                      <option value="">Todas</option><option value="con">Con membresía</option><option value="sin">Sin membresía</option>
+                    </select>
+                  </th>
                 </tr>
               </thead>
               <tbody>
+                {filtered.length === 0 && (
+                  <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: 24 }}>
+                    Ningún cliente coincide con los filtros.
+                  </td></tr>
+                )}
                 {filtered.map(c => {
                   const name = getDisplayName(c)
                   const ms = getMembershipStyle(c.membership_status)
                   const isSelected = panel?.customerId === c.id
                   const segment = classifySegment(c)
-                  const segLabels: Partial<Record<FilterType, string>> = { frecuente: 'Frecuente', riesgo: 'Riesgo de fuga', nuevo: 'Nuevo', corporativo: 'Corporativo' }
+                  const segLabels = SEG_LABELS
                   const pendiente = infoFiscalPendiente(c)
 
                   return (
@@ -319,6 +457,7 @@ export function CustomersPage() {
                         </span>
                       </td>
                       <td style={{ textAlign: 'right', fontWeight: 600 }}>{c.vehicle_count ?? 0}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{c.total_washes ?? '—'}</td>
                       <td style={{ color: 'var(--text-secondary)' }}>
                         {c.last_visit_days != null
                           ? c.last_visit_days === 0 ? 'Hoy' : c.last_visit_days === 1 ? 'Ayer' : `Hace ${c.last_visit_days} d`

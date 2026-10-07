@@ -12,6 +12,7 @@
  * debería leerlos el escritorio el día que se unifiquen.
  */
 import { useCallback, useEffect, useState } from 'react'
+import { TopClientesLavados } from '../components/dashboard/TopClientesLavados'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import { inicioDelDiaISO, formatearFecha } from '../utils/fecha'
@@ -241,6 +242,10 @@ export function DashboardMovil() {
           </div>
         </>
       )}
+
+      <div style={{ marginTop: 16 }}>
+        <TopClientesLavados />
+      </div>
 
       <div style={{ marginTop: 20, fontSize: 11, color: 'var(--text-secondary)', textAlign: 'center' }}>
         {profile ? `Sesión de ${(profile as any).first_name ?? 'equipo'}` : ''}

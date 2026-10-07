@@ -8,6 +8,7 @@ import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import { useTheme } from '../contexts/ThemeContext'
 import { formatearFecha, hoyLocal, inicioDeSemanaLocal, inicioDelDiaISO, sumarDias } from '../utils/fecha'
+import { TopClientesLavados } from '../components/dashboard/TopClientesLavados'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -1449,6 +1450,9 @@ export function DashboardPage() {
           )
         })}
       </div>
+
+      {/* ── Clientes con más lavados (acumulado, 0072) ── */}
+      <TopClientesLavados />
 
     </div>
   )
