@@ -274,7 +274,7 @@ export function FichaCliente({ customer, orgId, onCerrar, onActualizado }: {
 
         {/* ── Indicadores ── */}
         <div className="ficha-indicadores">
-          <Dato label="Visitas" valor={metricas?.total_orders ?? '—'} fuerte/>
+          {/* Visita = carro lavado: una factura con tres carros son tres. */}
           <Dato label="Lavados" valor={metricas?.total_washes ?? '—'} fuerte/>
           <Dato label="Acumulado" valor={metricas?.lifetime_value ? money(parseFloat(metricas.lifetime_value)) : '—'} fuerte/>
           <Dato label="Última visita" valor={ultimaVisita} fuerte/>

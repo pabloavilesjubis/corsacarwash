@@ -70,7 +70,7 @@ export function TopClientesLavados() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
                   <span className="truncate" title={f.display_name} style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }}>{f.display_name}</span>
                   <span style={{ fontSize: 11.5, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                    {f.total_orders} {Number(f.total_orders) === 1 ? 'visita' : 'visitas'} · {ultimaVisita(f.days_since_last_visit)}
+                    Última visita: {ultimaVisita(f.days_since_last_visit)}
                   </span>
                 </div>
                 <div style={{ marginTop: 4, height: 5, borderRadius: 3, background: 'var(--subtle-bg)', overflow: 'hidden' }}>

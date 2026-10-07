@@ -25,6 +25,7 @@ const CouponsPage = lazy(() => import('./pages/CouponsPage').then(m => ({ defaul
 const SoftwarePage = lazy(() => import('./pages/SoftwarePage').then(m => ({ default: m.SoftwarePage })))
 const SegurosPage = lazy(() => import('./pages/SegurosPage').then(m => ({ default: m.SegurosPage })))
 const AnalisisMaquinasPage = lazy(() => import('./pages/AnalisisMaquinasPage').then(m => ({ default: m.AnalisisMaquinasPage })))
+const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage').then(m => ({ default: m.AnalyticsPage })))
 const ConfiguracionPage = lazy(() => import('./pages/ConfiguracionPage').then(m => ({ default: m.ConfiguracionPage })))
 const NotificacionesPage = lazy(() => import('./pages/NotificacionesPage').then(m => ({ default: m.NotificacionesPage })))
 const EstacionFiscalPage = lazy(() => import('./pages/EstacionFiscalPage').then(m => ({ default: m.EstacionFiscalPage })))
@@ -122,7 +123,7 @@ export default function App() {
                 <Route path="/customers"   element={<ScreenGuard permission="screens.customers"><CustomersPage/></ScreenGuard>}/>
                 <Route path="/pos"         element={<ScreenGuard permission="screens.pos"><POSPage/></ScreenGuard>}/>
                 <Route path="/orders"      element={<ScreenGuard permission="screens.orders"><OrdersPage/></ScreenGuard>}/>
-                <Route path="/analytics"   element={<ScreenGuard permission="screens.analytics"><PlaceholderPage/></ScreenGuard>}/>
+                <Route path="/analytics"   element={<ScreenGuard permission="screens.analytics"><AnalyticsPage/></ScreenGuard>}/>
                 <Route path="/cierres-caja"     element={<ScreenGuard permission="screens.cash_closes"><CierresCajaPage/></ScreenGuard>}/>
                 <Route path="/cierres-caja/:id" element={<ScreenGuard permission="screens.cash_closes"><CierresCajaPage/></ScreenGuard>}/>
                 <Route path="/receivables" element={<ScreenGuard permission="screens.receivables"><CxcPage/></ScreenGuard>}/>

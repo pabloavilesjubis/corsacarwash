@@ -77,7 +77,7 @@ export async function searchByPlate(plate: string): Promise<PlateSearchResult | 
   // Load customer metrics
   const { data: metricsRaw } = await supabase
     .from('v_customer_metrics' as any)
-    .select('days_since_last_visit, total_orders, lifetime_value, segment')
+    .select('days_since_last_visit, total_orders, total_washes, lifetime_value, segment')
     .eq('customer_id', c.id)
     .maybeSingle()
 
@@ -111,7 +111,8 @@ export async function searchByPlate(plate: string): Promise<PlateSearchResult | 
     ar_overdue: arOverdue,
     ar_overdue_amount: arOverdueAmount,
     days_since_last_visit: metrics?.days_since_last_visit ?? null,
-    lifetime_orders: metrics?.total_orders ?? 0,
+    // Visita = carro lavado (0074): una factura puede llevar varios carros.
+    lifetime_orders: metrics?.total_washes ?? metrics?.total_orders ?? 0,
   }
 }
 

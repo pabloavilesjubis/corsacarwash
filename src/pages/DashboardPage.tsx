@@ -797,7 +797,7 @@ function WeekSummaryTable({ items }: { items: DailySummary[] }) {
     <div>
       <div style={{ display: 'flex', fontSize: 11.5, fontWeight: 600, color: 'var(--text-secondary)', paddingBottom: 8, borderBottom: '1px solid var(--border)', gap: 0 }}>
         <div style={{ flex: 1 }}>Día</div>
-        <div style={{ width: 60, textAlign: 'center' }}>Órdenes</div>
+        <div style={{ width: 60, textAlign: 'center' }}>Lavados</div>
         <div style={{ width: 100, textAlign: 'right' }}>Ingresos</div>
         <div style={{ width: 64, textAlign: 'right' }}>Prom.</div>
       </div>
@@ -818,7 +818,7 @@ function WeekSummaryTable({ items }: { items: DailySummary[] }) {
           </div>
           <div style={{ width: 60, textAlign: 'center', fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{d.total_orders}</div>
           <div style={{ width: 100, textAlign: 'right', fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{fmtShort(d.gross_revenue)}</div>
-          <div style={{ width: 64, textAlign: 'right', fontSize: 12, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{fmt(d.gross_revenue / d.total_orders)}</div>
+          <div style={{ width: 64, textAlign: 'right', fontSize: 12, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{d.total_orders > 0 ? fmt(d.gross_revenue / d.total_orders) : '—'}</div>
         </div>
       ))}
       {/* Total row */}
@@ -1115,24 +1115,25 @@ export function DashboardPage() {
       // 7-day summary
       const weekStart = sumarDias(today, -6)
 
+      // La misma serie que Inteligencia de negocio (bi_serie, 0075): siete
+      // días con sus ceros, lavados por carro. Antes leía v_daily_sales, que
+      // nunca existió en producción, y la tarjeta quedaba vacía.
       const { data: weekData } = await (supabase as any)
-        .from('v_daily_sales')
-        .select('*')
-        .eq('branch_id', branchId)
-        .gte('sale_date', weekStart)
-        .order('sale_date')
+        .rpc('bi_serie', { p_desde: weekStart, p_hasta: today, p_granularidad: 'day', p_branch_id: branchId })
 
       if (weekData) {
-        const max = Math.max(...weekData.map((d: any) => d.total_orders || 1))
+        const max = Math.max(1, ...weekData.map((d: any) => Number(d.lavados) || 0))
         setDailySales(weekData.map((d: any) => {
-          const date = new Date(d.sale_date + 'T12:00:00')
-          const isToday = d.sale_date === today
+          const fecha = String(d.bucket)
+          const date = new Date(fecha + 'T12:00:00')
+          const isToday = fecha === today
+          const lavados = Number(d.lavados) || 0
           return {
-            sale_date: d.sale_date,
+            sale_date: fecha,
             label: isToday ? `${DIAS_ES[date.getDay()]}\u00a0(hoy)` : DIAS_ES[date.getDay()],
-            total_orders: d.total_orders || 0,
-            gross_revenue: d.gross_revenue || 0,
-            pct: Math.max(6, Math.round((d.total_orders || 0) / max * 100)),
+            total_orders: lavados,
+            gross_revenue: Number(d.ventas) || 0,
+            pct: Math.max(6, Math.round(lavados / max * 100)),
             is_today: isToday,
           }
         }))
@@ -1307,8 +1308,8 @@ export function DashboardPage() {
         />
         <KpiCard
           label="Vehículos atendidos"
-          value={kpis ? String(kpis.completed_orders) : '—'}
-          sub={`/ meta 60 · ${kpis ? Math.round(kpis.completed_orders / 60 * 100) : 0}% completado`}
+          value={kpis ? String(facturados) : '—'}
+          sub={`/ meta 60 · ${kpis ? Math.round(facturados / 60 * 100) : 0}% completado`}
         />
         <KpiCard
           label="Ticket promedio"

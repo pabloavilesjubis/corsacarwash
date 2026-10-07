@@ -1,7 +1,6 @@
 import { useLocation } from 'react-router-dom'
 
 const PAGE_LABELS: Record<string, string> = {
-  '/analytics': 'Inteligencia de negocio',
   '/receivables': 'Cuentas por cobrar',
   '/payables': 'Cuentas por pagar',
   '/fleets': 'Flotillas corporativas',
