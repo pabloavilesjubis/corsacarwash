@@ -3,7 +3,7 @@
  *
  * Reemplaza el panel lateral de Clientes: una tarjeta propia, ordenada por
  * secciones, con todo lo que se hace con un cliente —contacto, información
- * fiscal, vehículos, crédito, membresía— en un solo lugar.
+ * fiscal, vehículos, crédito, tarifario especial, membresía— en un solo lugar.
  *
  * Lo que la ficha muestra en rojo es lo que impide facturarle: a toda persona
  * jurídica se le emite CCF, y si le falta un dato del CCF se dice cuál.
@@ -22,6 +22,11 @@ import {
 } from '../../services/credito.service'
 import { ccfReceptorStatus, requiereCcf } from '../../lib/fiscal/receptor'
 import { VehiculosClienteModal } from '../VehiculosClienteModal'
+import { EditorPrecios } from '../EditorPrecios'
+import { lineasDesde, SERVICIOS_FLOTILLA, type LineasEditables } from '../../lib/flotillas/precios'
+import {
+  cargarTarifario, guardarTarifario, habilitarTarifario, problemaDeTarifario, type Tarifario,
+} from '../../lib/clientes/tarifario'
 import { CustomerFormPanel } from '../CustomerFormPanel'
 import type { Vehicle } from '../../types'
 
@@ -63,6 +68,8 @@ export function FichaCliente({ customer, orgId, onCerrar, onActualizado }: {
   const navigate = useNavigate()
   const verCredito = hasPermission('corporate.read') || hasPermission('corporate.manage')
   const adminCredito = hasPermission('corporate.manage')
+  // Los precios negociados (flotillas, grupos, tarifario especial) los fija quien tiene corporate.manage.
+  const adminPrecios = adminCredito
   const verCxc = hasPermission('screens.receivables')
 
   const [vehiculos, setVehiculos] = useState<Vehicle[]>([])
@@ -78,6 +85,12 @@ export function FichaCliente({ customer, orgId, onCerrar, onActualizado }: {
   const [guardando, setGuardando] = useState(false)
   // Editar la ficha pasa adentro de la misma tarjeta, no en otro panel.
   const [editando, setEditando] = useState(false)
+  // Tarifario especial (0071). undefined: cargando o sin la migración.
+  const [tarifario, setTarifario] = useState<Tarifario | null | undefined>(undefined)
+  const [editandoTarifa, setEditandoTarifa] = useState(false)
+  const [lineas, setLineas] = useState<LineasEditables>(() => lineasDesde(null))
+  const [aspirado, setAspirado] = useState({ activo: false, precio: '' })
+  const [guardandoTarifa, setGuardandoTarifa] = useState(false)
   const onEditar = () => setEditando(true)
 
   const nombre = nombreCliente(customer)
@@ -94,6 +107,44 @@ export function FichaCliente({ customer, orgId, onCerrar, onActualizado }: {
     document.addEventListener('keydown', h)
     return () => document.removeEventListener('keydown', h)
   }, [onCerrar, modalVehiculos, editando])
+
+  const recargarTarifario = useCallback(() => {
+    cargarTarifario(customer.id).then(setTarifario).catch(() => setTarifario(undefined))
+  }, [customer.id])
+  useEffect(() => { setEditandoTarifa(false); recargarTarifario() }, [recargarTarifario])
+
+  const abrirEditorTarifa = () => {
+    const a = tarifario?.acuerdo ?? null
+    setLineas(lineasDesde(a))
+    setAspirado({ activo: Boolean(a?.aspirado.activo), precio: a?.aspirado.precio != null ? a.aspirado.precio.toFixed(2) : '3.00' })
+    setEditandoTarifa(true)
+  }
+
+  const guardarTarifa = async () => {
+    const problema = problemaDeTarifario(lineas, aspirado)
+    if (problema) { toast.error(problema); return }
+    setGuardandoTarifa(true)
+    try {
+      await guardarTarifario(customer.id, orgId, lineas, aspirado)
+      toast.success('Tarifario especial guardado')
+      setEditandoTarifa(false)
+      recargarTarifario()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo guardar el tarifario')
+    }
+    setGuardandoTarifa(false)
+  }
+
+  const cambiarHabilitadoTarifa = async (habilitado: boolean) => {
+    if (!habilitado && !window.confirm('¿Desactivar el tarifario especial? El cliente vuelve a pagar tarifa de lista; los precios quedan guardados.')) return
+    try {
+      await habilitarTarifario(customer.id, habilitado)
+      toast.success(habilitado ? 'Tarifario especial activado' : 'Tarifario especial desactivado')
+      recargarTarifario()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo cambiar el tarifario')
+    }
+  }
 
   const cargarCredito = useCallback(async () => {
     if (!verCredito) return
@@ -401,6 +452,76 @@ export function FichaCliente({ customer, orgId, onCerrar, onActualizado }: {
                         {guardando ? 'Guardando…' : formCredito === 'activar' ? 'Activar crédito' : 'Guardar límite'}
                       </button>
                     </div>
+                  </div>
+                )}
+              </Seccion>
+            )}
+
+            {tarifario !== undefined && (
+              <Seccion titulo="Tarifario especial"
+                accion={tarifario?.habilitado && !editandoTarifa
+                  ? <span className="badge badge-green">Activo</span>
+                  : undefined}>
+                {editandoTarifa ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
+                      Marcá los servicios con precio especial. Lo que no marques se cobra a tarifa de lista.
+                    </div>
+                    <EditorPrecios lineas={lineas} setLineas={setLineas} aspirado={aspirado} setAspirado={setAspirado}/>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center' }}
+                              onClick={() => setEditandoTarifa(false)} disabled={guardandoTarifa}>Cancelar</button>
+                      <button id="tarifa-guardar" className="btn btn-primary" style={{ flex: 2, justifyContent: 'center' }}
+                              onClick={guardarTarifa} disabled={guardandoTarifa}>
+                        {guardandoTarifa ? 'Guardando…' : 'Guardar tarifario'}
+                      </button>
+                    </div>
+                  </div>
+                ) : tarifario?.habilitado ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {SERVICIOS_FLOTILLA.filter(s => tarifario.acuerdo.servicios[s.codigo]).map(({ codigo, nombre }) => {
+                        const p = tarifario.acuerdo.servicios[codigo]!
+                        return (
+                          <Dato key={codigo} label={nombre} valor={tarifario.acuerdo.porTamano[codigo]
+                            ? `S ${money(p.S)} · M ${money(p.M)} · L ${money(p.L)}`
+                            : money(p.M)}/>
+                        )
+                      })}
+                      {tarifario.acuerdo.aspirado.activo && tarifario.acuerdo.aspirado.precio != null && (
+                        <Dato label="Aspirado" valor={money(tarifario.acuerdo.aspirado.precio)}/>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                      En caja, al elegir a este cliente, se cobran estos precios. Lo demás, a tarifa de lista.
+                    </div>
+                    {adminPrecios && (
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center' }} onClick={abrirEditorTarifa}>Editar precios</button>
+                        <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center', color: 'var(--color-danger-text)' }}
+                                onClick={() => cambiarHabilitadoTarifa(false)}>Desactivar</button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                      {tarifario
+                        ? 'Tarifario especial desactivado: paga tarifa de lista. Los precios cargados quedan guardados.'
+                        : 'Paga tarifa de lista. Con un tarifario especial, la caja le cobra los precios que fijes acá.'}
+                    </div>
+                    {adminPrecios && (
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        {tarifario && (
+                          <button className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }}
+                                  onClick={() => cambiarHabilitadoTarifa(true)}>Reactivar</button>
+                        )}
+                        <button id="btn-habilitar-tarifario" className={tarifario ? 'btn btn-ghost' : 'btn btn-primary'}
+                                style={{ flex: 1, justifyContent: 'center' }} onClick={abrirEditorTarifa}>
+                          {tarifario ? 'Editar y reactivar' : 'Habilitar tarifario especial'}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </Seccion>

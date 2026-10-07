@@ -34,6 +34,12 @@ export interface RainPolicy {
   notes: string | null
   /** Regalado desde el POS (0053). */
   courtesy?: boolean
+  /**
+   * Pide el código de 6 dígitos de su ticket para canjearse (0071). El código
+   * en sí no sale de la base: lo compara el servidor. Las pólizas anteriores
+   * a 0071 no tienen.
+   */
+  requiere_codigo?: boolean
 }
 
 export interface RainFilters {
@@ -82,11 +88,18 @@ export async function fetchPolizaVigente(vehicleId: string): Promise<RainPolicy 
   return (data as RainPolicy) ?? null
 }
 
-/** Registrar el canje sin pasar por una venta (el lavado ya se hizo). */
-export async function redimirPoliza(id: string, notas?: string): Promise<void> {
+/** Lo que se teclea: sólo los dígitos, como en los cupones. */
+export const limpiarCodigoSeguro = (v: string) => v.replace(/\D/g, '').slice(0, 6)
+
+/**
+ * Registrar el canje sin pasar por una venta (el lavado ya se hizo). Con
+ * `codigo` sólo si la póliza lo pide: así sigue andando contra una base sin 0071.
+ */
+export async function redimirPoliza(id: string, codigo?: string | null, notas?: string): Promise<void> {
   const { error } = await (supabase as any).rpc('rain_policy_redeem', {
     p_policy_id: id,
     p_notes: notas ?? null,
+    ...(codigo ? { p_code: codigo } : {}),
   })
   if (error) throw error
 }
@@ -124,6 +137,8 @@ export interface PolizaCortesia {
   customer_name: string
   issued_at: string
   valid_until: string
+  /** Código para canjearlo, impreso en su ticket (0071). */
+  code?: string | null
 }
 
 /**

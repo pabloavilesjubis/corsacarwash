@@ -136,6 +136,11 @@ export interface TicketSeguroLluvia {
   hasta: string
   /** Regalado por la caja (0053): se imprime rotulado como cortesía. */
   cortesia?: boolean
+  /**
+   * Código de 6 dígitos que la caja pide para dar el lavado (0071). Sólo
+   * existe en este papel: si el cliente lo pierde, no hay canje.
+   */
+  codigo?: string | null
 }
 
 /**
@@ -344,8 +349,9 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
           hour: '2-digit', minute: '2-digit',
         }))}</span></div>
       </div>
+      ${seguroLluvia.codigo ? `<div class="seguro-codigo"><span>Código</span><span>${esc(seguroLluvia.codigo)}</span></div>` : ''}
       <div class="seguro-legal">
-        Válido únicamente para esta placa y presentando este ticket.
+        Válido únicamente para esta placa y presentando este ticket${seguroLluvia.codigo ? ': la caja pide el código' : ''}.
         Vence a la hora indicada.
       </div>
     </div>` : ''
@@ -547,6 +553,12 @@ export function buildCorsaTicketHTML(args: TicketArgs): string {
   .seguro-rows { font-size: 10px; font-weight: 700; margin-top: 2px; }
   .seguro-row { display: flex; justify-content: space-between; padding: 0 1px; }
   .seguro-row .strong { font-weight: 900; text-decoration: underline; }
+  .seguro-codigo {
+    display: flex; justify-content: space-between; align-items: baseline;
+    border-top: 1px dashed #000; margin-top: 3px; padding: 2px 1px 0;
+    font-size: 10px; font-weight: 700;
+  }
+  .seguro-codigo span:last-child { font-size: 17px; font-weight: 900; letter-spacing: 0.18em; font-family: monospace; }
   .seguro-legal { font-size: 8.5px; font-weight: 600; margin-top: 1px; line-height: 1.2; }
 
   /* ── Branding: el logo a la izquierda y los datos legales al lado ── */

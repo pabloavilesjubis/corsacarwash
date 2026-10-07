@@ -17,7 +17,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useEsMovil } from '../hooks/useEsMovil'
 import { formatearFechaHora } from '../utils/fecha'
 import {
-  fetchPolicies, redimirPoliza, tiempoRestante,
+  fetchPolicies, limpiarCodigoSeguro, redimirPoliza, tiempoRestante,
   ESTADO_ETIQUETA, ESTADO_COLOR,
   type RainPolicy, type EstadoPoliza,
 } from '../services/rain.service'
@@ -93,10 +93,13 @@ function DetallePoliza({ p, esMovil, onCerrar, onCanjear, canjeando }: {
   p: RainPolicy
   esMovil: boolean
   onCerrar: () => void
-  onCanjear: () => void
+  onCanjear: (codigo: string | null) => void
   canjeando: boolean
 }) {
   const vigente = p.estado === 'activa' || p.estado === 'por_vencer'
+  // Como en caja (0071): sin el código del ticket no hay canje.
+  const [codigo, setCodigo] = useState('')
+  const faltaCodigo = !!p.requiere_codigo && codigo.length !== 6
 
   const cuerpo = (
     <>
@@ -126,8 +129,19 @@ function DetallePoliza({ p, esMovil, onCerrar, onCanjear, canjeando }: {
           constancia: por eso lo dice, en vez de ofrecer dos caminos iguales. */}
       {vigente && (
         <div style={{ marginTop: 16 }}>
+          {p.requiere_codigo && (
+            <label style={{ display: 'block', marginBottom: 9 }}>
+              <span style={{ display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                Código del ticket del seguro
+              </span>
+              <input className="corsa-input font-mono" inputMode="numeric" autoComplete="off"
+                     maxLength={6} placeholder="------" value={codigo}
+                     onChange={e => setCodigo(limpiarCodigoSeguro(e.target.value))}
+                     style={{ fontSize: 20, fontWeight: 800, letterSpacing: '0.3em', textAlign: 'center' }}/>
+            </label>
+          )}
           <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }}
-                  onClick={onCanjear} disabled={canjeando}>
+                  onClick={() => onCanjear(p.requiere_codigo ? codigo : null)} disabled={canjeando || faltaCodigo}>
             {canjeando ? 'Registrando…' : 'Registrar canje'}
           </button>
           <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.45 }}>
@@ -206,11 +220,11 @@ export function SegurosPage() {
     vendido: polizas.reduce((n, p) => n + Number(p.price || 0), 0),
   }), [polizas])
 
-  const canjear = async () => {
+  const canjear = async (codigo: string | null) => {
     if (!abierta) return
     setCanjeando(true)
     try {
-      await redimirPoliza(abierta.id)
+      await redimirPoliza(abierta.id, codigo)
       toast.success(`Seguro de ${abierta.plate} canjeado`)
       setAbierta(null)
       cargar()
@@ -329,7 +343,7 @@ export function SegurosPage() {
         </div>
 
         {!esMovil && abierta && (
-          <DetallePoliza
+          <DetallePoliza key={abierta.id}
             p={abierta} esMovil={false}
             onCerrar={() => setAbierta(null)}
             onCanjear={canjear}
@@ -339,7 +353,7 @@ export function SegurosPage() {
       </div>
 
       {esMovil && abierta && (
-        <DetallePoliza
+        <DetallePoliza key={abierta.id}
           p={abierta} esMovil
           onCerrar={() => setAbierta(null)}
           onCanjear={canjear}

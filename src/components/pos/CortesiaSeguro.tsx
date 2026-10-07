@@ -49,7 +49,7 @@ export async function imprimirTicketCortesia(p: PolizaCortesia, branchId: string
       venta: { id: p.id, fecha: p.issued_at, lineas: [], total: 0 },
       operacion: { servicio: '', aspirado: false, placa: p.plate },
       cortesia: { clienteNombre: p.customer_name, fecha: formatearFechaHora(p.issued_at) },
-      seguroLluvia: { placa: p.plate, desde: p.issued_at, hasta: p.valid_until, cortesia: true },
+      seguroLluvia: { placa: p.plate, desde: p.issued_at, hasta: p.valid_until, cortesia: true, codigo: p.code ?? null },
     })
   } catch (e) {
     toast.error(e instanceof Error ? e.message : 'La cortesía quedó registrada, pero no se pudo imprimir el ticket')

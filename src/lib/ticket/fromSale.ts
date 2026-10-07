@@ -128,6 +128,8 @@ export interface PosSaleResult {
     valid_until: string
     /** De cortesía (0053): la agrega el POS después del cobro, sin línea de venta. */
     courtesy?: boolean
+    /** Código de 6 dígitos para canjearlo (0071); null en una base anterior. */
+    code?: string | null
   } | null
   /** Al crédito con facturación consolidada (0060): sin factura ni DTE. */
   facturacion_diferida?: boolean
@@ -228,6 +230,7 @@ export function buildTicketArgsFromPos(
           desde: result.rain_policy.issued_at,
           hasta: result.rain_policy.valid_until,
           cortesia: !!result.rain_policy.courtesy,
+          codigo: result.rain_policy.code ?? null,
         }
       : undefined,
   }
@@ -254,7 +257,7 @@ export function buildTicketSeguroDeVenta(
       fecha: formatearFechaHora(p.issued_at),
       pagado: p.courtesy ? undefined : { orden: result.order_number, precio: Number(p.price || 0) },
     },
-    seguroLluvia: { placa: p.plate, desde: p.issued_at, hasta: p.valid_until, cortesia: !!p.courtesy },
+    seguroLluvia: { placa: p.plate, desde: p.issued_at, hasta: p.valid_until, cortesia: !!p.courtesy, codigo: p.code ?? null },
   }
 }
 

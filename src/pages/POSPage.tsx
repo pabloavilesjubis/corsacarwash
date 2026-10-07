@@ -6,6 +6,8 @@
  *           a su precio (fleet_service_prices, 0050)
  * Add-on: Aspirado de interiores — $3 de lista, o el precio negociado si la
  *          flotilla tiene uno cargado (fleet_pricing)
+ * Normal: un cliente con tarifario especial (0071) paga sus precios; si no,
+ *         los de su grupo empresarial (0054); si no, tarifa de lista
  * Modal de cobro: Ticket (FCF) o CCF
  */
 
@@ -30,7 +32,7 @@ import {
 } from '../lib/ticket/fromSale'
 import { cargarEmisor, emisorParaTicket, MARCA } from '../lib/fiscal/emisor'
 import { lookupVoucher, redeemVoucher, type VoucherLookup } from '../services/vouchers.service'
-import { darCortesia, fetchPolizaVigente, tiempoRestante, type RainPolicy } from '../services/rain.service'
+import { darCortesia, fetchPolizaVigente, limpiarCodigoSeguro, tiempoRestante, type RainPolicy } from '../services/rain.service'
 import { creditoDisponible, type CreditoDisponible } from '../services/credito.service'
 import { enviarCorreoVenta } from '../services/correo.service'
 import { ModalCortesiaSeguro, imprimirTicketCortesia } from '../components/pos/CortesiaSeguro'
@@ -44,6 +46,7 @@ import {
 } from '../components/pos/AltaRapida'
 import { formatearFechaHora } from '../utils/fecha'
 import { cargarAcuerdos, PRECIOS_LISTA, type CodigoServicio } from '../lib/flotillas/precios'
+import { tarifarioVigente } from '../lib/clientes/tarifario'
 
 /**
  * Cuánto espera el POS el sello antes de imprimir sin él. Hacienda suele
@@ -1224,6 +1227,9 @@ export function POSPage() {
   const [conCortesia, setConCortesia] = useState(false)
   // Grupo empresarial del cliente en caja (0054). Se pide al elegir el cliente.
   const [grupo, setGrupo] = useState<GrupoPos | null>(null)
+  // Tarifario especial del cliente en caja (0071), si tiene uno habilitado.
+  // Guarda de quién es: si cambia el cliente, el anterior no se cobra ni un render.
+  const [tarifaCliente, setTarifaCliente] = useState<{ customerId: string; acuerdo: AcuerdoFlotilla | null } | null>(null)
   // Grupo empresarial elegido desde Flotilla, sin un cliente en caja: se ven
   // las placas de todo el grupo, se cobra a sus precios y se elige a cuál de
   // sus clientes se le factura (y a cuál se le carga si es al crédito).
@@ -1249,6 +1255,11 @@ export function POSPage() {
   const [altaVehiculo, setAltaVehiculo] = useState(false)
   // Cuando el cajero decide cobrar el lavado CON el seguro, en lugar de cobrarlo.
   const [canjeandoSeguro, setCanjeandoSeguro] = useState(false)
+  // El código impreso en el ticket del seguro (0071). Lo compara el servidor.
+  // Va atado a la póliza: si cambia el carro, el código tecleado no la sigue.
+  const [codigoTecleado, setCodigoTecleado] = useState<{ polizaId: string; codigo: string } | null>(null)
+
+  const codigoSeguro = codigoTecleado && codigoTecleado.polizaId === polizaVigente?.id ? codigoTecleado.codigo : ''
 
   // Fleet mode
   const [showFleetModal, setShowFleetModal] = useState(false)
@@ -1307,16 +1318,23 @@ export function POSPage() {
   // Con un cliente de grupo en caja (modo normal), el precio negociado del
   // grupo para ese servicio; lo que el grupo no negoció va a tarifa de lista.
   const acuerdoGrupo = mode === 'normal' ? grupo?.acuerdo ?? null : null
+  // El tarifario especial del cliente (0071) manda sobre el del grupo: es el
+  // acuerdo más específico. Lo que ninguno fija va a tarifa de lista.
+  const tarifa = mode === 'normal' && customer && tarifaCliente?.customerId === customer.id ? tarifaCliente.acuerdo : null
+  const precioCliente = (s: { id: string }) => tarifa?.servicios[s.id.toUpperCase() as CodigoServicio]
+  const precioGrupo = (s: { id: string }) => acuerdoGrupo?.servicios[s.id.toUpperCase() as CodigoServicio]
   const preciosDe = (s: { id: string; prices: Record<SizeId, number> }): Record<SizeId, number> =>
-    acuerdoGrupo?.servicios[s.id.toUpperCase() as CodigoServicio] ?? s.prices
+    precioCliente(s) ?? precioGrupo(s) ?? s.prices
   const servicePrice = !svc ? 0 : mode === 'flotilla' ? fleetPrices![selectedSize] : preciosDe(svc)[selectedSize]
   // En flotilla manda el precio negociado; si no hay acuerdo, la tarifa de lista.
   const usaAspiradoFlotilla = mode === 'flotilla'
     && Boolean(fleetCompany?.aspirado_enabled)
     && fleetCompany?.aspirado_price != null
+  const usaAspiradoCliente = Boolean(tarifa?.aspirado.activo && tarifa.aspirado.precio != null)
   const usaAspiradoGrupo = Boolean(acuerdoGrupo?.aspirado.activo && acuerdoGrupo.aspirado.precio != null)
   const aspiradoUnit = usaAspiradoFlotilla
     ? Number(fleetCompany!.aspirado_price)
+    : usaAspiradoCliente ? Number(tarifa!.aspirado.precio)
     : usaAspiradoGrupo ? Number(acuerdoGrupo!.aspirado.precio)
     : ADDON_ASPIRADO.price
 
@@ -1648,6 +1666,8 @@ export function POSPage() {
         p_rain_insurance:  seguroActivo,
         p_rain_price:      seguroPrice,
         p_rain_policy_id:  canjeandoSeguro ? (polizaVigente?.id ?? null) : null,
+        // Sólo si la póliza lo pide: las anteriores a 0071 no tienen código.
+        ...(canjeandoSeguro && polizaVigente?.requiere_codigo ? { p_rain_code: codigoSeguro } : {}),
         // Sólo cuando se pide (0064): así las ventas de siempre no dependen de esa migración.
         ...(billing.facturarAhora ? { p_facturar_ahora: true } : {}),
       })
@@ -1663,7 +1683,7 @@ export function POSPage() {
             branchId, workOrderId: sale.order_id, vehicleId: vehiculoId,
             customerId: (mode === 'flotilla' ? fleetCompany?.customer_id : clienteVenta?.id) as string,
           })
-          sale = { ...sale, rain_policy: { id: p.id, plate: p.plate, price: 0, issued_at: p.issued_at, valid_until: p.valid_until, courtesy: true } }
+          sale = { ...sale, rain_policy: { id: p.id, plate: p.plate, price: 0, issued_at: p.issued_at, valid_until: p.valid_until, courtesy: true, code: p.code ?? null } }
         } catch (e) {
           toast.error(`La venta se registró, pero la cortesía no: ${e instanceof Error ? e.message : 'error'}. Dala desde el botón Cortesía.`,
             { duration: 10000 })
@@ -1757,7 +1777,7 @@ export function POSPage() {
     setSubmitting(false)
   }, [branchId, emiteDte, mode, fleetCompany, fleetVehicle, customer, clienteVenta, svc, selectedSize, total, selectedPayment,
       withAspirado, aspiradoPrice, currentBranch, seguroActivo, seguroPrice,
-      canjeandoSeguro, polizaVigente, vehiculoElegido, cortesiaActiva, vehiculoId, multi, cobrarVariosCarros, soloAdicionales])
+      canjeandoSeguro, codigoSeguro, polizaVigente, vehiculoElegido, cortesiaActiva, vehiculoId, multi, cobrarVariosCarros, soloAdicionales])
 
   // Con cupón el botón sólo se habilita si el cupón existe y está sin usar:
   // canjear uno ya utilizado o inexistente falla en el servidor, y es mejor
@@ -1816,6 +1836,15 @@ export function POSPage() {
    * como con cualquier cliente: tarifa de lista y sus propios carros.
    */
   const grupoId = mode === 'normal' ? customer?.business_group_id ?? grupoDirecto?.id ?? null : null
+
+  /** El tarifario especial del cliente en caja (0071). Si falla, tarifa de lista. */
+  const tarifaClienteId = mode === 'normal' ? customer?.id ?? null : null
+  useEffect(() => {
+    if (!tarifaClienteId) return
+    let vivo = true
+    tarifarioVigente(tarifaClienteId).then(t => { if (vivo) setTarifaCliente({ customerId: tarifaClienteId, acuerdo: t }) })
+    return () => { vivo = false }
+  }, [tarifaClienteId])
   useEffect(() => {
     if (!grupoId) { setGrupo(null); return }
     let vivo = true
@@ -1875,7 +1904,9 @@ export function POSPage() {
   // trae su servicio), o dar la cortesía sola, que no pasa por el cobro.
   const soloCortesia = !svc && !multi && cortesiaActiva && !soloAdicionales
   const faltaFacturarA = !!grupoDirecto && !customer && !facturarA
-  const canCharge = faltaFacturarA ? false
+  // El canje no se cobra sin el código del ticket del seguro (0071).
+  const faltaCodigoSeguro = canjeandoSeguro && !multi && !!polizaVigente?.requiere_codigo && codigoSeguro.length !== 6
+  const canCharge = faltaFacturarA || faltaCodigoSeguro ? false
     : multi ? lineasOrden.length > 0
     : soloAdicionales ? (mode === 'flotilla' ? !!fleetVehicle : true)
     : !svc ? (soloCortesia || (mode === 'normal' && puedeCanjearCupon))
@@ -2248,7 +2279,8 @@ export function POSPage() {
                 const isSel = servicioEfectivo === s.id
                 const isFleet = mode === 'flotilla'
                 const displayPrices = isFleet ? (fleetCompany?.precios[s.id as ServicioId] ?? s.prices) : preciosDe(s)
-                const isGrupo = !isFleet && Boolean(acuerdoGrupo?.servicios[s.id.toUpperCase() as CodigoServicio])
+                const isCliente = !isFleet && Boolean(precioCliente(s))
+                const isGrupo = !isFleet && !isCliente && Boolean(precioGrupo(s))
                 return (
                   <div key={s.id} id={`svc-${s.id}`}
                     onClick={() => setSelectedService(cur => (cur === s.id ? null : s.id))}
@@ -2257,6 +2289,9 @@ export function POSPage() {
                   >
                     {isGrupo && (
                       <div style={{ position: 'absolute', top: -8, right: 12, background: 'var(--corsa-orange)', color: 'var(--on-accent)', fontSize: 9.5, fontWeight: 700, letterSpacing: '0.06em', padding: '2px 7px', borderRadius: 6 }}>PRECIO GRUPO</div>
+                    )}
+                    {isCliente && (
+                      <div style={{ position: 'absolute', top: -8, right: 12, background: 'var(--corsa-orange)', color: 'var(--on-accent)', fontSize: 9.5, fontWeight: 700, letterSpacing: '0.06em', padding: '2px 7px', borderRadius: 6 }}>PRECIO ESPECIAL</div>
                     )}
                     {s.recommended && mode !== 'flotilla' && (
                       <div style={{ position: 'absolute', top: -8, left: 12, background: '#8B5A2B', color: '#fff', fontSize: 9.5, fontWeight: 700, letterSpacing: '0.06em', padding: '2px 7px', borderRadius: 6 }}>RECOMENDADO</div>
@@ -2404,8 +2439,19 @@ export function POSPage() {
                     Le quedan {tiempoRestante(polizaVigente.horas_restantes)} — vence el{' '}
                     {formatearFechaHora(polizaVigente.valid_until)}
                   </div>
+                  {canjeandoSeguro && polizaVigente.requiere_codigo && (
+                    <label style={{ display: 'block', marginTop: 9 }}>
+                      <span style={{ display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                        Código del ticket del seguro
+                      </span>
+                      <input id="codigo-seguro" className="corsa-input font-mono" inputMode="numeric" autoComplete="off" autoFocus
+                             maxLength={6} placeholder="------" value={codigoSeguro}
+                             onChange={e => setCodigoTecleado({ polizaId: polizaVigente.id, codigo: limpiarCodigoSeguro(e.target.value) })}
+                             style={{ fontSize: 20, fontWeight: 800, letterSpacing: '0.3em', textAlign: 'center' }}/>
+                    </label>
+                  )}
                   <button
-                    onClick={() => { if (!canjeandoSeguro && !selectedService) setSelectedService('pro'); setCanjeandoSeguro(v => !v) }}
+                    onClick={() => { if (!canjeandoSeguro && !selectedService) setSelectedService('pro'); setCanjeandoSeguro(v => !v); setCodigoTecleado(null) }}
                     className={canjeandoSeguro ? 'btn btn-ghost' : 'btn btn-primary'}
                     style={{ marginTop: 9, width: '100%', justifyContent: 'center' }}>
                     {canjeandoSeguro ? 'Cancelar el canje' : 'Canjear: lavado PRO sin costo'}
@@ -2476,7 +2522,9 @@ export function POSPage() {
                   <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
                     {SIZES.find(s => s.id === selectedSize)?.sub}
                     {mode === 'flotilla' && <span style={{ color: 'var(--corsa-orange)', marginLeft: 5 }}>· Precio flotilla</span>}
-                    {mode === 'normal' && acuerdoGrupo?.servicios[svc.id.toUpperCase() as CodigoServicio] && (
+                    {mode === 'normal' && precioCliente(svc) ? (
+                      <span style={{ color: 'var(--corsa-orange)', marginLeft: 5 }}>· Precio especial del cliente</span>
+                    ) : mode === 'normal' && precioGrupo(svc) && (
                       <span style={{ color: 'var(--corsa-orange)', marginLeft: 5 }}>· Precio {grupo?.name}</span>
                     )}
                   </div>
@@ -2545,6 +2593,7 @@ export function POSPage() {
                       disabled={!canCharge || submitting}>
                 {submitting ? 'Procesando…'
                   : faltaFacturarA ? 'Elegí a quién facturar'
+                  : faltaCodigoSeguro ? 'Ingresá el código del seguro'
                   : soloCortesia ? 'Dar cortesía (sin cobro)'
                   : !svc && !multi && !soloAdicionales ? (canCharge ? 'Canjear cupón' : 'Elegí un servicio')
                   : `Cobrar ${fmt(total)}`}
