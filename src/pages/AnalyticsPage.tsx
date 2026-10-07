@@ -24,7 +24,10 @@ import {
 import {
   dinero, dividir, entero, porcentaje, textoVariacion, variacion, variacionEnPuntos,
 } from '../lib/analitica/variacion'
-import { fetchClientesBi, fetchCuadre, fetchMaquinasBi, fetchProyeccion, fetchResumen, fetchSerie } from '../services/analitica.service'
+import {
+  fetchClientesBi, fetchCuadre, fetchDemanda, fetchMaquinasBi, fetchPromociones, fetchProyeccion, fetchResumen, fetchSerie,
+} from '../services/analitica.service'
+import { generarInsights } from '../lib/analitica/insights'
 import { nombreMaquina } from '../services/plc.service'
 import { useConsulta } from '../lib/analitica/useConsulta'
 import { premiumDe } from '../lib/analitica/mix'
@@ -36,6 +39,8 @@ import { ProyeccionCierre } from '../components/analitica/ProyeccionCierre'
 import { RendimientoMaquinas } from '../components/analitica/RendimientoMaquinas'
 import { CuadrePeriodo } from '../components/analitica/CuadrePeriodo'
 import { ClientesRecurrencia } from '../components/analitica/ClientesRecurrencia'
+import { PromocionesBloque } from '../components/analitica/PromocionesBloque'
+import { Oportunidades } from '../components/analitica/Oportunidades'
 
 export function AnalyticsPage() {
   const { profile, hasPermission } = useAuth()
@@ -59,6 +64,9 @@ export function AnalyticsPage() {
   const maq = useConsulta(claveRango, () => fetchMaquinasBi(periodo.actual, periodo.anterior))
   const cuadre = useConsulta(`${periodo.actual.desde}|${periodo.actual.hasta}`, () => fetchCuadre(periodo.actual))
   const cli = useConsulta(claveRango, () => fetchClientesBi(periodo.actual, periodo.anterior))
+  const claveActual = `${periodo.actual.desde}|${periodo.actual.hasta}`
+  const promos = useConsulta(claveActual, () => fetchPromociones(periodo.actual))
+  const demanda = useConsulta(claveActual, () => fetchDemanda(periodo.actual))
   // Filtro de máquina: sólo afecta la sección de máquinas.
   const [maquina, setMaquina] = useState<string | null>(null)
   const cargarResumen = resumen.reintentar
@@ -96,6 +104,22 @@ export function AnalyticsPage() {
     : !primerCiclo ? 'Sin lavados de máquina registrados'
     : periodo.anterior.hasta < primerCiclo ? 'Sin datos de máquinas del período anterior'
     : null
+
+  // ── Oportunidades: reglas sobre lo ya cargado (lib/analitica/insights) ──
+  const insights = generarInsights({
+    actual: a, anterior: b,
+    // Contra un período anterior incompleto (antes de la primera venta) no se
+    // sacan conclusiones de crecimiento.
+    comparable: !!r && !sinBase && !anteriorParcial,
+    maquinas: maq.datos?.actual ?? null,
+    demanda: demanda.datos,
+    cuadre: cuadre.datos,
+    primeraVenta: primera,
+    proyeccion: p,
+    esMesEnCurso: periodo.esMesEnCurso,
+    clientes: cli.datos?.actual ?? null,
+  })
+  const insightsIncompletos = resumen.cargando || maq.cargando || demanda.cargando || cuadre.cargando || cli.cargando
 
   return (
     <div className="page-inner" style={{ gap: 18 }}>
@@ -230,6 +254,24 @@ export function AnalyticsPage() {
           : cli.datos.actual.clientes_activos === 0 ? <Vacio titulo="Ningún lavado del período tiene cliente identificado" detalle="Las ventas a Consumidor Final no se pueden seguir como clientes."/>
           : <ClientesRecurrencia actual={cli.datos.actual} anterior={cli.datos.anterior} sinBase={sinBase}/>}
       </Bloque>
+
+      {/* ── 6. Cupones y promociones ── */}
+      <Bloque id="bi-promociones" titulo="Cupones y promociones" subtitulo="Cupones prepagados y seguro de lluvia del período">
+        {promos.error ? <ErrorBloque mensaje={`No se pudieron cargar las promociones: ${promos.error}`} onReintentar={promos.reintentar}/>
+          : promos.cargando || !promos.datos ? <Esqueleto filas={4}/>
+          : <PromocionesBloque p={promos.datos}/>}
+      </Bloque>
+
+      {/* ── 7. Oportunidades ── */}
+      <Bloque id="bi-oportunidades" titulo="Oportunidades" subtitulo="Lo que cambió lo suficiente como para mirarlo, según reglas sobre los datos del período">
+        <Oportunidades insights={insights} incompleto={insightsIncompletos}/>
+      </Bloque>
+
+      {/* Rentabilidad: la tabla de costos existe (0077); sin costos cargados no se inventa margen. */}
+      <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+        <b>Rentabilidad</b>: el margen por servicio, por vehículo y total se activa cuando se carguen los costos
+        (químicos, agua, electricidad, mano de obra variable, mantenimiento y costo por máquina). Hoy no se muestra para no inventarlo.
+      </div>
 
       {sinMovimiento && !resumen.cargando && (
         <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>

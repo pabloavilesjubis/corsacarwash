@@ -222,3 +222,39 @@ export async function fetchClientesBi(actual: Rango, anterior: Rango): Promise<{
   if (error) throw error
   return { actual: normalizarClientes(data?.actual), anterior: normalizarClientes(data?.anterior) }
 }
+
+// ─── Etapa 3: promociones y demanda (0077) ───────────────────
+
+export interface Promociones {
+  cupones: {
+    lotes_vendidos: number; vendidos: number; regalados: number; monto_vendido: number
+    vendidos_canjeados: number; vendidos_anulados: number; canjeados: number; valor_canjeado: number
+    pendiente_valor: number; pendiente_cantidad: number
+  }
+  seguros: { vendidos: number; monto: number; cortesias: number; canjeados: number; canjeados_en_periodo: number }
+  descuentos: number
+}
+
+export async function fetchPromociones(r: Rango): Promise<Promociones> {
+  const { data, error } = await db().rpc('bi_promociones', { p_desde: r.desde, p_hasta: r.hasta })
+  if (error) throw error
+  const c = data?.cupones ?? {}, s = data?.seguros ?? {}
+  return {
+    cupones: {
+      lotes_vendidos: num(c.lotes_vendidos), vendidos: num(c.vendidos), regalados: num(c.regalados), monto_vendido: num(c.monto_vendido),
+      vendidos_canjeados: num(c.vendidos_canjeados), vendidos_anulados: num(c.vendidos_anulados), canjeados: num(c.canjeados),
+      valor_canjeado: num(c.valor_canjeado), pendiente_valor: num(c.pendiente_valor), pendiente_cantidad: num(c.pendiente_cantidad),
+    },
+    seguros: { vendidos: num(s.vendidos), monto: num(s.monto), cortesias: num(s.cortesias), canjeados: num(s.canjeados), canjeados_en_periodo: num(s.canjeados_en_periodo) },
+    descuentos: num(data?.descuentos),
+  }
+}
+
+/** Lavados de máquina por día de la semana (0 domingo) y hora local. */
+export interface CeldaDemanda { dia_semana: number; hora: number; lavados: number }
+
+export async function fetchDemanda(r: Rango): Promise<CeldaDemanda[]> {
+  const { data, error } = await db().rpc('bi_demanda', { p_desde: r.desde, p_hasta: r.hasta })
+  if (error) throw error
+  return ((data ?? []) as any[]).map(c => ({ dia_semana: num(c.dia_semana), hora: num(c.hora), lavados: num(c.lavados) }))
+}
