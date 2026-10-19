@@ -3,8 +3,9 @@
  *
  * Página pública, sin sesión: el cliente escanea el QR de la sucursal desde
  * su teléfono y se da de alta con sus carros. Tiene que llenarse en un minuto
- * parado frente a la caja, así que pide lo mínimo para atenderlo y facturarle;
- * los datos de CCF (actividad, dirección fiscal) se completan en caja.
+ * parado frente a la caja, así que pide lo mínimo para atenderlo y facturarle.
+ * Una empresa pide justo lo que exige un CCF (ccfReceptorStatus) y queda lista
+ * para emitirle uno sin completar nada en caja (0078).
  *
  * Todo lo que se valida acá se vuelve a validar en public_customer_signup: la
  * página es de cualquiera, la función es la que decide.
@@ -13,6 +14,8 @@ import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { CorsaLogoCompleto } from '../components/ui/CorsaLogoCompleto'
+import { SearchSelect } from '../components/ui/SearchSelect'
+import { ACTIVIDADES_ECONOMICAS, DEPARTAMENTOS, findActividad, getMunicipiosFor } from '../lib/mh-catalogs'
 
 type Tipo = 'individual' | 'company'
 type Tamano = 'S' | 'M' | 'L'
@@ -63,6 +66,10 @@ export function RegistroPage() {
   const [dui, setDui] = useState('')
   const [nit, setNit] = useState('')
   const [nrc, setNrc] = useState('')
+  const [actividad, setActividad] = useState('')
+  const [departamento, setDepartamento] = useState('')
+  const [municipio, setMunicipio] = useState('')
+  const [direccion, setDireccion] = useState('')
   const [telefono, setTelefono] = useState('')
   const [pais, setPais] = useState('+503')
   const [correo, setCorreo] = useState('')
@@ -85,8 +92,13 @@ export function RegistroPage() {
     if (tipo === 'company' && !razon.trim()) return 'Falta la razón social'
     if (tipo === 'company' && !/^(\d{14}|\d{9})$/.test(digitos(nit))) return 'Revisá el NIT (14 dígitos)'
     if (tipo === 'individual' && dui && digitos(dui).length !== 9) return 'Revisá el DUI (9 dígitos)'
-    if (tipo === 'company' && nrc && !/^\d{1,8}$/.test(digitos(nrc))) return 'Revisá el NRC'
+    if (tipo === 'company' && !/^\d{1,8}$/.test(digitos(nrc))) return 'Falta el NRC'
+    if (tipo === 'company' && !actividad) return 'Elegí la actividad económica'
+    if (tipo === 'company' && (!departamento || !municipio)) return 'Elegí departamento y municipio'
+    if (tipo === 'company' && !direccion.trim()) return 'Falta la dirección'
     if (!telefonoValido(telefono, pais)) return digitos(pais) === '503' ? 'Falta tu teléfono (8 dígitos)' : 'Revisá el teléfono'
+    if (tipo === 'company' && digitos(pais + telefono).length < 8) return 'Para CCF el teléfono necesita 8 dígitos'
+    if (tipo === 'company' && !correo.trim()) return 'Falta el correo de facturación'
     if (correo && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo.trim())) return 'Revisá el correo'
     for (const v of vehiculos) {
       if (v.placa.replace(/[^A-Za-z0-9]/g, '').length < 3) return 'Falta la placa de un vehículo'
@@ -94,7 +106,8 @@ export function RegistroPage() {
     }
     if (!acepta) return 'Aceptá el uso de tus datos'
     return null
-  }, [tipo, nombre, apellido, razon, nit, dui, nrc, telefono, pais, correo, vehiculos, acepta])
+  }, [tipo, nombre, apellido, razon, nit, dui, nrc, actividad, departamento, municipio, direccion,
+      telefono, pais, correo, vehiculos, acepta])
 
   const enviar = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -107,6 +120,10 @@ export function RegistroPage() {
         tipo, nombre, apellido, razon_social: razon, nombre_comercial: comercial,
         dui: tipo === 'individual' ? dui : '', nit: tipo === 'company' ? nit : '', nrc: tipo === 'company' ? nrc : '',
         telefono, codigo_pais: pais, correo, acepta,
+        ...(tipo === 'company' ? {
+          cod_actividad: actividad, desc_actividad: findActividad(actividad)?.nombre ?? '',
+          departamento, municipio, direccion,
+        } : {}),
         vehiculos: vehiculos.map(v => ({ placa: v.placa, marca: v.marca, modelo: v.modelo, color: v.color, tamano: v.tamano })),
       },
     })
@@ -202,10 +219,33 @@ export function RegistroPage() {
                     <Campo label="NIT" requerido>
                       <input id="reg-nit" value={nit} onChange={e => setNit(digitos(e.target.value).slice(0, 14))} inputMode="numeric" placeholder="14 dígitos"/>
                     </Campo>
-                    <Campo label="NRC">
+                    <Campo label="NRC" requerido>
                       <input id="reg-nrc" value={nrc} onChange={e => setNrc(digitos(e.target.value).slice(0, 8))} inputMode="numeric"/>
                     </Campo>
                   </div>
+                  <Campo label="Actividad económica" requerido ayuda="La que aparece en la tarjeta de NRC. Escribí para buscar.">
+                    <SearchSelect id="reg-actividad" items={ACTIVIDADES_ECONOMICAS} value={actividad} onChange={setActividad}
+                                  placeholder="Ej.: comercio, transporte, 46900…"/>
+                  </Campo>
+                  <div className="reg-fila">
+                    <Campo label="Departamento" requerido>
+                      <select id="reg-departamento" value={departamento}
+                              onChange={e => { setDepartamento(e.target.value); setMunicipio('') }}>
+                        <option value="">Elegí…</option>
+                        {DEPARTAMENTOS.map(d => <option key={d.codigo} value={d.codigo}>{d.nombre}</option>)}
+                      </select>
+                    </Campo>
+                    <Campo label="Municipio" requerido>
+                      <select id="reg-municipio" value={municipio} onChange={e => setMunicipio(e.target.value)} disabled={!departamento}>
+                        <option value="">{departamento ? 'Elegí…' : 'Primero el departamento'}</option>
+                        {getMunicipiosFor(departamento).map(m => <option key={m.codigo} value={m.codigo}>{m.nombre}</option>)}
+                      </select>
+                    </Campo>
+                  </div>
+                  <Campo label="Dirección" requerido>
+                    <input id="reg-direccion" value={direccion} onChange={e => setDireccion(e.target.value)} maxLength={200}
+                           autoComplete="street-address" placeholder="Calle, número, colonia"/>
+                  </Campo>
                 </>)}
                 <div className="reg-fila">
                   <Campo label="Teléfono" requerido>
@@ -217,7 +257,8 @@ export function RegistroPage() {
                              inputMode="tel" autoComplete="tel-national" placeholder={digitos(pais) === '503' ? '7777-8888' : 'Número'}/>
                     </div>
                   </Campo>
-                  <Campo label="Correo" ayuda={tipo === 'company' ? 'Donde reciben las facturas.' : 'Para tu factura electrónica.'}>
+                  <Campo label="Correo" requerido={tipo === 'company'}
+                         ayuda={tipo === 'company' ? 'Donde reciben las facturas.' : 'Para tu factura electrónica.'}>
                     <input id="reg-correo" type="email" value={correo} onChange={e => setCorreo(e.target.value)} autoComplete="email" inputMode="email" maxLength={100}/>
                   </Campo>
                 </div>

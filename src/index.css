@@ -1222,14 +1222,15 @@ input:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 .reg-label { font-size: 12.5px; font-weight: 600; color: #3D4441; }
 .reg-label em { color: #B7791F; font-style: normal; }
 .reg-ayuda { font-size: 11.5px; color: #7A827D; }
-.reg-campo input {
+.reg-campo input, .reg-campo select {
   width: 100%; min-width: 0; font-size: 16px; /* 16px: iOS no hace zoom al enfocar */
   padding: 11px 12px; border-radius: 12px; border: 1.5px solid #DCE2D6;
   background: #FAFBF8; color: #16191A; font-family: var(--font-body); outline: none;
   transition: border-color 0.12s, box-shadow 0.12s;
 }
-.reg-campo input:focus { border-color: #16191A; box-shadow: 0 0 0 3px rgba(223,245,107,0.7); background: #fff; }
+.reg-campo input:focus, .reg-campo select:focus { border-color: #16191A; box-shadow: 0 0 0 3px rgba(223,245,107,0.7); background: #fff; }
 .reg-campo input::placeholder { color: #A7AEA9; }
+.reg-campo select:disabled { color: #A7AEA9; }
 
 .reg-vehiculo { border: 1.5px solid #E3E8DE; border-radius: 16px; padding: 14px 14px 2px; margin-bottom: 10px; }
 .reg-vehiculo-top { display: flex; gap: 10px; align-items: flex-start; }
