@@ -1,7 +1,8 @@
 /**
  * CORSA Carwash — Flotillas
  * Clientes con flotilla (empresas o personas naturales) · vehículos de flota ·
- * precios negociados por servicio (PRO, ÉLITE, SIGNATURE) y aspirado
+ * precios negociados por servicio (PRO, ÉLITE, SIGNATURE) y aspirado ·
+ * pestaña de beneficios corporativos (0079)
  */
 
 import { useState, useEffect, useCallback } from 'react'
@@ -16,6 +17,7 @@ import {
   type AcuerdoFlotilla, type LineasEditables,
 } from '../lib/flotillas/precios'
 import { EditorPrecios } from '../components/EditorPrecios'
+import { BeneficiosCorporativos } from '../components/beneficios/BeneficiosCorporativos'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -698,6 +700,7 @@ export function FlotillasPage() {
   const [showAddVehicle, setShowAddVehicle] = useState(false)
   const [editandoPrecios, setEditandoPrecios] = useState(false)
   const [search, setSearch] = useState('')
+  const [pestana, setPestana] = useState<'flotillas' | 'beneficios'>('flotillas')
 
   const loadCompanies = useCallback(async () => {
     if (!orgId) return
@@ -831,14 +834,26 @@ export function FlotillasPage() {
             {companies.length} flotilla{companies.length !== 1 ? 's' : ''} · {companies.reduce((s, c) => s + c.vehicle_count, 0)} vehículos en flota
           </div>
         </div>
-        <div className="clip-btn-wrap">
-          <div className="clip-btn-corner"/>
-          <button id="btn-new-fleet" className="clip-btn" onClick={() => setShowCreateModal(true)}>
-            + Nueva flotilla
-          </button>
-        </div>
+        {pestana === 'flotillas' && (
+          <div className="clip-btn-wrap">
+            <div className="clip-btn-corner"/>
+            <button id="btn-new-fleet" className="clip-btn" onClick={() => setShowCreateModal(true)}>
+              + Nueva flotilla
+            </button>
+          </div>
+        )}
       </div>
 
+      <div className="filter-pills" style={{ marginBottom: 16 }}>
+        <button className={`filter-pill${pestana === 'flotillas' ? ' active' : ''}`} onClick={() => setPestana('flotillas')}>
+          Flotillas
+        </button>
+        <button id="tab-beneficios" className={`filter-pill${pestana === 'beneficios' ? ' active' : ''}`} onClick={() => setPestana('beneficios')}>
+          Beneficios corporativos
+        </button>
+      </div>
+
+      {pestana === 'beneficios' ? <BeneficiosCorporativos/> : (<>
       {/* Layout */}
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
 
@@ -1059,6 +1074,7 @@ export function FlotillasPage() {
           </div>
         )}
       </div>
+      </>)}
 
       {/* Modals */}
       {showCreateModal && orgId && (

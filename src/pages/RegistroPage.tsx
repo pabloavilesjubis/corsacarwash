@@ -16,43 +16,11 @@ import { supabase } from '../lib/supabase'
 import { CorsaLogoCompleto } from '../components/ui/CorsaLogoCompleto'
 import { SearchSelect } from '../components/ui/SearchSelect'
 import { ACTIVIDADES_ECONOMICAS, DEPARTAMENTOS, findActividad, getMunicipiosFor } from '../lib/mh-catalogs'
+import {
+  TAMANOS, digitos, formatoDui, formatoPais, formatoTelefono, telefonoValido, vacio, type Vehiculo,
+} from '../lib/registro/formato'
 
 type Tipo = 'individual' | 'company'
-type Tamano = 'S' | 'M' | 'L'
-
-interface Vehiculo { placa: string; marca: string; modelo: string; color: string; tamano: Tamano | '' }
-
-const TAMANOS: { id: Tamano; nombre: string; ejemplo: string }[] = [
-  { id: 'S', nombre: 'Pequeño', ejemplo: 'Sedán, hatchback' },
-  { id: 'M', nombre: 'Mediano', ejemplo: 'SUV, crossover' },
-  { id: 'L', nombre: 'Grande', ejemplo: 'Pickup, van, SUV grande' },
-]
-
-const vacio = (): Vehiculo => ({ placa: '', marca: '', modelo: '', color: '', tamano: '' })
-const digitos = (s: string) => s.replace(/[^0-9]/g, '')
-
-/** 7777-8888 mientras se escribe si es de El Salvador; de otro país, sólo dígitos. */
-function formatoTelefono(s: string, pais: string) {
-  if (digitos(pais) !== '503') return digitos(s).slice(0, 14)
-  const d = digitos(s).slice(0, 8)
-  return d.length > 4 ? `${d.slice(0, 4)}-${d.slice(4)}` : d
-}
-/** «+503» mientras se escribe: el + fijo y hasta 4 dígitos. */
-function formatoPais(s: string) {
-  return '+' + digitos(s).slice(0, 4)
-}
-/** ¿El teléfono es válido para ese país? Igual que en public_customer_signup (0056). */
-function telefonoValido(tel: string, pais: string) {
-  const p = digitos(pais), t = digitos(tel)
-  if (!p) return false
-  if (p === '503') return t.length === 8
-  return t.length >= 4 && (p + t).length <= 15
-}
-/** 01234567-8 mientras se escribe. */
-function formatoDui(s: string) {
-  const d = digitos(s).slice(0, 9)
-  return d.length > 8 ? `${d.slice(0, 8)}-${d.slice(8)}` : d
-}
 
 export function RegistroPage() {
   const [params] = useSearchParams()
@@ -329,7 +297,7 @@ export function RegistroPage() {
   )
 }
 
-function Campo({ label, requerido, ayuda, children }: {
+export function Campo({ label, requerido, ayuda, children }: {
   label: string
   requerido?: boolean
   ayuda?: string

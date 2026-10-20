@@ -7,7 +7,8 @@
  * Add-on: Aspirado de interiores — $3 de lista, o el precio negociado si la
  *          flotilla tiene uno cargado (fleet_pricing)
  * Normal: un cliente con tarifario especial (0071) paga sus precios; si no,
- *         los de su grupo empresarial (0054); si no, tarifa de lista
+ *         los de su beneficio corporativo (0079); si no, los de su grupo
+ *         empresarial (0054); si no, tarifa de lista
  * Modal de cobro: Ticket (FCF) o CCF
  */
 
@@ -47,6 +48,7 @@ import {
 import { formatearFechaHora } from '../utils/fecha'
 import { cargarAcuerdos, PRECIOS_LISTA, type CodigoServicio } from '../lib/flotillas/precios'
 import { tarifarioVigente } from '../lib/clientes/tarifario'
+import { beneficioVigente } from '../lib/beneficios/beneficios'
 
 /**
  * Cuánto espera el POS el sello antes de imprimir sin él. Hacienda suele
@@ -1230,6 +1232,12 @@ export function POSPage() {
   // Tarifario especial del cliente en caja (0071), si tiene uno habilitado.
   // Guarda de quién es: si cambia el cliente, el anterior no se cobra ni un render.
   const [tarifaCliente, setTarifaCliente] = useState<{ customerId: string; acuerdo: AcuerdoFlotilla | null } | null>(null)
+  // Beneficio corporativo del cliente en caja (0079): es empleado de una
+  // empresa aliada. Misma guarda de a quién pertenece que el tarifario.
+  const [beneficioCliente, setBeneficioCliente] = useState<{
+    customerId: string
+    beneficio: { id: string; name: string; carnet: string; acuerdo: AcuerdoFlotilla } | null
+  } | null>(null)
   // Grupo empresarial elegido desde Flotilla, sin un cliente en caja: se ven
   // las placas de todo el grupo, se cobra a sus precios y se elige a cuál de
   // sus clientes se le factura (y a cuál se le carga si es al crédito).
@@ -1321,20 +1329,26 @@ export function POSPage() {
   // El tarifario especial del cliente (0071) manda sobre el del grupo: es el
   // acuerdo más específico. Lo que ninguno fija va a tarifa de lista.
   const tarifa = mode === 'normal' && customer && tarifaCliente?.customerId === customer.id ? tarifaCliente.acuerdo : null
+  // El beneficio corporativo (0079) va entre los dos: es de la persona, pero
+  // menos específico que un tarifario negociado sólo para ella.
+  const beneficio = mode === 'normal' && customer && beneficioCliente?.customerId === customer.id ? beneficioCliente.beneficio : null
   const precioCliente = (s: { id: string }) => tarifa?.servicios[s.id.toUpperCase() as CodigoServicio]
+  const precioBeneficio = (s: { id: string }) => beneficio?.acuerdo.servicios[s.id.toUpperCase() as CodigoServicio]
   const precioGrupo = (s: { id: string }) => acuerdoGrupo?.servicios[s.id.toUpperCase() as CodigoServicio]
   const preciosDe = (s: { id: string; prices: Record<SizeId, number> }): Record<SizeId, number> =>
-    precioCliente(s) ?? precioGrupo(s) ?? s.prices
+    precioCliente(s) ?? precioBeneficio(s) ?? precioGrupo(s) ?? s.prices
   const servicePrice = !svc ? 0 : mode === 'flotilla' ? fleetPrices![selectedSize] : preciosDe(svc)[selectedSize]
   // En flotilla manda el precio negociado; si no hay acuerdo, la tarifa de lista.
   const usaAspiradoFlotilla = mode === 'flotilla'
     && Boolean(fleetCompany?.aspirado_enabled)
     && fleetCompany?.aspirado_price != null
   const usaAspiradoCliente = Boolean(tarifa?.aspirado.activo && tarifa.aspirado.precio != null)
+  const usaAspiradoBeneficio = Boolean(beneficio?.acuerdo.aspirado.activo && beneficio.acuerdo.aspirado.precio != null)
   const usaAspiradoGrupo = Boolean(acuerdoGrupo?.aspirado.activo && acuerdoGrupo.aspirado.precio != null)
   const aspiradoUnit = usaAspiradoFlotilla
     ? Number(fleetCompany!.aspirado_price)
     : usaAspiradoCliente ? Number(tarifa!.aspirado.precio)
+    : usaAspiradoBeneficio ? Number(beneficio!.acuerdo.aspirado.precio)
     : usaAspiradoGrupo ? Number(acuerdoGrupo!.aspirado.precio)
     : ADDON_ASPIRADO.price
 
@@ -1843,6 +1857,7 @@ export function POSPage() {
     if (!tarifaClienteId) return
     let vivo = true
     tarifarioVigente(tarifaClienteId).then(t => { if (vivo) setTarifaCliente({ customerId: tarifaClienteId, acuerdo: t }) })
+    beneficioVigente(tarifaClienteId).then(b => { if (vivo) setBeneficioCliente({ customerId: tarifaClienteId, beneficio: b }) })
     return () => { vivo = false }
   }, [tarifaClienteId])
   useEffect(() => {
@@ -2234,6 +2249,16 @@ export function POSPage() {
               {/* Los carros del cliente, para elegir con cuál entra. Con
                   ninguno registrado, el botón de agregar es lo único que se ve
                   — y es lo que habilita el seguro de lluvia. */}
+              {/* Empleado de una empresa aliada (0079): el cajero ve por qué
+                  cambian los precios, y con qué carnet. */}
+              {customer && beneficio && (
+                <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 12, background: 'var(--accent-tint)', border: '1px solid var(--corsa-orange)' }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-primary)' }}>Beneficio corporativo · {beneficio.name}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                    Carnet <span className="font-mono">{beneficio.carnet}</span> · se cobran los precios del beneficio
+                  </div>
+                </div>
+              )}
               {customer && (
                 <div className="card" style={{ padding: 12, marginTop: 10 }}>
                   <SelectorVehiculos
@@ -2280,7 +2305,8 @@ export function POSPage() {
                 const isFleet = mode === 'flotilla'
                 const displayPrices = isFleet ? (fleetCompany?.precios[s.id as ServicioId] ?? s.prices) : preciosDe(s)
                 const isCliente = !isFleet && Boolean(precioCliente(s))
-                const isGrupo = !isFleet && !isCliente && Boolean(precioGrupo(s))
+                const isBeneficio = !isFleet && !isCliente && Boolean(precioBeneficio(s))
+                const isGrupo = !isFleet && !isCliente && !isBeneficio && Boolean(precioGrupo(s))
                 return (
                   <div key={s.id} id={`svc-${s.id}`}
                     onClick={() => setSelectedService(cur => (cur === s.id ? null : s.id))}
@@ -2292,6 +2318,9 @@ export function POSPage() {
                     )}
                     {isCliente && (
                       <div style={{ position: 'absolute', top: -8, right: 12, background: 'var(--corsa-orange)', color: 'var(--on-accent)', fontSize: 9.5, fontWeight: 700, letterSpacing: '0.06em', padding: '2px 7px', borderRadius: 6 }}>PRECIO ESPECIAL</div>
+                    )}
+                    {isBeneficio && (
+                      <div style={{ position: 'absolute', top: -8, right: 12, background: 'var(--corsa-orange)', color: 'var(--on-accent)', fontSize: 9.5, fontWeight: 700, letterSpacing: '0.06em', padding: '2px 7px', borderRadius: 6 }}>BENEFICIO</div>
                     )}
                     {s.recommended && mode !== 'flotilla' && (
                       <div style={{ position: 'absolute', top: -8, left: 12, background: '#8B5A2B', color: '#fff', fontSize: 9.5, fontWeight: 700, letterSpacing: '0.06em', padding: '2px 7px', borderRadius: 6 }}>RECOMENDADO</div>
@@ -2336,7 +2365,10 @@ export function POSPage() {
                     {usaAspiradoFlotilla && (svc || multi) && (
                       <span style={{ color: 'var(--corsa-orange)' }}> · Incluido en el plan de la flotilla</span>
                     )}
-                    {!usaAspiradoFlotilla && mode === 'normal' && usaAspiradoGrupo && (
+                    {!usaAspiradoFlotilla && mode === 'normal' && !usaAspiradoCliente && usaAspiradoBeneficio && (
+                      <span style={{ color: 'var(--corsa-orange)' }}> · Precio del beneficio</span>
+                    )}
+                    {!usaAspiradoFlotilla && mode === 'normal' && !usaAspiradoCliente && !usaAspiradoBeneficio && usaAspiradoGrupo && (
                       <span style={{ color: 'var(--corsa-orange)' }}> · Precio del grupo</span>
                     )}
                   </div>
@@ -2524,6 +2556,8 @@ export function POSPage() {
                     {mode === 'flotilla' && <span style={{ color: 'var(--corsa-orange)', marginLeft: 5 }}>· Precio flotilla</span>}
                     {mode === 'normal' && precioCliente(svc) ? (
                       <span style={{ color: 'var(--corsa-orange)', marginLeft: 5 }}>· Precio especial del cliente</span>
+                    ) : mode === 'normal' && precioBeneficio(svc) ? (
+                      <span style={{ color: 'var(--corsa-orange)', marginLeft: 5 }}>· Beneficio {beneficio?.name}</span>
                     ) : mode === 'normal' && precioGrupo(svc) && (
                       <span style={{ color: 'var(--corsa-orange)', marginLeft: 5 }}>· Precio {grupo?.name}</span>
                     )}
