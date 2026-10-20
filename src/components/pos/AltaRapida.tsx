@@ -23,6 +23,8 @@ import {
   createCustomer, addVehicleToCustomer, fetchTamanosVehiculo, checkPlateConflict,
   type TamanoVehiculo,
 } from '../../services/customers.service'
+import { CampoBeneficio } from '../beneficios/CampoBeneficio'
+import { inscribirEnBeneficio, problemaDeBeneficioElegido, type BeneficioElegido } from '../../lib/beneficios/beneficios'
 
 export interface VehiculoPos {
   id: string
@@ -174,6 +176,7 @@ export function ModalNuevoCliente({ orgId, onCreado, onCancelar }: {
   const [modelo, setModelo] = useState('')
   const [tipoVehiculo, setTipoVehiculo] = useState('')
   const [tamanos, setTamanos] = useState<{ id: string; tamano: TamanoVehiculo; nombre: string }[]>([])
+  const [beneficio, setBeneficio] = useState<BeneficioElegido>({ benefitId: '', carnet: '' })
   const [guardando, setGuardando] = useState(false)
 
   useEffect(() => {
@@ -195,6 +198,8 @@ export function ModalNuevoCliente({ orgId, onCreado, onCancelar }: {
       toast.error(esEmpresa ? 'Ingresá la razón social o el nombre comercial' : 'Ingresá el nombre')
       return
     }
+    const faltaBeneficio = esEmpresa ? null : problemaDeBeneficioElegido(beneficio)
+    if (faltaBeneficio) { toast.error(faltaBeneficio); return }
     setGuardando(true)
     try {
       const cliente = await createCustomer({
@@ -227,7 +232,20 @@ export function ModalNuevoCliente({ orgId, onCreado, onCancelar }: {
         vehiculo = v as VehiculoPos
       }
 
-      toast.success('Cliente registrado')
+      // El beneficio corporativo (0080), después del cliente: si falla (carnet
+      // repetido), el cliente ya quedó y se cobra a tarifa de lista.
+      if (!esEmpresa && beneficio.benefitId) {
+        try {
+          await inscribirEnBeneficio(cliente.id, beneficio.benefitId, beneficio.carnet)
+        } catch (e: any) {
+          toast.error(`Cliente registrado, pero sin beneficio: ${e?.message ?? 'no se pudo inscribir'}`)
+          onCreado({ ...cliente, vehicle: vehiculo })
+          setGuardando(false)
+          return
+        }
+      }
+
+      toast.success(!esEmpresa && beneficio.benefitId ? 'Cliente registrado con beneficio corporativo' : 'Cliente registrado')
       onCreado({ ...cliente, vehicle: vehiculo })
     } catch (e: any) {
       toast.error(e?.message ?? 'No se pudo registrar el cliente')
@@ -290,6 +308,14 @@ export function ModalNuevoCliente({ orgId, onCreado, onCancelar }: {
           <input className="corsa-input" value={tel} onChange={e => setTel(e.target.value)} inputMode="tel"/>
         </Campo>
       </div>
+
+      {/* Empleado de una empresa aliada (0080): sale cobrado al precio del
+          beneficio desde esta misma venta. Sólo personas. */}
+      {!esEmpresa && (
+        <CampoBeneficio valor={beneficio} onCambio={setBeneficio}
+          style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}
+          titulo={<div className="panel-section-label">Beneficio corporativo (opcional)</div>}/>
+      )}
 
       {/* El vehículo es opcional acá, pero es lo que habilita el seguro de
           lluvia y lo que permite volver a encontrar al cliente por placa. */}

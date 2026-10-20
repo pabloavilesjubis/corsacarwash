@@ -11,7 +11,8 @@
  * PostgREST. Si cambia una regla, cambian las dos.
  */
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -22,6 +23,10 @@ import {
 } from '../lib/mh-catalogs'
 import { SearchSelect } from './ui/SearchSelect'
 import { SelectorGrupo } from './SelectorGrupo'
+import { CampoBeneficio } from './beneficios/CampoBeneficio'
+import {
+  beneficioDelCliente, inscribirEnBeneficio, problemaDeBeneficioElegido, type BeneficioElegido,
+} from '../lib/beneficios/beneficios'
 import {
   createCustomer, updateCustomer,
   type CustomerWritableFields,
@@ -178,10 +183,12 @@ function blankToNull(v: string | undefined): string | null {
 // ─── Panel ───────────────────────────────────────────────────
 
 export function CustomerFormPanel({
-  customer, orgId, onClose, onSaved, embebido,
+  customer, orgId, onClose, onSaved, embebido, enModal,
 }: {
   /** Dentro de la ficha del cliente: sin marco de panel lateral, a todo el ancho. */
   embebido?: boolean
+  /** Centrado sobre la pantalla en lugar de al costado (alta desde Clientes). */
+  enModal?: boolean
   /** Presente = edición; ausente = alta. */
   customer?: Customer
   orgId: string
@@ -209,7 +216,29 @@ export function CustomerFormPanel({
     [departamento]
   )
 
+  // Beneficio corporativo (0080). El que ya tiene sólo se muestra: precios y
+  // bajas se manejan en Flotillas → Beneficios corporativos.
+  const [beneficio, setBeneficio] = useState<BeneficioElegido>({ benefitId: '', carnet: '' })
+  const [beneficioActual, setBeneficioActual] = useState<{ name: string; carnet: string } | null>(null)
+  useEffect(() => {
+    if (!customer?.id) return
+    let vivo = true
+    beneficioDelCliente(customer.id).then(b => { if (vivo) setBeneficioActual(b) }).catch(() => {})
+    return () => { vivo = false }
+  }, [customer?.id])
+
+  useEffect(() => {
+    if (!enModal) return
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', h)
+    return () => document.removeEventListener('keydown', h)
+  }, [enModal, onClose])
+
   const onSubmit = async (v: FormValues) => {
+    const inscribir = v.customer_type === 'individual' && !beneficioActual && Boolean(beneficio.benefitId)
+    const faltaBeneficio = inscribir ? problemaDeBeneficioElegido(beneficio) : null
+    if (faltaBeneficio) { toast.error(faltaBeneficio); return }
+
     const fields: CustomerWritableFields = {
       customer_type: v.customer_type,
       first_name: v.customer_type === 'individual' ? blankToNull(v.first_name) : null,
@@ -238,13 +267,23 @@ export function CustomerFormPanel({
       business_group_id: blankToNull(v.business_group_id),
     }
 
+    // Después de guardar el cliente: si la inscripción falla (carnet repetido),
+    // el cliente igual quedó guardado y se avisa qué faltó.
+    const inscribirSiHace = async (id: string) => {
+      if (!inscribir) return
+      try { await inscribirEnBeneficio(id, beneficio.benefitId, beneficio.carnet) }
+      catch (e) { toast.error(`Cliente guardado, pero sin beneficio: ${e instanceof Error ? e.message : 'no se pudo inscribir'}`) }
+    }
+
     try {
       if (customer) {
         await updateCustomer(customer.id, fields as Partial<Customer>)
+        await inscribirSiHace(customer.id)
         toast.success('Cliente actualizado')
         onSaved(customer.id)
       } else {
         const created = await createCustomer({ ...fields, organization_id: orgId })
+        await inscribirSiHace((created as { id: string }).id)
         toast.success('Cliente guardado')
         onSaved((created as { id: string }).id)
       }
@@ -260,8 +299,11 @@ export function CustomerFormPanel({
     }
   }
 
-  return (
-    <div className={embebido ? 'ficha-formulario' : 'side-panel'} style={embebido ? undefined : { maxWidth: 420 }}>
+  const formulario = (
+    <div className={embebido ? 'ficha-formulario' : 'side-panel'}
+         style={embebido ? undefined : enModal
+           ? { maxWidth: 560, width: '100%', minWidth: 0, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.25)' }
+           : { maxWidth: 420 }}>
       {!embebido && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>
@@ -467,6 +509,25 @@ export function CustomerFormPanel({
           y facturar a cualquiera del grupo, con los precios negociados del grupo.
         </div>
 
+        {type === 'individual' && (beneficioActual ? (<>
+          <SectionLabel>Beneficio corporativo</SectionLabel>
+          <div className="panel-row" style={{ marginTop: -4 }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>{beneficioActual.name}</span>
+            <span className="font-mono" style={{ fontSize: 12.5 }}>#{beneficioActual.carnet}</span>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: -6 }}>
+            Para darlo de baja: Flotillas → Beneficios corporativos.
+          </div>
+        </>) : (
+          <CampoBeneficio valor={beneficio} onCambio={setBeneficio}
+            titulo={<>
+              <SectionLabel>Beneficio corporativo</SectionLabel>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', margin: '-6px 0 8px' }}>
+                Empleado de una empresa aliada: en caja se le cobran los precios del beneficio.
+              </div>
+            </>}/>
+        ))}
+
         <SectionLabel>Notas</SectionLabel>
         <textarea {...register('notes')} className="corsa-input" rows={2}
                   placeholder="Notas internas"/>
@@ -480,5 +541,14 @@ export function CustomerFormPanel({
         </button>
       </form>
     </div>
+  )
+
+  if (!enModal) return formulario
+  return createPortal(
+    <div onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}>
+      {formulario}
+    </div>,
+    document.body
   )
 }

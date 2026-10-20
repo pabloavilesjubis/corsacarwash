@@ -491,6 +491,9 @@ export function CustomersPage() {
           ) : panel.type === 'new' || (panel.type === 'edit' && selectedCustomer) ? (
             <CustomerFormPanel
               customer={panel.type === 'edit' ? selectedCustomer ?? undefined : undefined}
+              // El alta, en un modal: el formulario es largo y al costado
+              // quedaba apretado contra la lista.
+              enModal={panel.type === 'new'}
               orgId={orgId}
               onClose={() => setPanel(null)}
               onSaved={id => {

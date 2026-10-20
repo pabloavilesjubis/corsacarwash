@@ -346,3 +346,36 @@ export async function resumenUso(benefitId: string, desdeISO: string, hastaISO: 
     porMiembro,
   }
 }
+
+// ─── Inscripción desde caja o Clientes (0080) ─────────────────
+
+/** Lo elegido en el formulario de cliente: empresa vacía = sin beneficio. */
+export interface BeneficioElegido { benefitId: string; carnet: string }
+
+/** Qué le falta para poder inscribir, o null. Sin empresa no falta nada: es opcional. */
+export function problemaDeBeneficioElegido(b: BeneficioElegido): string | null {
+  if (!b.benefitId) return null
+  return b.carnet.replace(/[^A-Za-z0-9]/g, '') ? null : 'Escribí el número de carnet de la empresa'
+}
+
+
+/** Las empresas a las que se puede inscribir a alguien hoy. */
+export async function listarBeneficiosActivos(): Promise<{ id: string; name: string }[]> {
+  const { data, error } = await db().from('corporate_benefits').select('id, name').eq('active', true).order('name')
+  if (error) throw error
+  return data ?? []
+}
+
+/** Inscribe al cliente con su carnet. La base valida carnet repetido y permisos. */
+export async function inscribirEnBeneficio(customerId: string, benefitId: string, carnet: string): Promise<void> {
+  const { error } = await db().rpc('benefit_enroll', { p_customer_id: customerId, p_benefit_id: benefitId, p_carnet: carnet })
+  if (error) throw new Error(error.message || 'No se pudo inscribir en el beneficio')
+}
+
+/** El beneficio activo del cliente, para mostrarlo en su ficha; null si no tiene. */
+export async function beneficioDelCliente(customerId: string): Promise<{ name: string; carnet: string } | null> {
+  const { data } = await db().from('corporate_benefit_members')
+    .select('carnet, corporate_benefits(name)')
+    .eq('customer_id', customerId).eq('active', true).maybeSingle()
+  return data ? { name: data.corporate_benefits?.name ?? '', carnet: data.carnet } : null
+}
