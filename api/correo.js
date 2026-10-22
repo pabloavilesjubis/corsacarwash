@@ -1213,7 +1213,6 @@ function boton(texto, url) {
 
 // server/correo/handler.ts
 var CORREO_CORSA = "corsacarwash@gmail.com";
-var COPIA_TEMPORAL = ["pabloavilesjubis@gmail.com"];
 var DESTINOS_CIERRE_CAJA = ["jubismauricio@gmail.com"];
 var ErrorHttp = class extends Error {
   constructor(status, mensaje) {
@@ -1223,14 +1222,8 @@ var ErrorHttp = class extends Error {
 };
 function destinos(correoCliente) {
   const to = correoCliente ? [correoCliente] : [CORREO_CORSA];
-  const bcc = [...correoCliente ? [CORREO_CORSA] : [], ...COPIA_TEMPORAL];
-  const vistos = new Set(to.map((t) => t.toLowerCase()));
-  return { to, bcc: bcc.filter((b) => {
-    const k = b.toLowerCase();
-    if (vistos.has(k)) return false;
-    vistos.add(k);
-    return true;
-  }) };
+  const bcc = correoCliente && correoCliente.toLowerCase() !== CORREO_CORSA ? [CORREO_CORSA] : [];
+  return { to, bcc };
 }
 function transporte() {
   const { SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASSWORD } = process.env;
@@ -1564,7 +1557,7 @@ async function correoCierreCaja(db, orgId, userId, appUrl, sessionId) {
       userId,
       tipo: "cierre_caja",
       correoCliente: null,
-      destinos: { to: DESTINOS_CIERRE_CAJA, bcc: COPIA_TEMPORAL.filter((c) => !DESTINOS_CIERRE_CAJA.includes(c)) },
+      destinos: { to: DESTINOS_CIERRE_CAJA, bcc: [] },
       asunto: `Cierre de caja \xB7 ${r.sucursal} \xB7 ${dia}`,
       html,
       adjuntos: [{ filename: `cierre-de-caja-${r.abierta_at.slice(0, 10)}.pdf`, content: pdf, contentType: "application/pdf" }],

@@ -12,8 +12,7 @@
  *
  * DESTINATARIOS (regla de CORSA):
  *   · el cliente tiene correo de facturación → a él, con copia oculta a CORSA;
- *   · no tiene (o es ticket genérico)        → a CORSA;
- *   · siempre, copia oculta a COPIA_TEMPORAL mientras siga en la lista.
+ *   · no tiene (o es ticket genérico)        → a CORSA.
  *
  * Cada intento, salga o no, queda en envios_correo (0061).
  */
@@ -31,15 +30,7 @@ import { aviso, boton, esc, fechaSV, fila, layout, money, parrafo, tarjeta } fro
 
 /** El buzón de CORSA: recibe lo que no tiene a quién ir, y copia de todo. */
 const CORREO_CORSA = 'corsacarwash@gmail.com'
-/**
- * Copia oculta en TODO correo saliente, por ahora. Pablo avisa cuándo
- * quitarla: se borra de esta lista.
- */
-const COPIA_TEMPORAL = ['pabloavilesjubis@gmail.com']
-/**
- * A quién va el reporte de cierre de caja. La copia oculta es COPIA_TEMPORAL:
- * al quitar a alguien de esa lista deja de recibir también los cierres.
- */
+/** A quién va el reporte de cierre de caja. */
 const DESTINOS_CIERRE_CAJA = ['jubismauricio@gmail.com']
 
 type Adjunto = { filename: string; content: Buffer | string; contentType: string }
@@ -52,9 +43,9 @@ class ErrorHttp extends Error {
 
 function destinos(correoCliente: string | null): { to: string[]; bcc: string[] } {
   const to = correoCliente ? [correoCliente] : [CORREO_CORSA]
-  const bcc = [...(correoCliente ? [CORREO_CORSA] : []), ...COPIA_TEMPORAL]
-  const vistos = new Set(to.map(t => t.toLowerCase()))
-  return { to, bcc: bcc.filter(b => { const k = b.toLowerCase(); if (vistos.has(k)) return false; vistos.add(k); return true }) }
+  // Si el cliente usa el mismo buzón de CORSA, no se le manda dos veces.
+  const bcc = correoCliente && correoCliente.toLowerCase() !== CORREO_CORSA ? [CORREO_CORSA] : []
+  return { to, bcc }
 }
 
 function transporte() {
@@ -372,7 +363,7 @@ async function correoCierreCaja(db: ReturnType<typeof admin>, orgId: string, use
     })
     return enviarYRegistrar({
       db, orgId, userId, tipo: 'cierre_caja', correoCliente: null,
-      destinos: { to: DESTINOS_CIERRE_CAJA, bcc: COPIA_TEMPORAL.filter(c => !DESTINOS_CIERRE_CAJA.includes(c)) },
+      destinos: { to: DESTINOS_CIERRE_CAJA, bcc: [] },
       asunto: `Cierre de caja · ${r.sucursal} · ${dia}`, html,
       adjuntos: [{ filename: `cierre-de-caja-${r.abierta_at.slice(0, 10)}.pdf`, content: pdf, contentType: 'application/pdf' }],
       cashSessionId: sessionId,
