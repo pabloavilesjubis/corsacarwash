@@ -1,6 +1,9 @@
 /**
  * CORSA Carwash — POS Administrativo
  *
+ * Tres pestañas: Facturar (productos y servicios del catálogo propio, 0081),
+ * Cupones (venta de cupones prepagados) y Productos y servicios (el catálogo).
+ *
  * Venta de cupones prepagados. Separado del POS de caja a propósito: el cajero
  * puede canjear cupones pero no emitirlos, porque emitirlos es cobrar por
  * adelantado un servicio que todavía no se prestó.
@@ -17,6 +20,8 @@ import { supabase } from '../lib/supabase'
 import { sellVouchers, fetchBatchVouchers, type SellVouchersResult } from '../services/vouchers.service'
 import { printVouchers } from '../lib/vouchers/voucherDocument'
 import { ccfReceptorStatus, preferredDocType } from '../lib/fiscal/receptor'
+import { FacturarAdmin } from '../components/posAdmin/FacturarAdmin'
+import { CatalogoAdmin } from '../components/posAdmin/CatalogoAdmin'
 
 const SERVICIOS = [
   { code: 'PRO', name: 'PRO', prices: { S: 9, M: 11, L: 12 } },
@@ -54,11 +59,58 @@ function nombreCliente(c: Cliente): string {
 
 function money(n: number) { return 'US$' + (Number(n) || 0).toFixed(2) }
 
+type Pestana = 'facturar' | 'cupones' | 'catalogo'
+
 export function PosAdminPage() {
-  const { currentBranch, hasPermission } = useAuth()
+  const { hasPermission } = useAuth()
+  const [pestana, setPestana] = useState<Pestana>('facturar')
+
+  if (!hasPermission('vouchers.sell')) {
+    return (
+      <div className="page-inner">
+        <div className="empty-state">
+          <div className="empty-state-title">No tenés acceso al POS Administrativo</div>
+          <div className="empty-state-sub">
+            El POS Administrativo requiere el permiso <strong>vouchers.sell</strong>.
+            En caja se pueden canjear cupones, pero no emitirlos.
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="page-inner">
+      <div className="page-header">
+        <div className="page-header-left">
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 34, letterSpacing: '-0.025em' }}>POS Administrativo</h1>
+          <div className="page-header-sub">
+            {pestana === 'facturar' ? 'Facturá productos y servicios con FCF o CCF'
+              : pestana === 'cupones' ? 'Venta de cupones prepagados'
+              : 'Lo que se puede facturar desde el POS Administrativo'}
+          </div>
+        </div>
+      </div>
+
+      <div className="filter-pills" style={{ marginBottom: 16 }}>
+        {([['facturar', 'Facturar'], ['cupones', 'Cupones'], ['catalogo', 'Productos y servicios']] as const).map(([id, label]) => (
+          <button key={id} id={`tab-${id}`} className={`filter-pill${pestana === id ? ' active' : ''}`} onClick={() => setPestana(id)}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {pestana === 'facturar' && <FacturarAdmin/>}
+      {pestana === 'cupones' && <VentaCupones/>}
+      {pestana === 'catalogo' && <CatalogoAdmin/>}
+    </div>
+  )
+}
+
+function VentaCupones() {
+  const { currentBranch } = useAuth()
   const esMovil = useEsMovil()
   const branchId = (currentBranch as any)?.id ?? null
-  const puedeVender = hasPermission('vouchers.sell')
 
   const [query, setQuery] = useState('')
   const [resultados, setResultados] = useState<Cliente[]>([])
@@ -172,20 +224,6 @@ export function PosAdminPage() {
     setConAspirado(false)
   }
 
-  if (!puedeVender) {
-    return (
-      <div className="page-inner">
-        <div className="empty-state">
-          <div className="empty-state-title">No tenés acceso al POS Administrativo</div>
-          <div className="empty-state-sub">
-            La emisión de cupones requiere el permiso <strong>vouchers.sell</strong>.
-            En caja se pueden canjear, pero no emitir.
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   // ── Comprobante de la venta recién hecha ──
   if (resultado) {
     // El rango se expresa por correlativo: los números de cupón son al azar,
@@ -193,14 +231,12 @@ export function PosAdminPage() {
     const desde = resultado.vouchers[0]?.sequence
     const hasta = resultado.vouchers[resultado.vouchers.length - 1]?.sequence
     return (
-      <div className="page-inner">
-        <div className="page-header">
-          <div className="page-header-left">
-            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 34, letterSpacing: '-0.025em' }}>Cupones emitidos</h1>
-            <div className="page-header-sub">
-              Orden {resultado.order_number}
-              {resultado.is_gift && ' · Regalía, sin documento fiscal'}
-            </div>
+      <div>
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 20 }}>Cupones emitidos</div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+            Orden {resultado.order_number}
+            {resultado.is_gift && ' · Regalía, sin documento fiscal'}
           </div>
         </div>
 
@@ -261,14 +297,7 @@ export function PosAdminPage() {
   }
 
   return (
-    <div className="page-inner">
-      <div className="page-header">
-        <div className="page-header-left">
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 34, letterSpacing: '-0.025em' }}>POS Administrativo</h1>
-          <div className="page-header-sub">Venta de cupones prepagados</div>
-        </div>
-      </div>
-
+    <div>
       <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         {/* ── Configuración ── */}
         <div style={{ flex: '1 1 480px', minWidth: esMovil ? 0 : 400, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 18 }}>
