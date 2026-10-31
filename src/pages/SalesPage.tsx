@@ -19,6 +19,7 @@ import { imprimirTicketEnSegundoPlano } from '../lib/ticket/corsaTicket'
 import { emitirConFirmaLocal, fetchJsonDelDte, descargarJson } from '../services/fiscal.service'
 import { enviarCorreoVenta } from '../services/correo.service'
 import { AjusteVentaModal, type TipoAjuste } from '../components/AjusteVentaModal'
+import { ExportarVentasModal } from '../components/ExportarVentasModal'
 import { buildTicketArgsFromSale } from '../lib/ticket/fromSale'
 import { emisorParaTicket, exigirEmisor } from '../lib/fiscal/emisor'
 import { formatearFechaHora } from '../utils/fecha'
@@ -386,27 +387,8 @@ export function SalesPage() {
     load()
   }
 
-  const exportarCsv = () => {
-    const filas = [
-      ['Fecha', 'Orden', 'Cliente', 'Servicio', 'Aspirado', 'Placa', 'Pago', 'Documento', 'Subtotal', 'IVA', 'Total'],
-      ...sales.map(s => [
-        // Hora del carwash: el CSV lo lee gente de acá, no una máquina.
-        formatearFechaHora(s.created_at),
-        s.order_number, s.customer_name, s.service_name ?? '',
-        s.with_aspirado ? 'Sí' : 'No', s.plate ?? '', s.payment_method ?? '',
-        DOC_LABELS[s.invoice_type ?? ''] ?? '',
-        String(s.subtotal), String(s.tax_total), String(s.total),
-      ]),
-    ]
-    // Comillas dobles escapadas: los nombres de cliente pueden traer comas.
-    const csv = filas.map(f => f.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
-    const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }))
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `ventas-corsa-${from || 'inicio'}_${to || 'hoy'}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
+  // El resumen para contadores (0082): DTE por rango, en Excel o CSV.
+  const [exportando, setExportando] = useState(false)
 
   /**
    * Los tres documentos de una venta. Una sola definición para la tabla y para
@@ -553,8 +535,8 @@ export function SalesPage() {
           <h1 style={{ display: 'inline' }}>Ventas</h1>
           <span className="sub">{sales.length} {sales.length === 1 ? 'venta' : 'ventas'} en el rango</span>
         </div>
-        <button className="btn btn-ghost btn-sm" onClick={exportarCsv} disabled={sales.length === 0}>
-          Exportar CSV
+        <button className="btn btn-ghost btn-sm" onClick={() => setExportando(true)}>
+          Exportar ventas
         </button>
       </div>
 
@@ -676,6 +658,10 @@ export function SalesPage() {
           onCerrar={() => setAjuste(null)}
           onHecho={() => { setDetalle(null); load() }}
         />
+      )}
+
+      {exportando && (
+        <ExportarVentasModal desdeInicial={from} hastaInicial={to} onCerrar={() => setExportando(false)}/>
       )}
 
       {/* Detalle de una venta — sólo teléfono */}
