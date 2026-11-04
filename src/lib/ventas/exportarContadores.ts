@@ -2,17 +2,16 @@
  * CORSA — Excel de ventas para los contadores (0082).
  *
  * Un archivo por tipo de venta: contribuyentes (CCF, tipo 03) o consumidores
- * finales (FCF, tipo 01), en una sola pestaña. Una fila por DTE, con todo lo del documento tal como
- * se selló —identificación, receptor, resumen, sello y respuesta de Hacienda—
- * más lo que el contador pregunta y no viaja en el DTE: orden, forma de pago,
- * DUI y NIT de la ficha, invalidación.
+ * finales (FCF, tipo 01), en una sola pestaña. Una fila por DTE con las
+ * columnas que pide el contador: identificación y sello del documento, el
+ * cliente (nombre, NIT, DUI, NRC) y los montos desglosados sin IVA, de modo
+ * que gravada + exenta + no sujeta = subtotal y subtotal + IVA = total.
  *
  * Los invalidados se incluyen rotulados: el contador los necesita para cuadrar
  * el correlativo, pero el total de cada pestaña suma sólo los vigentes.
  */
 
 import { supabase } from '../supabase'
-import { findDepartamento, findMunicipio, TIPOS_DOCUMENTO_RECEPTOR } from '../mh-catalogs'
 
 export interface DteExportado {
   fiscal_document_id: string
@@ -82,11 +81,6 @@ interface Columna {
   valor: (d: DteExportado) => string | number | null
   /** Se suma en la fila de totales (sólo los vigentes). */
   total?: boolean
-  /**
-   * Dato que casi siempre es igual en todo el archivo (ambiente, moneda,
-   * versión…): sólo sale si en el rango hay más de un valor.
-   */
-  soloSiCambia?: boolean
 }
 
 const num = (v: unknown): number => {
@@ -95,159 +89,60 @@ const num = (v: unknown): number => {
 }
 const txt = (v: unknown): string | null => (v == null || v === '' ? null : String(v))
 
-const TIPO_DTE: Record<string, string> = { '01': 'Factura consumidor final (01)', '03': 'Crédito fiscal (03)' }
-const CONDICION: Record<string, string> = { '1': 'Contado', '2': 'A crédito', '3': 'Otro' }
-const MODELO: Record<string, string> = { '1': 'Previo', '2': 'Diferido' }
-const OPERACION: Record<string, string> = { '1': 'Normal', '2': 'Contingencia' }
-const AMBIENTE: Record<string, string> = { '00': 'Pruebas', '01': 'Producción' }
+const TIPO_DTE: Record<string, string> = { '01': 'Factura consumidor final', '03': 'Comprobante de crédito fiscal' }
 
-function tipoVenta(d: DteExportado): string {
-  if (d.consolidado) return 'Consolidado (cuentas por cobrar)'
-  switch (d.order_kind) {
-    case 'service': return 'Lavado'
-    case 'voucher_sale': return 'Venta de cupones'
-    case 'voucher_gift': return 'Cupones de cortesía'
-    case 'addon_sale': return 'Venta sin lavado'
-    default: return d.order_kind ?? ''
-  }
-}
+/** El número que el DTE de consumidor final trae en el receptor, si es de ese tipo. */
+const docReceptor = (d: DteExportado, codigo: '13' | '36') =>
+  d.receptor?.tipoDocumento === codigo ? txt(d.receptor?.numDocumento) : null
 
-const dir = (d: DteExportado) => d.receptor?.direccion ?? null
-const departamento = (d: DteExportado) => {
-  const c = dir(d)?.departamento
-  return c ? `${c} ${findDepartamento(c)?.nombre ?? ''}`.trim() : null
-}
-const municipio = (d: DteExportado) => {
-  const x = dir(d)
-  return x?.municipio ? `${x.municipio} ${findMunicipio(x.departamento, x.municipio)?.nombre ?? ''}`.trim() : null
-}
+/**
+ * El IVA del documento. El CCF lo trae aparte, en resumen.tributos (código
+ * 20); el FCF lo trae incluido en el precio y lo informa en totalIva.
+ */
+const iva = (d: DteExportado) => d.dte_type === '03'
+  ? num((d.resumen?.tributos ?? []).filter((t: any) => t?.codigo === '20').reduce((s: number, t: any) => s + num(t.valor), 0))
+  : num(d.resumen?.totalIva)
 
-/** «2 × PRO S @ 7.96; 1 × Aspirado @ 3.00» */
-function detalle(d: DteExportado): string {
-  return (d.cuerpo ?? [])
-    .map(l => `${num(l.cantidad)} × ${l.descripcion} @ ${num(l.precioUni).toFixed(2)}`)
-    .join('; ')
-}
+/**
+ * La venta gravada SIN IVA, para que las columnas cuadren igual en los dos
+ * documentos: gravada + exenta + no sujeta = subtotal, y subtotal + IVA =
+ * total. En el FCF el DTE la trae con IVA incluido, así que se le resta.
+ */
+const gravada = (d: DteExportado) =>
+  num(num(d.resumen?.totalGravada) - (d.dte_type === '03' ? 0 : num(d.resumen?.totalIva)))
+const exenta = (d: DteExportado) => num(d.resumen?.totalExenta)
+const noSujeta = (d: DteExportado) => num(d.resumen?.totalNoSuj)
+const subtotal = (d: DteExportado) => num(gravada(d) + exenta(d) + noSujeta(d))
+/** La venta con IVA: monto total de la operación, antes de retenciones. */
+const totalConIva = (d: DteExportado) => num(d.resumen?.montoTotalOperacion)
 
-/** El IVA del CCF viaja en resumen.tributos (código 20); el del FCF, en totalIva. */
-const ivaCcf = (d: DteExportado) =>
-  num((d.resumen?.tributos ?? []).filter((t: any) => t?.codigo === '20').reduce((s: number, t: any) => s + num(t.valor), 0))
+const dinero = (titulo: string, valor: (d: DteExportado) => number): Columna =>
+  ({ titulo, ancho: 14, tipo: 'dinero', valor, total: true })
 
-const inicio: Columna[] = [
-  { titulo: 'Fecha emisión', ancho: 12, tipo: 'fecha', valor: d => d.identificacion?.fecEmi ?? null },
-  { titulo: 'Hora emisión', ancho: 10, tipo: 'texto', valor: d => txt(d.identificacion?.horEmi) },
-  { titulo: 'Tipo de documento', ancho: 26, tipo: 'texto', soloSiCambia: true, valor: d => TIPO_DTE[d.dte_type] ?? d.dte_type },
+/**
+ * Las columnas que pide el contador, siempre las mismas y en este orden. Las
+ * de exenta y no sujeta van aunque estén en cero: el contador las espera.
+ */
+const COLUMNAS: Columna[] = [
+  { titulo: 'Fecha de emisión', ancho: 12, tipo: 'fecha', valor: d => d.identificacion?.fecEmi ?? null },
+  { titulo: 'Hora de emisión', ancho: 10, tipo: 'texto', valor: d => txt(d.identificacion?.horEmi) },
+  { titulo: 'Tipo de documento', ancho: 28, tipo: 'texto', valor: d => TIPO_DTE[d.dte_type] ?? d.dte_type },
   { titulo: 'Estado', ancho: 11, tipo: 'texto', valor: d => (d.estado === 'INVALIDATED' ? 'Invalidado' : 'Vigente') },
   { titulo: 'Número de control', ancho: 34, tipo: 'texto', valor: d => d.numero_control },
   { titulo: 'Código de generación', ancho: 40, tipo: 'texto', valor: d => txt(d.codigo_generacion) },
   { titulo: 'Sello de recepción', ancho: 44, tipo: 'texto', valor: d => txt(d.sello_recepcion) },
-  { titulo: 'Fecha procesamiento MH', ancho: 20, tipo: 'texto', valor: d => txt(d.fh_procesamiento) },
-  { titulo: 'Ambiente', ancho: 11, tipo: 'texto', soloSiCambia: true, valor: d => AMBIENTE[d.identificacion?.ambiente] ?? txt(d.identificacion?.ambiente) },
-  { titulo: 'Versión DTE', ancho: 8, tipo: 'numero', soloSiCambia: true, valor: d => d.identificacion?.version ?? null },
-  { titulo: 'Modelo de facturación', ancho: 10, tipo: 'texto', soloSiCambia: true, valor: d => MODELO[String(d.identificacion?.tipoModelo)] ?? null },
-  { titulo: 'Tipo de transmisión', ancho: 12, tipo: 'texto', soloSiCambia: true, valor: d => OPERACION[String(d.identificacion?.tipoOperacion)] ?? null },
-  { titulo: 'Moneda', ancho: 8, tipo: 'texto', soloSiCambia: true, valor: d => txt(d.identificacion?.tipoMoneda) },
-  { titulo: 'Condición de la operación', ancho: 12, tipo: 'texto', soloSiCambia: true, valor: d => CONDICION[String(d.resumen?.condicionOperacion)] ?? null },
-  { titulo: 'Sucursal', ancho: 14, tipo: 'texto', soloSiCambia: true, valor: d => txt(d.branch_name) },
-  { titulo: 'Orden(es)', ancho: 18, tipo: 'texto', valor: d => txt(d.ordenes_consolidadas ?? d.order_number) },
-  { titulo: 'Tipo de venta', ancho: 20, tipo: 'texto', valor: tipoVenta },
-  { titulo: 'Placa', ancho: 10, tipo: 'texto', valor: d => txt(d.placa) },
-  { titulo: 'Forma de pago', ancho: 16, tipo: 'texto', valor: d => txt(d.forma_pago) },
-]
-
-const receptorCcf: Columna[] = [
-  { titulo: 'Nombre o razón social', ancho: 34, tipo: 'texto', valor: d => txt(d.receptor?.nombre ?? d.cliente_nombre) },
-  { titulo: 'Nombre comercial', ancho: 24, tipo: 'texto', valor: d => txt(d.receptor?.nombreComercial ?? d.cliente_nombre_comercial) },
-  { titulo: 'NIT', ancho: 17, tipo: 'texto', valor: d => txt(d.receptor?.nit ?? d.cliente_nit) },
+  { titulo: 'Nombre del cliente', ancho: 34, tipo: 'texto',
+    valor: d => txt(d.receptor?.nombre ?? d.cliente_nombre) ?? 'Consumidor final' },
+  { titulo: 'NIT', ancho: 17, tipo: 'texto', valor: d => txt(d.receptor?.nit) ?? docReceptor(d, '36') ?? txt(d.cliente_nit) },
+  { titulo: 'DUI', ancho: 12, tipo: 'texto', valor: d => docReceptor(d, '13') ?? txt(d.cliente_dui) },
   { titulo: 'NRC', ancho: 10, tipo: 'texto', valor: d => txt(d.receptor?.nrc ?? d.cliente_nrc) },
-  { titulo: 'DUI (ficha del cliente)', ancho: 12, tipo: 'texto', valor: d => txt(d.cliente_dui) },
-  { titulo: 'Código actividad', ancho: 10, tipo: 'texto', valor: d => txt(d.receptor?.codActividad) },
-  { titulo: 'Actividad económica', ancho: 34, tipo: 'texto', valor: d => txt(d.receptor?.descActividad) },
-  { titulo: 'Departamento', ancho: 16, tipo: 'texto', valor: departamento },
-  { titulo: 'Municipio', ancho: 18, tipo: 'texto', valor: municipio },
-  { titulo: 'Dirección', ancho: 40, tipo: 'texto', valor: d => txt(dir(d)?.complemento) },
-  { titulo: 'Teléfono', ancho: 12, tipo: 'texto', valor: d => txt(d.receptor?.telefono ?? d.cliente_telefono) },
-  { titulo: 'Correo', ancho: 28, tipo: 'texto', valor: d => txt(d.receptor?.correo ?? d.cliente_correo) },
+  dinero('Venta gravada', gravada),
+  dinero('Venta exenta', exenta),
+  dinero('Venta no sujeta', noSujeta),
+  dinero('Subtotal de venta', subtotal),
+  dinero('IVA', iva),
+  dinero('Total de venta con IVA', totalConIva),
 ]
-
-const receptorFcf: Columna[] = [
-  { titulo: 'Nombre del cliente', ancho: 30, tipo: 'texto', valor: d => txt(d.receptor?.nombre ?? d.cliente_nombre) ?? 'Consumidor final' },
-  { titulo: 'Tipo doc. receptor (DTE)', ancho: 12, tipo: 'texto', valor: d => {
-    const c = d.receptor?.tipoDocumento
-    return c ? (TIPOS_DOCUMENTO_RECEPTOR.find(t => t.codigo === c)?.nombre ?? c) : null
-  } },
-  { titulo: 'Número doc. receptor (DTE)', ancho: 17, tipo: 'texto', valor: d => txt(d.receptor?.numDocumento) },
-  { titulo: 'DUI (ficha del cliente)', ancho: 12, tipo: 'texto', valor: d => txt(d.cliente_dui) },
-  { titulo: 'NIT (ficha del cliente)', ancho: 17, tipo: 'texto', valor: d => txt(d.cliente_nit) },
-  { titulo: 'NRC', ancho: 10, tipo: 'texto', valor: d => txt(d.receptor?.nrc ?? d.cliente_nrc) },
-  { titulo: 'Código actividad', ancho: 10, tipo: 'texto', valor: d => txt(d.receptor?.codActividad) },
-  { titulo: 'Actividad económica', ancho: 30, tipo: 'texto', valor: d => txt(d.receptor?.descActividad) },
-  { titulo: 'Departamento', ancho: 16, tipo: 'texto', valor: departamento },
-  { titulo: 'Municipio', ancho: 18, tipo: 'texto', valor: municipio },
-  { titulo: 'Dirección', ancho: 36, tipo: 'texto', valor: d => txt(dir(d)?.complemento) },
-  { titulo: 'Teléfono', ancho: 12, tipo: 'texto', valor: d => txt(d.receptor?.telefono ?? d.cliente_telefono) },
-  { titulo: 'Correo', ancho: 28, tipo: 'texto', valor: d => txt(d.receptor?.correo ?? d.cliente_correo) },
-]
-
-const lineas: Columna[] = [
-  { titulo: 'Detalle (cant. × descripción @ precio unitario)', ancho: 50, tipo: 'texto', valor: detalle },
-]
-
-const r = (campo: string) => (d: DteExportado) => num(d.resumen?.[campo])
-const dinero = (titulo: string, valor: (d: DteExportado) => number, ancho = 13): Columna =>
-  ({ titulo, ancho, tipo: 'dinero', valor, total: true })
-
-const ventasYDescuentos: Columna[] = [
-  dinero('Ventas no sujetas', r('totalNoSuj')),
-  dinero('Ventas exentas', r('totalExenta')),
-  dinero('Ventas gravadas', r('totalGravada')),
-  dinero('Subtotal ventas', r('subTotalVentas')),
-  dinero('Descuento no sujetas', r('descuNoSuj')),
-  dinero('Descuento exentas', r('descuExenta')),
-  dinero('Descuento gravadas', r('descuGravada')),
-  { titulo: '% descuento', ancho: 9, tipo: 'numero', valor: r('porcentajeDescuento') },
-  dinero('Total descuentos', r('totalDescu')),
-]
-
-const cierre: Columna[] = [
-  dinero('IVA retenido', r('ivaRete1')),
-  dinero('Retención renta', r('reteRenta')),
-  dinero('Monto total operación', r('montoTotalOperacion'), 15),
-  dinero('Total no gravado', r('totalNoGravado')),
-  dinero('Total a pagar', r('totalPagar'), 14),
-  dinero('Saldo a favor', r('saldoFavor')),
-]
-
-const invalidacion: Columna[] = [
-  { titulo: 'Fecha invalidación', ancho: 20, tipo: 'texto', valor: d => (d.invalidada_at ? fechaHoraSv(d.invalidada_at) : null) },
-  { titulo: 'Motivo invalidación', ancho: 30, tipo: 'texto', valor: d => txt(d.invalidacion_motivo) },
-  { titulo: 'Sello de invalidación', ancho: 44, tipo: 'texto', valor: d => txt(d.invalidacion_sello) },
-]
-
-/** El CCF se emite sin IVA en las líneas: el IVA 13 % se suma aparte. */
-const COLUMNAS_CCF: Columna[] = [
-  ...inicio, ...receptorCcf, ...lineas, ...ventasYDescuentos,
-  dinero('Subtotal (sin IVA)', r('subTotal')),
-  dinero('IVA 13%', ivaCcf),
-  dinero('IVA percibido', r('ivaPerci1')),
-  ...cierre, ...invalidacion,
-]
-
-/** El FCF lleva el IVA incluido en el precio: se desglosa para el libro. */
-const COLUMNAS_FCF: Columna[] = [
-  ...inicio, ...receptorFcf, ...lineas, ...ventasYDescuentos,
-  dinero('Subtotal (IVA incluido)', r('subTotal')),
-  dinero('Venta neta (sin IVA)', d => num(num(d.resumen?.totalGravada) - num(d.resumen?.totalIva))),
-  dinero('IVA 13% incluido', r('totalIva')),
-  ...cierre, ...invalidacion,
-]
-
-function fechaHoraSv(iso: string): string {
-  return new Date(iso).toLocaleString('es-SV', {
-    timeZone: 'America/El_Salvador', day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: false,
-  })
-}
 
 // ─── Hoja ─────────────────────────────────────────────────────
 
@@ -257,27 +152,8 @@ export interface Hoja {
   filas: DteExportado[]
 }
 
-/**
- * Sólo las columnas que dicen algo en este rango. El DTE trae muchos campos
- * que en CORSA siempre van en cero o vacíos (ventas exentas, retenciones,
- * descuentos…) o que son iguales en todo el archivo (ambiente, moneda…):
- * con todas, el archivo tenía 56 columnas y el contador tenía que buscar las
- * que importan entre las que nunca cambian. Si un mes aparece una venta
- * exenta o un DTE en contingencia, la columna sale sola.
- */
-function columnasConDatos(columnas: Columna[], filas: DteExportado[]): Columna[] {
-  return columnas.filter(c => {
-    const valores = filas.map(c.valor).filter(v => v != null && v !== '' && v !== 0)
-    if (c.titulo === 'Estado') return true
-    if (valores.length === 0) return false
-    return !c.soloSiCambia || new Set(valores).size > 1
-  })
-}
-
 export function armarHoja(dtes: DteExportado[], tipo: TipoVentas): Hoja {
-  return tipo === 'ccf'
-    ? { nombre: 'Contribuyentes (CCF)', columnas: columnasConDatos(COLUMNAS_CCF, dtes), filas: dtes }
-    : { nombre: 'Consumidores (FCF)', columnas: columnasConDatos(COLUMNAS_FCF, dtes), filas: dtes }
+  return { nombre: tipo === 'ccf' ? 'Contribuyentes (CCF)' : 'Consumidores (FCF)', columnas: COLUMNAS, filas: dtes }
 }
 
 /** «A», «B», … «AA»: para las fórmulas de la fila de totales. */
@@ -361,6 +237,6 @@ export function resumenHoja(h: Hoja) {
   return {
     documentos: h.filas.length,
     invalidados: h.filas.length - vigentes.length,
-    total: num(vigentes.reduce((s, d) => s + num(d.resumen?.totalPagar), 0)),
+    total: num(vigentes.reduce((s, d) => s + totalConIva(d), 0)),
   }
 }
