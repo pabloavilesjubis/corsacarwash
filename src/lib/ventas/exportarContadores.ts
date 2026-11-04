@@ -1,8 +1,8 @@
 /**
  * CORSA — Excel de ventas para los contadores (0082).
  *
- * Un libro con dos pestañas: contribuyentes (CCF, tipo 03) y consumidores
- * finales (FCF, tipo 01). Una fila por DTE, con todo lo del documento tal como
+ * Un archivo por tipo de venta: contribuyentes (CCF, tipo 03) o consumidores
+ * finales (FCF, tipo 01), en una sola pestaña. Una fila por DTE, con todo lo del documento tal como
  * se selló —identificación, receptor, resumen, sello y respuesta de Hacienda—
  * más lo que el contador pregunta y no viaja en el DTE: orden, forma de pago,
  * DUI y NIT de la ficha, invalidación.
@@ -46,10 +46,29 @@ export interface DteExportado {
   cliente_correo: string | null
 }
 
-export async function fetchDtesParaContadores(desde: string, hasta: string): Promise<DteExportado[]> {
-  const { data, error } = await (supabase as any).rpc('sales_export_for_accounting', { p_from: desde, p_to: hasta })
-  if (error) throw new Error(error.message)
-  return (data ?? []) as DteExportado[]
+export type TipoVentas = 'ccf' | 'fcf'
+
+const DTE_DE: Record<TipoVentas, string> = { ccf: '03', fcf: '01' }
+
+/**
+ * PostgREST corta cada respuesta en 1000 filas, también las de una función:
+ * un mes de facturas pasa de eso, así que se pide por páginas. La función
+ * ordena de forma estable (tipo, fecha, hora, número de control).
+ */
+const PAGINA = 1000
+
+export async function fetchDtesParaContadores(desde: string, hasta: string, tipo: TipoVentas): Promise<DteExportado[]> {
+  const todos: DteExportado[] = []
+  for (let inicio = 0; ; inicio += PAGINA) {
+    const { data, error } = await (supabase as any)
+      .rpc('sales_export_for_accounting', { p_from: desde, p_to: hasta })
+      .range(inicio, inicio + PAGINA - 1)
+    if (error) throw new Error(error.message)
+    const filas = (data ?? []) as DteExportado[]
+    todos.push(...filas)
+    if (filas.length < PAGINA) break
+  }
+  return todos.filter(d => d.dte_type === DTE_DE[tipo])
 }
 
 // ─── Columnas ─────────────────────────────────────────────────
@@ -227,7 +246,7 @@ function fechaHoraSv(iso: string): string {
   })
 }
 
-// ─── Hojas ────────────────────────────────────────────────────
+// ─── Hoja ─────────────────────────────────────────────────────
 
 export interface Hoja {
   nombre: string
@@ -235,11 +254,10 @@ export interface Hoja {
   filas: DteExportado[]
 }
 
-export function armarHojas(dtes: DteExportado[]): Hoja[] {
-  return [
-    { nombre: 'Contribuyentes (CCF)', columnas: COLUMNAS_CCF, filas: dtes.filter(d => d.dte_type === '03') },
-    { nombre: 'Consumidores (FCF)', columnas: COLUMNAS_FCF, filas: dtes.filter(d => d.dte_type === '01') },
-  ]
+export function armarHoja(dtes: DteExportado[], tipo: TipoVentas): Hoja {
+  return tipo === 'ccf'
+    ? { nombre: 'Contribuyentes (CCF)', columnas: COLUMNAS_CCF, filas: dtes }
+    : { nombre: 'Consumidores (FCF)', columnas: COLUMNAS_FCF, filas: dtes }
 }
 
 /** «A», «B», … «AA»: para las fórmulas de la fila de totales. */
@@ -251,82 +269,78 @@ function letra(i: number): string {
 
 const FORMATO_DINERO = '#,##0.00'
 
-export async function descargarExcel(hojas: Hoja[], nombreArchivo: string): Promise<void> {
+export async function descargarExcel(h: Hoja, nombreArchivo: string): Promise<void> {
   // Se carga sólo al exportar: no tiene por qué pesar en el resto de la app.
   const { default: writeXlsxFile } = await import('write-excel-file/browser')
   const colEstado = letra(inicio.findIndex(c => c.titulo === 'Estado'))
 
-  const libros = hojas.map(h => {
-    const encabezado = h.columnas.map(c => ({
-      value: c.titulo, fontWeight: 'bold' as const, wrap: true,
-      backgroundColor: '#0E3B36', textColor: '#FFFFFF', alignVertical: 'center' as const,
-    }))
-    const filas = h.filas.map(d => h.columnas.map(c => {
-      const v = c.valor(d)
-      if (v == null || v === '') return null
-      if (c.tipo === 'fecha') {
-        const [y, m, dia] = String(v).split('-').map(Number)
-        return { value: new Date(Date.UTC(y, m - 1, dia)), type: Date, format: 'dd/mm/yyyy' }
-      }
-      if (c.tipo === 'dinero') return { value: Number(v), type: Number, format: FORMATO_DINERO }
-      if (c.tipo === 'numero') return { value: Number(v), type: Number }
-      return { value: String(v), type: String }
-    }))
-    // Totales de los vigentes: los invalidados están para cuadrar el correlativo.
-    const ult = h.filas.length + 1
-    const totales = h.columnas.map((c, i) => {
-      if (i === 0) return { value: 'Total vigentes', fontWeight: 'bold' as const }
-      if (!c.total || h.filas.length === 0) return null
-      const col = letra(i)
-      return {
-        value: `SUMIFS(${col}2:${col}${ult},${colEstado}2:${colEstado}${ult},"Vigente")`,
-        type: 'Formula' as const, format: FORMATO_DINERO, fontWeight: 'bold' as const,
-      }
-    })
+  const encabezado = h.columnas.map(c => ({
+    value: c.titulo, fontWeight: 'bold' as const, wrap: true,
+    backgroundColor: '#0E3B36', textColor: '#FFFFFF', alignVertical: 'center' as const,
+  }))
+  const filas = h.filas.map(d => h.columnas.map(c => {
+    const v = c.valor(d)
+    if (v == null || v === '') return null
+    if (c.tipo === 'fecha') {
+      const [y, m, dia] = String(v).split('-').map(Number)
+      return { value: new Date(Date.UTC(y, m - 1, dia)), type: Date, format: 'dd/mm/yyyy' }
+    }
+    if (c.tipo === 'dinero' || c.tipo === 'numero') {
+      const n = Number(v)
+      if (!Number.isFinite(n)) return null
+      return c.tipo === 'dinero' ? { value: n, type: Number, format: FORMATO_DINERO } : { value: n, type: Number }
+    }
+    return { value: String(v), type: String }
+  }))
+  // Totales de los vigentes: los invalidados están para cuadrar el correlativo.
+  const ult = h.filas.length + 1
+  const totales = h.columnas.map((c, i) => {
+    if (i === 0) return { value: 'Total vigentes', type: String, fontWeight: 'bold' as const }
+    if (!c.total || h.filas.length === 0) return null
+    const col = letra(i)
     return {
-      data: [encabezado, ...filas, [], totales],
-      sheet: h.nombre,
-      columns: h.columnas.map(c => ({ width: c.ancho })),
-      stickyRowsCount: 1,
+      value: `SUMIFS(${col}2:${col}${ult},${colEstado}2:${colEstado}${ult},"Vigente")`,
+      type: 'Formula' as const, format: FORMATO_DINERO, fontWeight: 'bold' as const,
     }
   })
 
-  await writeXlsxFile(libros as any).toFile(nombreArchivo)
+  await writeXlsxFile([encabezado, ...filas, [], totales] as any, {
+    sheet: h.nombre,
+    columns: h.columnas.map(c => ({ width: c.ancho })),
+    stickyRowsCount: 1,
+  }).toFile(nombreArchivo)
 }
 
-/** CSV no tiene pestañas: sale un archivo por hoja, con el mismo contenido. */
-export function descargarCsv(hojas: Hoja[], prefijo: string): void {
+export function descargarCsv(h: Hoja, nombreArchivo: string): void {
   const celda = (v: string | number | null) => `"${String(v ?? '').replace(/"/g, '""')}"`
-  for (const h of hojas) {
-    const filas = [
-      h.columnas.map(c => c.titulo),
-      ...h.filas.map(d => h.columnas.map(c => {
-        const v = c.valor(d)
-        if (v == null) return ''
-        if (c.tipo === 'fecha') { const [y, m, dia] = String(v).split('-'); return `${dia}/${m}/${y}` }
-        if (c.tipo === 'dinero') return Number(v).toFixed(2)
-        return v
-      })),
-    ]
-    const csv = filas.map(f => f.map(celda).join(',')).join('\r\n')
-    const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }))
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${prefijo}-${h.nombre.startsWith('Contribuyentes') ? 'contribuyentes-ccf' : 'consumidores-fcf'}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
+  const filas = [
+    h.columnas.map(c => c.titulo),
+    ...h.filas.map(d => h.columnas.map(c => {
+      const v = c.valor(d)
+      if (v == null) return ''
+      if (c.tipo === 'fecha') { const [y, m, dia] = String(v).split('-'); return `${dia}/${m}/${y}` }
+      if (c.tipo === 'dinero') return Number(v).toFixed(2)
+      return v
+    })),
+  ]
+  const csv = filas.map(f => f.map(celda).join(',')).join('\r\n')
+  const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = nombreArchivo
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  // Revocar en el mismo tick cancela la descarga en algunos navegadores.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
 
-/** Para el modal: cuántos documentos y cuánto suma cada pestaña (sólo vigentes). */
-export function resumenHojas(hojas: Hoja[]) {
-  return hojas.map(h => {
-    const vigentes = h.filas.filter(d => d.estado === 'ACCEPTED')
-    return {
-      nombre: h.nombre,
-      documentos: h.filas.length,
-      invalidados: h.filas.length - vigentes.length,
-      total: num(vigentes.reduce((s, d) => s + num(d.resumen?.totalPagar), 0)),
-    }
-  })
+/** Para el modal: cuántos documentos y cuánto suman los vigentes. */
+export function resumenHoja(h: Hoja) {
+  const vigentes = h.filas.filter(d => d.estado === 'ACCEPTED')
+  return {
+    documentos: h.filas.length,
+    invalidados: h.filas.length - vigentes.length,
+    total: num(vigentes.reduce((s, d) => s + num(d.resumen?.totalPagar), 0)),
+  }
 }

@@ -1,14 +1,14 @@
 /**
- * «Exportar ventas» (0082): el resumen para los contadores. Pide el rango, lo
- * consulta y baja el Excel con dos pestañas (CCF y FCF) o, si se elige CSV,
- * un archivo por pestaña.
+ * «Exportar ventas» (0082): el resumen para los contadores. Pide qué ventas
+ * (contribuyentes o consumidores), el rango y el formato, y baja un solo
+ * archivo con una sola pestaña.
  */
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import toast from 'react-hot-toast'
 import { dateRange } from '../services/sales.service'
 import {
-  armarHojas, descargarCsv, descargarExcel, fetchDtesParaContadores, resumenHojas,
+  armarHoja, descargarCsv, descargarExcel, fetchDtesParaContadores, resumenHoja, type TipoVentas,
 } from '../lib/ventas/exportarContadores'
 
 const money = (n: number) => 'US$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -18,9 +18,10 @@ export function ExportarVentasModal({ desdeInicial, hastaInicial, onCerrar }: {
 }) {
   const [desde, setDesde] = useState(desdeInicial || dateRange('mes').from)
   const [hasta, setHasta] = useState(hastaInicial || dateRange('mes').to)
+  const [tipo, setTipo] = useState<TipoVentas>('ccf')
   const [formato, setFormato] = useState<'xlsx' | 'csv'>('xlsx')
   const [exportando, setExportando] = useState(false)
-  const [hecho, setHecho] = useState<ReturnType<typeof resumenHojas> | null>(null)
+  const [hecho, setHecho] = useState<ReturnType<typeof resumenHoja> | null>(null)
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onCerrar() }
@@ -38,13 +39,17 @@ export function ExportarVentasModal({ desdeInicial, hastaInicial, onCerrar }: {
     if (hasta < desde) { toast.error('La fecha final es anterior a la inicial'); return }
     setExportando(true)
     try {
-      const dtes = await fetchDtesParaContadores(desde, hasta)
-      if (dtes.length === 0) { toast.error('No hay documentos emitidos en ese rango'); setExportando(false); return }
-      const hojas = armarHojas(dtes)
-      const nombre = `ventas-corsa-${desde}_${hasta}`
-      if (formato === 'xlsx') await descargarExcel(hojas, `${nombre}.xlsx`)
-      else descargarCsv(hojas, nombre)
-      setHecho(resumenHojas(hojas))
+      const dtes = await fetchDtesParaContadores(desde, hasta, tipo)
+      if (dtes.length === 0) {
+        toast.error(`No hay ${tipo === 'ccf' ? 'créditos fiscales' : 'facturas de consumidor final'} en ese rango`)
+        setExportando(false)
+        return
+      }
+      const hoja = armarHoja(dtes, tipo)
+      const nombre = `ventas-${tipo === 'ccf' ? 'contribuyentes' : 'consumidores'}-${desde}_${hasta}`
+      if (formato === 'xlsx') await descargarExcel(hoja, `${nombre}.xlsx`)
+      else descargarCsv(hoja, `${nombre}.csv`)
+      setHecho(resumenHoja(hoja))
     } catch (err: any) {
       toast.error(err?.message ?? 'No se pudo exportar')
     }
@@ -62,8 +67,22 @@ export function ExportarVentasModal({ desdeInicial, hastaInicial, onCerrar }: {
 
         <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
-            Resumen para contabilidad: todos los DTE emitidos en el rango, por fecha de emisión, con sello de
-            recepción, datos del cliente y montos. Una pestaña para contribuyentes (CCF) y otra para consumidores (FCF).
+            Resumen para contabilidad: los DTE emitidos en el rango, por fecha de emisión, con sello de
+            recepción, datos del cliente y montos.
+          </div>
+
+          <div>
+            <div className="panel-section-label">Ventas a exportar</div>
+            <div className="filter-pills">
+              <button type="button" className={`filter-pill${tipo === 'ccf' ? ' active' : ''}`}
+                      onClick={() => { setTipo('ccf'); setHecho(null) }}>
+                Contribuyentes (CCF)
+              </button>
+              <button type="button" className={`filter-pill${tipo === 'fcf' ? ' active' : ''}`}
+                      onClick={() => { setTipo('fcf'); setHecho(null) }}>
+                Consumidores (FCF)
+              </button>
+            </div>
           </div>
 
           <div>
@@ -85,10 +104,10 @@ export function ExportarVentasModal({ desdeInicial, hastaInicial, onCerrar }: {
             <div className="panel-section-label">Formato</div>
             <div className="filter-pills">
               <button type="button" className={`filter-pill${formato === 'xlsx' ? ' active' : ''}`} onClick={() => setFormato('xlsx')}>
-                Excel (2 pestañas)
+                Excel
               </button>
               <button type="button" className={`filter-pill${formato === 'csv' ? ' active' : ''}`} onClick={() => setFormato('csv')}>
-                CSV (2 archivos)
+                CSV
               </button>
             </div>
           </div>
@@ -99,16 +118,13 @@ export function ExportarVentasModal({ desdeInicial, hastaInicial, onCerrar }: {
           </div>
 
           {hecho && (
-            <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 12.5 }}>
-              {hecho.map(h => (
-                <div key={h.nombre} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '3px 0' }}>
-                  <span>
-                    {h.nombre}: <strong>{h.documentos}</strong> documentos
-                    {h.invalidados > 0 && <span style={{ color: 'var(--text-secondary)' }}> ({h.invalidados} invalidados)</span>}
-                  </span>
-                  <strong style={{ fontVariantNumeric: 'tabular-nums' }}>{money(h.total)}</strong>
-                </div>
-              ))}
+            <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 12.5,
+                          display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+              <span>
+                Descargado: <strong>{hecho.documentos}</strong> documentos
+                {hecho.invalidados > 0 && <span style={{ color: 'var(--text-secondary)' }}> ({hecho.invalidados} invalidados)</span>}
+              </span>
+              <strong style={{ fontVariantNumeric: 'tabular-nums' }}>{money(hecho.total)}</strong>
             </div>
           )}
         </div>
