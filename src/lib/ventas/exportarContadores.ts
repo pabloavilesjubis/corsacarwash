@@ -82,6 +82,11 @@ interface Columna {
   valor: (d: DteExportado) => string | number | null
   /** Se suma en la fila de totales (sólo los vigentes). */
   total?: boolean
+  /**
+   * Dato que casi siempre es igual en todo el archivo (ambiente, moneda,
+   * versión…): sólo sale si en el rango hay más de un valor.
+   */
+  soloSiCambia?: boolean
 }
 
 const num = (v: unknown): number => {
@@ -131,19 +136,19 @@ const ivaCcf = (d: DteExportado) =>
 const inicio: Columna[] = [
   { titulo: 'Fecha emisión', ancho: 12, tipo: 'fecha', valor: d => d.identificacion?.fecEmi ?? null },
   { titulo: 'Hora emisión', ancho: 10, tipo: 'texto', valor: d => txt(d.identificacion?.horEmi) },
-  { titulo: 'Tipo de documento', ancho: 26, tipo: 'texto', valor: d => TIPO_DTE[d.dte_type] ?? d.dte_type },
+  { titulo: 'Tipo de documento', ancho: 26, tipo: 'texto', soloSiCambia: true, valor: d => TIPO_DTE[d.dte_type] ?? d.dte_type },
   { titulo: 'Estado', ancho: 11, tipo: 'texto', valor: d => (d.estado === 'INVALIDATED' ? 'Invalidado' : 'Vigente') },
   { titulo: 'Número de control', ancho: 34, tipo: 'texto', valor: d => d.numero_control },
   { titulo: 'Código de generación', ancho: 40, tipo: 'texto', valor: d => txt(d.codigo_generacion) },
   { titulo: 'Sello de recepción', ancho: 44, tipo: 'texto', valor: d => txt(d.sello_recepcion) },
   { titulo: 'Fecha procesamiento MH', ancho: 20, tipo: 'texto', valor: d => txt(d.fh_procesamiento) },
-  { titulo: 'Ambiente', ancho: 11, tipo: 'texto', valor: d => AMBIENTE[d.identificacion?.ambiente] ?? txt(d.identificacion?.ambiente) },
-  { titulo: 'Versión DTE', ancho: 8, tipo: 'numero', valor: d => d.identificacion?.version ?? null },
-  { titulo: 'Modelo de facturación', ancho: 10, tipo: 'texto', valor: d => MODELO[String(d.identificacion?.tipoModelo)] ?? null },
-  { titulo: 'Tipo de transmisión', ancho: 12, tipo: 'texto', valor: d => OPERACION[String(d.identificacion?.tipoOperacion)] ?? null },
-  { titulo: 'Moneda', ancho: 8, tipo: 'texto', valor: d => txt(d.identificacion?.tipoMoneda) },
-  { titulo: 'Condición de la operación', ancho: 12, tipo: 'texto', valor: d => CONDICION[String(d.resumen?.condicionOperacion)] ?? null },
-  { titulo: 'Sucursal', ancho: 14, tipo: 'texto', valor: d => txt(d.branch_name) },
+  { titulo: 'Ambiente', ancho: 11, tipo: 'texto', soloSiCambia: true, valor: d => AMBIENTE[d.identificacion?.ambiente] ?? txt(d.identificacion?.ambiente) },
+  { titulo: 'Versión DTE', ancho: 8, tipo: 'numero', soloSiCambia: true, valor: d => d.identificacion?.version ?? null },
+  { titulo: 'Modelo de facturación', ancho: 10, tipo: 'texto', soloSiCambia: true, valor: d => MODELO[String(d.identificacion?.tipoModelo)] ?? null },
+  { titulo: 'Tipo de transmisión', ancho: 12, tipo: 'texto', soloSiCambia: true, valor: d => OPERACION[String(d.identificacion?.tipoOperacion)] ?? null },
+  { titulo: 'Moneda', ancho: 8, tipo: 'texto', soloSiCambia: true, valor: d => txt(d.identificacion?.tipoMoneda) },
+  { titulo: 'Condición de la operación', ancho: 12, tipo: 'texto', soloSiCambia: true, valor: d => CONDICION[String(d.resumen?.condicionOperacion)] ?? null },
+  { titulo: 'Sucursal', ancho: 14, tipo: 'texto', soloSiCambia: true, valor: d => txt(d.branch_name) },
   { titulo: 'Orden(es)', ancho: 18, tipo: 'texto', valor: d => txt(d.ordenes_consolidadas ?? d.order_number) },
   { titulo: 'Tipo de venta', ancho: 20, tipo: 'texto', valor: tipoVenta },
   { titulo: 'Placa', ancho: 10, tipo: 'texto', valor: d => txt(d.placa) },
@@ -185,7 +190,6 @@ const receptorFcf: Columna[] = [
 ]
 
 const lineas: Columna[] = [
-  { titulo: 'Líneas', ancho: 7, tipo: 'numero', valor: d => (d.cuerpo ?? []).length },
   { titulo: 'Detalle (cant. × descripción @ precio unitario)', ancho: 50, tipo: 'texto', valor: detalle },
 ]
 
@@ -212,7 +216,6 @@ const cierre: Columna[] = [
   dinero('Total no gravado', r('totalNoGravado')),
   dinero('Total a pagar', r('totalPagar'), 14),
   dinero('Saldo a favor', r('saldoFavor')),
-  { titulo: 'Total en letras', ancho: 40, tipo: 'texto', valor: d => txt(d.resumen?.totalLetras) },
 ]
 
 const invalidacion: Columna[] = [
@@ -254,10 +257,27 @@ export interface Hoja {
   filas: DteExportado[]
 }
 
+/**
+ * Sólo las columnas que dicen algo en este rango. El DTE trae muchos campos
+ * que en CORSA siempre van en cero o vacíos (ventas exentas, retenciones,
+ * descuentos…) o que son iguales en todo el archivo (ambiente, moneda…):
+ * con todas, el archivo tenía 56 columnas y el contador tenía que buscar las
+ * que importan entre las que nunca cambian. Si un mes aparece una venta
+ * exenta o un DTE en contingencia, la columna sale sola.
+ */
+function columnasConDatos(columnas: Columna[], filas: DteExportado[]): Columna[] {
+  return columnas.filter(c => {
+    const valores = filas.map(c.valor).filter(v => v != null && v !== '' && v !== 0)
+    if (c.titulo === 'Estado') return true
+    if (valores.length === 0) return false
+    return !c.soloSiCambia || new Set(valores).size > 1
+  })
+}
+
 export function armarHoja(dtes: DteExportado[], tipo: TipoVentas): Hoja {
   return tipo === 'ccf'
-    ? { nombre: 'Contribuyentes (CCF)', columnas: COLUMNAS_CCF, filas: dtes }
-    : { nombre: 'Consumidores (FCF)', columnas: COLUMNAS_FCF, filas: dtes }
+    ? { nombre: 'Contribuyentes (CCF)', columnas: columnasConDatos(COLUMNAS_CCF, dtes), filas: dtes }
+    : { nombre: 'Consumidores (FCF)', columnas: columnasConDatos(COLUMNAS_FCF, dtes), filas: dtes }
 }
 
 /** «A», «B», … «AA»: para las fórmulas de la fila de totales. */
@@ -272,7 +292,7 @@ const FORMATO_DINERO = '#,##0.00'
 export async function descargarExcel(h: Hoja, nombreArchivo: string): Promise<void> {
   // Se carga sólo al exportar: no tiene por qué pesar en el resto de la app.
   const { default: writeXlsxFile } = await import('write-excel-file/browser')
-  const colEstado = letra(inicio.findIndex(c => c.titulo === 'Estado'))
+  const colEstado = letra(h.columnas.findIndex(c => c.titulo === 'Estado'))
 
   const encabezado = h.columnas.map(c => ({
     value: c.titulo, fontWeight: 'bold' as const, wrap: true,
