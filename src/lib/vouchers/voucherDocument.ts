@@ -11,7 +11,30 @@
  */
 
 import type { VoucherRow } from '../../services/vouchers.service'
-import { MARCA } from '../fiscal/emisor'
+import { MARCA } from '../fiscal/marca'
+
+/** Lo mínimo de un cupón para imprimirlo: lo cumplen la fila de Cupones y la del portal. */
+export type CuponImprimible = Pick<VoucherRow,
+  'id' | 'code' | 'sequence_number' | 'validation_token' | 'service_name' | 'size' |
+  'includes_aspirado' | 'is_gift' | 'unit_value' | 'customer_name' | 'batch_id'>
+
+/**
+ * Arte de fondo del cupón. Va en public/ y cubre la tarjeta entera
+ * (200 × 85 mm). Si el archivo no está, el cupón sale en blanco como siempre.
+ */
+export const FONDO_CUPON = '/cupones/fondo-cupon.png'
+
+/**
+ * `base` es el origen de la app (https://…). En el navegador sale solo; el
+ * servidor de correo lo pasa, porque allá no hay window y el PDF necesita la
+ * URL completa del QR y del fondo.
+ */
+export interface OpcionesCupon { base?: string }
+
+function origen(base?: string): string {
+  if (base) return base.replace(/\/$/, '')
+  return typeof window !== 'undefined' ? window.location.origin : ''
+}
 
 function esc(value: unknown): string {
   if (value == null) return ''
@@ -25,9 +48,8 @@ function money(n: number): string {
 }
 
 /** URL del QR: abre la pantalla de Cupones con ese cupón ya localizado. */
-export function voucherValidationUrl(v: Pick<VoucherRow, 'validation_token'>): string {
-  const base = typeof window !== 'undefined' ? window.location.origin : ''
-  return `${base}/coupons?v=${v.validation_token}`
+export function voucherValidationUrl(v: Pick<VoucherRow, 'validation_token'>, base?: string): string {
+  return `${origen(base)}/coupons?v=${v.validation_token}`
 }
 
 function qrSrc(data: string): string {
@@ -38,7 +60,7 @@ function qrSrc(data: string): string {
  * Una regalía no lleva importe impreso: un "Valor $0.00" haría dudar de si el
  * cupón sirve. Se rotula por lo que es.
  */
-function voucherCard(v: VoucherRow): string {
+function voucherCard(v: CuponImprimible, base?: string): string {
   const servicio = [v.service_name, v.size].filter(Boolean).join(' ')
   return `
   <section class="voucher">
@@ -63,7 +85,7 @@ function voucherCard(v: VoucherRow): string {
       <div class="code-label">Cupón N°</div>
       <div class="code">${esc(v.code)}</div>
       <div class="seq">Correlativo ${String(v.sequence_number).padStart(6, '0')}</div>
-      <img class="qr" src="${esc(qrSrc(voucherValidationUrl(v)))}" alt="QR de validación ${esc(v.code)}"/>
+      <img class="qr" src="${esc(qrSrc(voucherValidationUrl(v, base)))}" alt="QR de validación ${esc(v.code)}"/>
       <div class="qr-note">Escaneá para validar</div>
       <div class="value">${v.is_gift ? 'REGALÍA' : `Valor ${money(v.unit_value)}`}</div>
     </div>
@@ -75,8 +97,9 @@ function voucherCard(v: VoucherRow): string {
  *               sus medidas exactas — lo que cambia es el papel, para no
  *               desperdiciar dos tercios de una carta al reimprimir uno solo.
  */
-export function buildVouchersHTML(vouchers: VoucherRow[], unico = false): string {
-  const paginas: VoucherRow[][] = []
+export function buildVouchersHTML(vouchers: CuponImprimible[], unico = false, opciones: OpcionesCupon = {}): string {
+  const base = origen(opciones.base)
+  const paginas: CuponImprimible[][] = []
   for (let i = 0; i < vouchers.length; i += 3) paginas.push(vouchers.slice(i, i + 3))
 
   const rango = vouchers.length
@@ -101,6 +124,8 @@ export function buildVouchersHTML(vouchers: VoucherRow[], unico = false): string
     height: 85mm; display: flex;
     border: 2px solid #111; border-radius: 3mm;
     overflow: hidden; margin-bottom: 4mm;
+    /* El arte de fondo (200 × 85 mm). Sin archivo, queda el blanco de siempre. */
+    background: #fff url('${base}${FONDO_CUPON}') center / cover no-repeat;
   }
   .voucher:last-child { margin-bottom: 0; }
 
@@ -144,6 +169,7 @@ export function buildVouchersHTML(vouchers: VoucherRow[], unico = false): string
     font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
     font-size: 8.5px; color: #666; margin-top: 1mm; letter-spacing: 0.04em;
   }
+  /* La imagen del QR es opaca con su margen blanco: se lee aunque el arte pase por detrás. */
   .qr { width: 28mm; height: 28mm; margin-top: 2mm; }
   .qr-note { font-size: 8.5px; color: #555; margin-top: 1.5mm; }
   .value { font-size: 12px; font-weight: 800; margin-top: auto; }
@@ -154,7 +180,7 @@ export function buildVouchersHTML(vouchers: VoucherRow[], unico = false): string
 </style>
 </head>
 <body>
-  ${paginas.map(p => `<div class="page">${p.map(voucherCard).join('')}</div>`).join('')}
+  ${paginas.map(p => `<div class="page">${p.map(v => voucherCard(v, base)).join('')}</div>`).join('')}
   <script>
     if (!new URLSearchParams(location.search).get('noprint')) {
       // Se espera a que carguen los QR: imprimir antes deja los recuadros vacíos.
@@ -168,7 +194,7 @@ export function buildVouchersHTML(vouchers: VoucherRow[], unico = false): string
 }
 
 /** Abre el lote completo listo para imprimir o guardar como un solo PDF. */
-export function printVouchers(vouchers: VoucherRow[], unico = false): void {
+export function printVouchers(vouchers: CuponImprimible[], unico = false): void {
   if (vouchers.length === 0) throw new Error('No hay cupones para imprimir')
   const w = window.open(
     '',
@@ -178,12 +204,21 @@ export function printVouchers(vouchers: VoucherRow[], unico = false): void {
   if (!w) {
     throw new Error('El navegador bloqueó la ventana. Permití popups para este sitio.')
   }
+  escribirCupones(w, vouchers, unico)
+}
+
+/**
+ * Escribe los cupones en una ventana ya abierta. La Cuponera Digital abre la
+ * ventana en el clic y la llena cuando el servidor devuelve los cupones: abrirla
+ * después de esperar la respuesta la haría bloquear como popup.
+ */
+export function escribirCupones(w: Window, vouchers: CuponImprimible[], unico = vouchers.length === 1): void {
   w.document.open()
   w.document.write(buildVouchersHTML(vouchers, unico))
   w.document.close()
 }
 
 /** Un cupón solo, en una hoja a su medida. */
-export function printSingleVoucher(voucher: VoucherRow): void {
+export function printSingleVoucher(voucher: CuponImprimible): void {
   printVouchers([voucher], true)
 }

@@ -32,6 +32,12 @@ export interface VoucherRow {
   customer_id: string | null
   customer_name: string
   redeemed_order_number: string | null
+  /** El lote está cargado a la Cuponera Digital del cliente (0083). */
+  en_cuponera?: boolean
+  /** A quién lo entregó el cliente desde la cuponera, si ya lo entregó. */
+  entregado_a?: string | null
+  entregado_correo?: string | null
+  entregado_at?: string | null
 }
 
 export interface VoucherFilters {
@@ -58,7 +64,7 @@ export async function fetchVouchers(f: VoucherFilters = {}): Promise<VoucherRow[
   if (f.to) q = q.lte('sold_date', f.to)
 
   const term = f.search?.trim()
-  if (term) q = q.or(`code.ilike.%${term}%,customer_name.ilike.%${term}%`)
+  if (term) q = q.or(`code.ilike.%${term}%,customer_name.ilike.%${term}%,entregado_a.ilike.%${term}%`)
 
   const { data, error } = await q
   if (error) throw error

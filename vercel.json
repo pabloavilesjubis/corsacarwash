@@ -73,6 +73,9 @@
     "api/correo.js": {
       "maxDuration": 60,
       "includeFiles": "node_modules/@sparticuz/chromium/bin/**"
+    },
+    "api/cuponera.js": {
+      "maxDuration": 30
     }
   }
 }

@@ -224,6 +224,12 @@ export function CouponsPage() {
                     <td style={{ fontSize: 13 }} className="truncate">
                       {r.customer_name}
                       {r.is_gift && <span className="badge badge-orange" style={{ marginLeft: 6 }}>Regalía</span>}
+                      {r.en_cuponera && <span className="badge badge-neutral" style={{ marginLeft: 6 }}>Cuponera</span>}
+                      {r.entregado_a && (
+                        <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }} title={r.entregado_correo ?? ''}>
+                          Entregado a {r.entregado_a}{r.entregado_at ? ` · ${fecha(r.entregado_at)}` : ''}
+                        </div>
+                      )}
                     </td>
                     <td style={{ fontSize: 13 }}>
                       {r.service_name} {r.size}

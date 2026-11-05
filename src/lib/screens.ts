@@ -52,6 +52,8 @@ export const SCREENS: readonly ScreenDef[] = [
   { key: 'dashboard',   path: '/dashboard',   label: 'Resumen del día',          permission: 'screens.dashboard',   section: 'administracion' },
   { key: 'sales',       path: '/sales',       label: 'Ventas',                   permission: 'screens.sales',       section: 'administracion' },
   { key: 'coupons',     path: '/coupons',     label: 'Cupones',                  permission: 'screens.coupons',     section: 'administracion' },
+  // Clientes con portal de cupones (0083): quién tiene acceso y qué lotes ve.
+  { key: 'cuponera',    path: '/cuponera-digital', label: 'Cuponera digital',    permission: 'screens.cuponera',    section: 'administracion' },
   { key: 'rain',        path: '/rain',        label: 'Seguros de lluvia',        permission: 'screens.rain',        section: 'administracion' },
   // Se gobierna con plc.read y no con un screens.* propio: es la misma lectura
   // de las máquinas que ya habilita el tablero, y darle un permiso nuevo

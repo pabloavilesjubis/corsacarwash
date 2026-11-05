@@ -148,10 +148,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = useCallback(async (email: string, password: string) => {
     try {
       // SECURITY: credentials never logged, never sent in URL
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) {
         // Return generic message — do not expose internal error details to UI
         return { error: 'Email o contraseña incorrectos' }
+      }
+      // Un usuario de la Cuponera Digital (0083) es de un cliente, no de
+      // CORSA: su puerta es /cuponera. La base igual no le dejaría ver nada.
+      if (data.user?.app_metadata?.portal === 'cuponera') {
+        await supabase.auth.signOut()
+        return { error: 'Este usuario es de la Cuponera Digital: ingresá en /cuponera' }
       }
       return { error: null }
     } catch {

@@ -16,9 +16,10 @@
 import { supabase } from '../supabase'
 import { findDepartamento, findMunicipio } from '../mh-catalogs'
 import type { TicketEmisor } from '../ticket/corsaTicket'
+import { MARCA } from './marca'
 
 /** La marca, sin datos fiscales. Para cupones y para el ticket sin DTE. */
-export const MARCA: TicketEmisor = { nombreComercial: 'CORSA CARWASH' }
+export { MARCA }
 
 /** Las columnas de `fiscal_issuer_config` que se imprimen. */
 export interface FilaEmisor {

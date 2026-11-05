@@ -133,6 +133,15 @@ const screenIcons: Record<string, React.ReactNode> = {
   sales: icons.receivable,
   pos_admin: icons.pos,
   coupons: icons.memberships,
+  // Cuponera digital: un cupón con su troquel.
+  cuponera: (
+    <Icon>
+      <path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4z"/>
+      <line x1="15" y1="7" x2="15" y2="9"/>
+      <line x1="15" y1="11" x2="15" y2="13"/>
+      <line x1="15" y1="15" x2="15" y2="17"/>
+    </Icon>
+  ),
   software: (
     <Icon>
       <rect x="2" y="3" width="20" height="14" rx="2"/>

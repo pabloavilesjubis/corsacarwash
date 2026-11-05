@@ -31,6 +31,11 @@ const ConfiguracionPage = lazy(() => import('./pages/ConfiguracionPage').then(m 
 const NotificacionesPage = lazy(() => import('./pages/NotificacionesPage').then(m => ({ default: m.NotificacionesPage })))
 const EstacionFiscalPage = lazy(() => import('./pages/EstacionFiscalPage').then(m => ({ default: m.EstacionFiscalPage })))
 const CierresCajaPage = lazy(() => import('./pages/CierresCajaPage').then(m => ({ default: m.CierresCajaPage })))
+const CuponeraAdminPage = lazy(() => import('./pages/CuponeraAdminPage').then(m => ({ default: m.CuponeraAdminPage })))
+// El portal de la Cuponera Digital (0083) es para clientes: su propio chunk,
+// sin AppShell y con su propia sesión.
+const CuponeraPage = lazy(() => import('./cuponera/CuponeraPage').then(m => ({ default: m.CuponeraPage })))
+const CuponeraDemoPage = lazy(() => import('./cuponera/CuponeraDemoPage').then(m => ({ default: m.CuponeraDemoPage })))
 const CierreDiarioPage = lazy(() => import('./pages/CierreDiarioPage').then(m => ({ default: m.CierreDiarioPage })))
 // Contabilidad: un solo chunk para las cuatro pantallas del submenú.
 const contabilidad = () => import('./pages/contabilidad/ContabilidadPages')
@@ -99,6 +104,11 @@ export default function App() {
               <Route path="/registro" element={<RegistroPage/>}/>
               {/* Registro de empleados con beneficio corporativo (0079): sin sesión, como /registro. */}
               <Route path="/beneficio" element={<BeneficioRegistroPage/>}/>
+              {/* Cuponera Digital (0083): portal de clientes, con su propio login. */}
+              <Route path="/cuponera" element={<CuponeraPage/>}/>
+              {import.meta.env.DEV && (
+                <Route path="/dev/cuponera" element={<CuponeraDemoPage/>}/>
+              )}
               {import.meta.env.DEV && (
                 <Route path="/dev/ticket" element={<TicketPreviewPage/>}/>
               )}
@@ -121,6 +131,7 @@ export default function App() {
                 <Route path="/sales"       element={<ScreenGuard permission="screens.sales"><SalesPage/></ScreenGuard>}/>
                 <Route path="/pos-admin"   element={<ScreenGuard permission="screens.pos_admin"><PosAdminPage/></ScreenGuard>}/>
                 <Route path="/coupons"     element={<ScreenGuard permission="screens.coupons"><CouponsPage/></ScreenGuard>}/>
+                <Route path="/cuponera-digital" element={<ScreenGuard permission="screens.cuponera"><CuponeraAdminPage/></ScreenGuard>}/>
                 <Route path="/rain"        element={<ScreenGuard permission="screens.rain"><SegurosPage/></ScreenGuard>}/>
                 <Route path="/machines"    element={<ScreenGuard permission="plc.read"><AnalisisMaquinasPage/></ScreenGuard>}/>
                 <Route path="/customers"   element={<ScreenGuard permission="screens.customers"><CustomersPage/></ScreenGuard>}/>

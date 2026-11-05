@@ -6,6 +6,9 @@
  *   POST { accion: 'factura', invoiceId }      DTE de una factura (CCF consolidado).
  *   POST { accion: 'estado_cuenta', customerId }
  *   POST { accion: 'cierre_caja', sessionId }    Reporte de cierre de caja en PDF (0065).
+ *   POST { accion: 'cupones', entregaId }        Cupones de una entrega de la Cuponera Digital
+ *                                              (0083), a quien los recibe. Lo puede pedir
+ *                                              el usuario externo dueño de la entrega.
  *
  * Con la sesión del usuario (Authorization: Bearer <JWT de Supabase>); las
  * lecturas van con el service role, filtradas por su organización.
@@ -16,22 +19,30 @@
  *
  * Cada intento, salga o no, queda en envios_correo (0061).
  */
-import nodemailer from 'nodemailer'
 import { buildFacturaHTML } from '../../src/lib/fiscal/facturaDocument'
 import { estadoCuentaHTML } from '../../src/lib/cxc/estadoCuenta'
 import { diaDelTurno, reporteCierreHTML } from '../../src/lib/caja/reporteCierre'
 import { normalizarResumen } from '../../src/lib/caja/resumen'
+import { buildVouchersHTML, type CuponImprimible } from '../../src/lib/vouchers/voucherDocument'
 import type { Sale } from '../../src/services/sales.service'
 import {
-  admin, cliente, datosCxc, dteDeFactura, emisorDeSucursal, registrarEnvio, usuarioDe, ventaDeOrden, type Cliente,
+  admin, cliente, datosCxc, dteDeFactura, emisorDeSucursal, registrarEnvio, tienePermiso, usuarioCuponera, usuarioDe,
+  ventaDeOrden, type Cliente, type TipoEnvio,
 } from './datos'
 import { abrirNavegador, htmlAPdf } from './pdf'
 import { aviso, boton, esc, fechaSV, fila, layout, money, parrafo, tarjeta } from './plantillas'
+import { CORREO_CORSA, remitente, transporte } from './smtp'
 
-/** El buzón de CORSA: recibe lo que no tiene a quién ir, y copia de todo. */
-const CORREO_CORSA = 'corsacarwash@gmail.com'
 /** A quién va el reporte de cierre de caja. */
 const DESTINOS_CIERRE_CAJA = ['jubismauricio@gmail.com']
+
+/**
+ * Topes de la Cuponera Digital. El usuario es externo y el correo sale del
+ * buzón de CORSA: sin tope, una cuenta comprometida serviría para mandar
+ * correo masivo en nombre de CORSA.
+ */
+const CUPONES_ENVIOS_POR_ENTREGA = 5
+const CUPONES_ENVIOS_POR_DIA = 300
 
 type Adjunto = { filename: string; content: Buffer | string; contentType: string }
 
@@ -46,22 +57,6 @@ function destinos(correoCliente: string | null): { to: string[]; bcc: string[] }
   // Si el cliente usa el mismo buzón de CORSA, no se le manda dos veces.
   const bcc = correoCliente && correoCliente.toLowerCase() !== CORREO_CORSA ? [CORREO_CORSA] : []
   return { to, bcc }
-}
-
-function transporte() {
-  const { SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASSWORD } = process.env
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASSWORD) throw new ErrorHttp(500, 'El correo no está configurado en el servidor (SMTP).')
-  return nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: Number(SMTP_PORT || 465),
-    secure: String(SMTP_SECURE ?? 'true').toLowerCase() !== 'false',
-    auth: { user: SMTP_USER, pass: SMTP_PASSWORD },
-  })
-}
-
-function remitente(): string {
-  const correo = process.env.SMTP_FROM || process.env.SMTP_USER || CORREO_CORSA
-  return `"${(process.env.SMTP_FROM_NAME || 'CORSA Carwash').replace(/"/g, '')}" <${correo}>`
 }
 
 const TIPO_DTE: Record<string, string> = {
@@ -83,7 +78,7 @@ async function enviarYRegistrar(args: {
   db: ReturnType<typeof admin>
   orgId: string
   userId: string
-  tipo: 'dte' | 'lavado_credito' | 'ccf_consolidado' | 'estado_cuenta' | 'cierre_caja'
+  tipo: TipoEnvio
   correoCliente: string | null
   /** Destinatarios fijos en lugar de la regla del cliente (cierre de caja). */
   destinos?: { to: string[]; bcc: string[] }
@@ -95,16 +90,20 @@ async function enviarYRegistrar(args: {
   fiscalDocumentId?: string | null
   customerId?: string | null
   cashSessionId?: string | null
+  cuponeraEntregaId?: string | null
+  replyTo?: string | null
 }): Promise<Respuesta> {
   const { to, bcc } = args.destinos ?? destinos(args.correoCliente)
   try {
     const info = await transporte().sendMail({
       from: remitente(), to, bcc, subject: args.asunto, html: args.html,
+      ...(args.replyTo ? { replyTo: args.replyTo } : {}),
       attachments: args.adjuntos.map(a => ({ filename: a.filename, content: a.content, contentType: a.contentType })),
     })
     await registrarEnvio(args.db, {
       organization_id: args.orgId, tipo: args.tipo, work_order_id: args.workOrderId ?? null, invoice_id: args.invoiceId ?? null,
       fiscal_document_id: args.fiscalDocumentId ?? null, customer_id: args.customerId ?? null, cash_session_id: args.cashSessionId ?? null,
+      cuponera_entrega_id: args.cuponeraEntregaId ?? null,
       destinatarios: to, bcc, asunto: args.asunto, status: 'sent', message_id: info.messageId ?? null, created_by: args.userId,
     })
     return { status: 200, body: { ok: true, estado: 'sent', destinatarios: to } }
@@ -113,6 +112,7 @@ async function enviarYRegistrar(args: {
     await registrarEnvio(args.db, {
       organization_id: args.orgId, tipo: args.tipo, work_order_id: args.workOrderId ?? null, invoice_id: args.invoiceId ?? null,
       fiscal_document_id: args.fiscalDocumentId ?? null, customer_id: args.customerId ?? null, cash_session_id: args.cashSessionId ?? null,
+      cuponera_entrega_id: args.cuponeraEntregaId ?? null,
       destinatarios: to, bcc, asunto: args.asunto, status: 'failed', error: error.slice(0, 500), created_by: args.userId,
     })
     return { status: 502, body: { ok: false, estado: 'failed', error: `No se pudo enviar el correo: ${error}` } }
@@ -373,6 +373,83 @@ async function correoCierreCaja(db: ReturnType<typeof admin>, orgId: string, use
   }
 }
 
+/**
+ * Los cupones de una entrega de la Cuponera Digital (0083), en PDF, a la
+ * persona que los recibe. Lo pide el usuario de la cuponera dueño de la
+ * entrega o alguien de CORSA con cuponera.manage.
+ */
+async function correoDeCupones(
+  db: ReturnType<typeof admin>,
+  quien: { userId: string; orgId: string; customerId: string | null; correo: string | null },
+  appUrl: string,
+  entregaId: string,
+): Promise<Respuesta> {
+  const { data: e } = await db.from('cuponera_entregas')
+    .select('id, organization_id, customer_id, destinatario_nombre, destinatario_correo, nota, cantidad, created_at')
+    .eq('id', entregaId).eq('organization_id', quien.orgId).maybeSingle()
+  // Una entrega de otro cliente se responde igual que una que no existe.
+  if (!e || (quien.customerId && e.customer_id !== quien.customerId)) throw new ErrorHttp(404, 'No existe esa entrega')
+  if (!e.destinatario_correo) throw new ErrorHttp(409, 'La entrega no tiene correo de destino')
+
+  const { count: enviados } = await db.from('envios_correo').select('id', { count: 'exact', head: true })
+    .eq('cuponera_entrega_id', entregaId).eq('status', 'sent')
+  if ((enviados ?? 0) >= CUPONES_ENVIOS_POR_ENTREGA) {
+    throw new ErrorHttp(429, `Esta entrega ya se envió ${enviados} veces. Descarga el PDF y compártelo directamente.`)
+  }
+  const { count: hoy } = await db.from('envios_correo').select('id', { count: 'exact', head: true })
+    .eq('created_by', quien.userId).eq('tipo', 'cupones')
+    .gte('created_at', new Date(Date.now() - 24 * 3600 * 1000).toISOString())
+  if ((hoy ?? 0) >= CUPONES_ENVIOS_POR_DIA) {
+    throw new ErrorHttp(429, 'Se alcanzó el límite de correos de hoy. Inténtalo mañana o comunícate con CORSA.')
+  }
+
+  const { data: ids } = await db.from('cuponera_entrega_cupones').select('voucher_id').eq('entrega_id', entregaId)
+  const { data: filas } = await db.from('v_vouchers')
+    .select('id, code, sequence_number, validation_token, service_name, size, includes_aspirado, is_gift, unit_value, customer_name, batch_id, status')
+    .in('id', (ids ?? []).map((r: any) => r.voucher_id))
+    .order('sequence_number')
+  const cupones = (filas ?? []) as (CuponImprimible & { status: string })[]
+  if (cupones.length === 0) throw new ErrorHttp(409, 'La entrega no tiene cupones')
+
+  const empresa = cupones[0].customer_name
+  const n = cupones.length
+  const servicios = [...new Set(cupones.map(c =>
+    [c.service_name, c.size].filter(Boolean).join(' ') + (c.includes_aspirado ? ' + aspirado de interiores' : '')))]
+
+  const navegador = await abrirNavegador()
+  try {
+    const pdf = await htmlAPdf(navegador, buildVouchersHTML(cupones, n === 1, { base: appUrl }))
+    const nombre = e.destinatario_nombre.split(' ')[0]
+    const html = layout({
+      appUrl,
+      preheader: `${empresa} te envió ${n === 1 ? 'un cupón' : `${n} cupones`} de lavado en CORSA Carwash.`,
+      titulo: n === 1 ? '¡Tienes un cupón de lavado!' : `¡Tienes ${n} cupones de lavado!`,
+      cuerpo: parrafo(`Hola, ${esc(nombre)}: <strong>${esc(empresa)}</strong> te ${n === 1 ? 'regala un cupón' : `regala ${n} cupones`} para lavar tu carro en CORSA Carwash.`)
+        + (e.nota ? aviso(`<em>“${esc(e.nota)}”</em>`) : '')
+        + tarjeta(n === 1 ? 'Tu cupón' : 'Tus cupones', [
+          fila('Servicio', esc(servicios.join(' · '))),
+          fila(n === 1 ? 'Número de cupón' : 'Números de cupón',
+            `<span style="font-family:monospace;font-weight:700;letter-spacing:.04em">${cupones.map(c => esc(c.code)).join(' · ')}</span>`),
+          fila('Cantidad', String(n), true),
+        ].join(''))
+        + parrafo(`<strong>¿Cómo se usa?</strong> Presenta el cupón en caja, impreso o en tu teléfono: el cajero escanea el QR o teclea el número. Cada cupón vale por un lavado y se usa una sola vez.`)
+        + parrafo('Adjuntamos tu cupón en PDF. ¡Te esperamos!'),
+    })
+    return await enviarYRegistrar({
+      db, orgId: quien.orgId, userId: quien.userId, tipo: 'cupones', correoCliente: null,
+      destinos: { to: [e.destinatario_correo], bcc: [] },
+      // Si la persona responde, le contesta quien le mandó los cupones.
+      replyTo: quien.correo,
+      asunto: n === 1 ? `${empresa} te envió un cupón de lavado CORSA` : `${empresa} te envió ${n} cupones de lavado CORSA`,
+      html,
+      adjuntos: [{ filename: `cupones-corsa-${cupones[0].code}${n > 1 ? `-y-${n - 1}-mas` : ''}.pdf`, content: pdf, contentType: 'application/pdf' }],
+      customerId: e.customer_id, cuponeraEntregaId: e.id,
+    })
+  } finally {
+    await navegador.close()
+  }
+}
+
 // ─── Entrada ─────────────────────────────────────────────────
 
 export async function manejar(args: { auth: string | undefined; cuerpo: any; appUrl: string }): Promise<Respuesta> {
@@ -380,9 +457,22 @@ export async function manejar(args: { auth: string | undefined; cuerpo: any; app
     const jwt = (args.auth ?? '').replace(/^Bearer\s+/i, '').trim()
     if (!jwt) throw new ErrorHttp(401, 'Falta la sesión')
     const db = admin()
-    const { userId, orgId } = await usuarioDe(db, jwt).catch(e => { throw new ErrorHttp(e.status ?? 401, e.message) })
     const b = args.cuerpo ?? {}
     const uuid = (v: unknown) => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v)
+
+    // Cupones de la Cuponera Digital: lo único que puede pedir un usuario
+    // externo. Si no es de la cuponera, es personal y necesita cuponera.manage.
+    if (b.accion === 'cupones' && uuid(b.entregaId)) {
+      const externo = await usuarioCuponera(db, jwt).catch(e => { throw new ErrorHttp(e.status ?? 401, e.message) })
+      if (externo) {
+        return await correoDeCupones(db, { ...externo }, args.appUrl, b.entregaId)
+      }
+      const interno = await usuarioDe(db, jwt).catch(e => { throw new ErrorHttp(e.status ?? 401, e.message) })
+      if (!await tienePermiso(db, interno.userId, 'cuponera.manage')) throw new ErrorHttp(403, 'No autorizado: se requiere cuponera.manage')
+      return await correoDeCupones(db, { ...interno, customerId: null, correo: null }, args.appUrl, b.entregaId)
+    }
+
+    const { userId, orgId } = await usuarioDe(db, jwt).catch(e => { throw new ErrorHttp(e.status ?? 401, e.message) })
     if (b.accion === 'venta' && uuid(b.workOrderId)) return await correoDeVenta(db, orgId, userId, args.appUrl, b.workOrderId)
     if (b.accion === 'factura' && uuid(b.invoiceId)) return await correoDeFactura(db, orgId, userId, args.appUrl, b.invoiceId)
     if (b.accion === 'estado_cuenta' && uuid(b.customerId)) return await correoEstadoCuenta(db, orgId, userId, args.appUrl, b.customerId)
@@ -390,6 +480,7 @@ export async function manejar(args: { auth: string | undefined; cuerpo: any; app
     throw new ErrorHttp(400, 'Solicitud inválida')
   } catch (e) {
     if (e instanceof ErrorHttp) return { status: e.status, body: { ok: false, error: e.message } }
+    if (e && typeof (e as any).status === 'number') return { status: (e as any).status, body: { ok: false, error: (e as Error).message } }
     console.error('[correo]', e)
     return { status: 500, body: { ok: false, error: e instanceof Error ? e.message : 'Error interno' } }
   }

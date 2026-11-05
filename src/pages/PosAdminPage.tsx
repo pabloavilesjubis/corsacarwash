@@ -19,6 +19,7 @@ import { useEsMovil } from '../hooks/useEsMovil'
 import { supabase } from '../lib/supabase'
 import { sellVouchers, fetchBatchVouchers, type SellVouchersResult } from '../services/vouchers.service'
 import { printVouchers } from '../lib/vouchers/voucherDocument'
+import { cargarLoteCuponera, estadoCuponera } from '../services/cuponera.service'
 import { ccfReceptorStatus, preferredDocType } from '../lib/fiscal/receptor'
 import { FacturarAdmin } from '../components/posAdmin/FacturarAdmin'
 import { CatalogoAdmin } from '../components/posAdmin/CatalogoAdmin'
@@ -129,6 +130,11 @@ function VentaCupones() {
   const [esRegalia, setEsRegalia] = useState(false)
   const [vendiendo, setVendiendo] = useState(false)
   const [resultado, setResultado] = useState<SellVouchersResult | null>(null)
+  // Cuponera Digital (0083): si el cliente la tiene, el lote se le carga para
+  // que entregue los cupones él mismo desde el portal.
+  const [cuponera, setCuponera] = useState<{ activa: boolean } | null>(null)
+  const [aCuponera, setACuponera] = useState(true)
+  const [enCuponera, setEnCuponera] = useState(false)
 
   // Al cambiar servicio o tamaño se sugiere el precio de lista; el usuario
   // puede pisarlo, que es el caso de una regalía o un precio negociado.
@@ -155,6 +161,14 @@ function VentaCupones() {
   // El documento arranca según lo que el cliente tenga configurado.
   useEffect(() => {
     if (cliente) setDocType(preferredDocType(cliente as any))
+  }, [cliente])
+
+  useEffect(() => {
+    setCuponera(null)
+    if (!cliente) return
+    let vivo = true
+    estadoCuponera(cliente.id).then(c => { if (vivo) { setCuponera(c); setACuponera(Boolean(c?.activa)) } })
+    return () => { vivo = false }
   }, [cliente])
 
   const cant = Math.max(0, parseInt(cantidad) || 0)
@@ -197,11 +211,22 @@ function VentaCupones() {
       })
       setResultado(r)
       toast.success(`${r.quantity} cupones ${esRegalia ? 'de regalía ' : ''}emitidos`)
+      setEnCuponera(false)
+      if (!esRegalia && cuponera?.activa && aCuponera) {
+        // La venta ya está hecha: si esto falla, el lote se carga después
+        // desde Cuponera digital y no se pierde nada.
+        try {
+          await cargarLoteCuponera(r.batch_id, true)
+          setEnCuponera(true)
+        } catch (err) {
+          toast.error(`Cupones emitidos, pero no se cargaron a la cuponera: ${err instanceof Error ? err.message : 'error'}. Cargalos desde Cuponera digital.`)
+        }
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'No se pudieron emitir los cupones')
     }
     setVendiendo(false)
-  }, [branchId, cliente, servicio, tamano, cant, precioServicio, conAspirado, precioAspirado, pago, docType, esRegalia])
+  }, [branchId, cliente, servicio, tamano, cant, precioServicio, conAspirado, precioAspirado, pago, docType, esRegalia, cuponera, aCuponera])
 
   const descargarPdf = async (batchId: string) => {
     try {
@@ -239,6 +264,13 @@ function VentaCupones() {
             {resultado.is_gift && ' · Regalía, sin documento fiscal'}
           </div>
         </div>
+
+        {enCuponera && (
+          <div style={{ maxWidth: 620, marginBottom: 12, padding: '11px 14px', borderRadius: 14, background: 'var(--color-success-tint)', color: 'var(--color-success-text)', fontSize: 13 }}>
+            <strong>Cargados a la Cuponera Digital</strong> de {cliente ? nombreCliente(cliente) : 'el cliente'}: ya los ve en su portal
+            y puede entregarlos por correo o en PDF. No hace falta imprimir el lote.
+          </div>
+        )}
 
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 20, maxWidth: 620 }}>
           <div className="kpi-grid" style={{ marginBottom: 18 }}>
@@ -353,6 +385,21 @@ function VentaCupones() {
             </div>
           )}
 
+          {!esRegalia && cliente && cuponera?.activa && (
+            <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer', padding: '10px 14px', borderRadius: 14, border: '1px solid var(--border)', background: aCuponera ? 'var(--accent-tint)' : 'transparent', marginBottom: 14 }}>
+              <input type="checkbox" checked={aCuponera} onChange={e => setACuponera(e.target.checked)} style={{ accentColor: 'var(--corsa-green)', marginTop: 3 }}/>
+              <span>
+                <span style={{ fontSize: 13, fontWeight: 700, display: 'block' }}>Cargar a su Cuponera Digital</span>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>El cliente entrega los cupones desde su portal, por correo o en PDF.</span>
+              </span>
+            </label>
+          )}
+          {!esRegalia && cliente && cuponera && !cuponera.activa && (
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14 }}>
+              La Cuponera Digital de este cliente está suspendida: los cupones no se cargarán a su portal.
+            </div>
+          )}
+
           <div className="panel-section-label">Servicio</div>
           <div className="filter-pills" style={{ marginBottom: 10 }}>
             {SERVICIOS.map(s => (
@@ -370,7 +417,7 @@ function VentaCupones() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div className="field">
               <label>Cantidad de cupones</label>
-              <input className="corsa-input" type="number" min="1" max="500"
+              <input className="corsa-input" type="number" min="1" max="2000"
                      value={cantidad} onChange={e => setCantidad(e.target.value)}/>
             </div>
             {!esRegalia && (

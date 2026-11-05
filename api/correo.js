@@ -1,8 +1,5 @@
 // GENERADO por scripts/build-api.mjs desde server/ — no editar a mano.
 
-// server/correo/handler.ts
-import nodemailer from "nodemailer";
-
 // src/lib/mh-catalogs.ts
 var DEPARTAMENTOS = [
   { codigo: "01", nombre: "Ahuachap\xE1n" },
@@ -964,6 +961,149 @@ function normalizarResumen(r) {
   };
 }
 
+// src/lib/fiscal/marca.ts
+var MARCA = { nombreComercial: "CORSA CARWASH" };
+
+// src/lib/vouchers/voucherDocument.ts
+var FONDO_CUPON = "/cupones/fondo-cupon.png";
+function origen(base) {
+  if (base) return base.replace(/\/$/, "");
+  return typeof window !== "undefined" ? window.location.origin : "";
+}
+function esc4(value) {
+  if (value == null) return "";
+  return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function money4(n) {
+  return "$" + (Number(n) || 0).toFixed(2);
+}
+function voucherValidationUrl(v, base) {
+  return `${origen(base)}/coupons?v=${v.validation_token}`;
+}
+function qrSrc(data) {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=0&qzone=1&data=${encodeURIComponent(data)}`;
+}
+function voucherCard(v, base) {
+  const servicio = [v.service_name, v.size].filter(Boolean).join(" ");
+  return `
+  <section class="voucher">
+    <div class="left">
+      <div class="brand">${esc4(MARCA.nombreComercial)}</div>
+      <div class="kicker">${v.is_gift ? "Cup\xF3n de cortes\xEDa" : "Cup\xF3n de servicio \xB7 prepagado"}</div>
+
+      <div class="service">${esc4(servicio)}</div>
+      <div class="includes">
+        ${v.includes_aspirado ? '<span class="pill">Incluye aspirado de interiores</span>' : '<span class="pill pill-muted">Sin aspirado</span>'}
+      </div>
+
+      <div class="holder">
+        <div class="holder-label">${v.is_gift ? "V\xE1lido para" : "Adquirido por"}</div>
+        <div class="holder-name">${esc4(v.customer_name)}</div>
+      </div>
+    </div>
+
+    <div class="right">
+      <div class="code-label">Cup\xF3n N\xB0</div>
+      <div class="code">${esc4(v.code)}</div>
+      <div class="seq">Correlativo ${String(v.sequence_number).padStart(6, "0")}</div>
+      <img class="qr" src="${esc4(qrSrc(voucherValidationUrl(v, base)))}" alt="QR de validaci\xF3n ${esc4(v.code)}"/>
+      <div class="qr-note">Escane\xE1 para validar</div>
+      <div class="value">${v.is_gift ? "REGAL\xCDA" : `Valor ${money4(v.unit_value)}`}</div>
+    </div>
+  </section>`;
+}
+function buildVouchersHTML(vouchers, unico = false, opciones = {}) {
+  const base = origen(opciones.base);
+  const paginas = [];
+  for (let i = 0; i < vouchers.length; i += 3) paginas.push(vouchers.slice(i, i + 3));
+  const rango = vouchers.length ? ` \xB7 ${vouchers[0].code}\u2013${vouchers[vouchers.length - 1].code}` : "";
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<title>Cupones CORSA${rango}</title>
+<style>
+  @page { size: ${unico ? "216mm 101mm" : "letter"}; margin: 8mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Helvetica Neue', Arial, sans-serif; color: #111; }
+
+  .page { page-break-after: always; }
+  .page:last-child { page-break-after: auto; }
+
+  /* Tres por hoja: 279mm menos m\xE1rgenes, repartidos en tres bloques. */
+  .voucher {
+    height: 85mm; display: flex;
+    border: 2px solid #111; border-radius: 3mm;
+    overflow: hidden; margin-bottom: 4mm;
+    /* El arte de fondo (200 \xD7 85 mm). Sin archivo, queda el blanco de siempre. */
+    background: #fff url('${base}${FONDO_CUPON}') center / cover no-repeat;
+  }
+  .voucher:last-child { margin-bottom: 0; }
+
+  .left { flex: 1; padding: 7mm 8mm; display: flex; flex-direction: column; }
+  .brand { font-size: 24px; font-weight: 900; letter-spacing: 0.16em; line-height: 1; }
+  .kicker {
+    font-size: 9px; font-weight: 700; letter-spacing: 0.18em;
+    text-transform: uppercase; color: #555; margin-top: 3px;
+  }
+  .service { font-size: 30px; font-weight: 900; margin-top: 7mm; line-height: 1.05; }
+  .includes { margin-top: 3mm; }
+  .pill {
+    display: inline-block; font-size: 10.5px; font-weight: 700;
+    border: 1.5px solid #111; border-radius: 20px; padding: 2px 10px;
+  }
+  .pill-muted { border-color: #999; color: #666; font-weight: 600; }
+
+  .holder { margin-top: auto; }
+  .holder-label {
+    font-size: 8.5px; font-weight: 800; letter-spacing: 0.12em;
+    text-transform: uppercase; color: #666;
+  }
+  .holder-name { font-size: 14px; font-weight: 700; margin-top: 1px; }
+
+  /* Tal\xF3n derecho, separado por troquel visual. */
+  .right {
+    width: 52mm; padding: 6mm 4mm;
+    border-left: 2px dashed #111;
+    display: flex; flex-direction: column; align-items: center; text-align: center;
+  }
+  .code-label {
+    font-size: 8.5px; font-weight: 800; letter-spacing: 0.12em;
+    text-transform: uppercase; color: #666;
+  }
+  .code {
+    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+    font-size: 26px; font-weight: 900; letter-spacing: 0.05em; line-height: 1.1;
+  }
+  /* El correlativo va discreto: el n\xFAmero grande es el que se teclea. */
+  .seq {
+    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+    font-size: 8.5px; color: #666; margin-top: 1mm; letter-spacing: 0.04em;
+  }
+  /* La imagen del QR es opaca con su margen blanco: se lee aunque el arte pase por detr\xE1s. */
+  .qr { width: 28mm; height: 28mm; margin-top: 2mm; }
+  .qr-note { font-size: 8.5px; color: #555; margin-top: 1.5mm; }
+  .value { font-size: 12px; font-weight: 800; margin-top: auto; }
+
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+  ${paginas.map((p) => `<div class="page">${p.map((v) => voucherCard(v, base)).join("")}</div>`).join("")}
+  <script>
+    if (!new URLSearchParams(location.search).get('noprint')) {
+      // Se espera a que carguen los QR: imprimir antes deja los recuadros vac\xEDos.
+      window.addEventListener('load', function () {
+        setTimeout(function () { window.focus(); window.print(); }, 600);
+      });
+    }
+  </script>
+</body>
+</html>`;
+}
+
 // server/correo/datos.ts
 import { createClient } from "@supabase/supabase-js";
 
@@ -985,12 +1125,42 @@ function admin() {
   if (!url || !key) throw new Error("Falta SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY en el servidor");
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
+function esDeCuponera(user) {
+  return user.app_metadata?.portal === "cuponera";
+}
 async function usuarioDe(db, jwt) {
   const { data, error } = await db.auth.getUser(jwt);
   if (error || !data.user) throw Object.assign(new Error("La sesi\xF3n venci\xF3. Volv\xE9 a ingresar."), { status: 401 });
+  if (esDeCuponera(data.user)) throw Object.assign(new Error("No autorizado"), { status: 403 });
   const { data: perfil } = await db.from("profiles").select("organization_id").eq("id", data.user.id).maybeSingle();
   if (!perfil?.organization_id) throw Object.assign(new Error("El usuario no pertenece a ninguna organizaci\xF3n"), { status: 403 });
   return { userId: data.user.id, orgId: perfil.organization_id };
+}
+async function tienePermiso(db, userId, codigo) {
+  const [{ data: ur }, { data: perm }] = await Promise.all([
+    db.from("user_roles").select("role_id").eq("user_id", userId),
+    db.from("permissions").select("id").eq("code", codigo).maybeSingle()
+  ]);
+  const roles = (ur ?? []).map((r) => r.role_id);
+  if (!perm || roles.length === 0) return false;
+  const { data: activos } = await db.from("roles").select("id").in("id", roles).eq("active", true);
+  const ids = (activos ?? []).map((r) => r.id);
+  if (ids.length === 0) return false;
+  const { count } = await db.from("role_permissions").select("role_id", { count: "exact", head: true }).in("role_id", ids).eq("permission_id", perm.id);
+  return (count ?? 0) > 0;
+}
+async function usuarioCuponera(db, jwt) {
+  const { data, error } = await db.auth.getUser(jwt);
+  if (error || !data.user) throw Object.assign(new Error("La sesi\xF3n venci\xF3. Volv\xE9 a ingresar."), { status: 401 });
+  const { data: u } = await db.from("cuponera_usuarios").select("user_id, organization_id, customer_id, nombre, correo, activo, cuponera_clientes!inner(activa)").eq("user_id", data.user.id).maybeSingle();
+  if (!u) {
+    if (esDeCuponera(data.user)) throw Object.assign(new Error("Tu usuario no tiene acceso a la Cuponera Digital"), { status: 403 });
+    return null;
+  }
+  if (!u.activo || !u.cuponera_clientes?.activa) {
+    throw Object.assign(new Error("Tu usuario no tiene acceso a la Cuponera Digital"), { status: 403 });
+  }
+  return { userId: u.user_id, orgId: u.organization_id, customerId: u.customer_id, nombre: u.nombre, correo: u.correo };
 }
 var vacio = (v) => v == null || String(v).trim() === "";
 var nit = (n) => {
@@ -1147,8 +1317,8 @@ var TINTA = "#16191A";
 var LIMA = "#DFF56B";
 var FONDO = "#EFF2EC";
 var GRIS = "#5E6661";
-var esc4 = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-var money4 = (n) => `$${(Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+var esc5 = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+var money5 = (n) => `$${(Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 function fechaSV(iso, conHora = false) {
   return new Date(iso).toLocaleString("es-SV", {
     timeZone: "America/El_Salvador",
@@ -1160,14 +1330,14 @@ function fechaSV(iso, conHora = false) {
 }
 function fila2(etiqueta, valor, fuerte = false) {
   return `<tr>
-    <td style="padding:7px 0;border-bottom:1px solid #EEF1EA;color:${GRIS};font-size:13px">${esc4(etiqueta)}</td>
+    <td style="padding:7px 0;border-bottom:1px solid #EEF1EA;color:${GRIS};font-size:13px">${esc5(etiqueta)}</td>
     <td style="padding:7px 0;border-bottom:1px solid #EEF1EA;text-align:right;font-size:13px;color:${TINTA};${fuerte ? "font-weight:700" : ""}">${valor}</td>
   </tr>`;
 }
 function tarjeta(titulo, filas) {
   return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:18px 0;border:1px solid #E3E8DE;border-radius:14px">
     <tr><td style="padding:14px 18px">
-      <div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${GRIS};margin-bottom:4px">${esc4(titulo)}</div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${GRIS};margin-bottom:4px">${esc5(titulo)}</div>
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0">${filas}</table>
     </td></tr>
   </table>`;
@@ -1179,24 +1349,24 @@ function aviso(texto, tono = "lima") {
 function layout(args) {
   const e = args.emisor ?? {};
   return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>${esc4(args.titulo)}</title></head>
+<title>${esc5(args.titulo)}</title></head>
 <body style="margin:0;padding:0;background:${FONDO};font-family:Inter,Segoe UI,Helvetica,Arial,sans-serif;color:${TINTA}">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0">${esc4(args.preheader)}</div>
+<div style="display:none;max-height:0;overflow:hidden;opacity:0">${esc5(args.preheader)}</div>
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:${FONDO}">
   <tr><td align="center" style="padding:24px 12px">
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;background:#ffffff;border-radius:18px;overflow:hidden;border:1px solid #E3E8DE">
       <tr><td style="background:${TINTA};padding:24px 28px 20px" align="left">
-        <img src="${esc4(args.appUrl)}/marca/corsa-email.png" width="150" alt="CORSA Carwash" style="display:block;width:150px;height:auto;border:0"/>
+        <img src="${esc5(args.appUrl)}/marca/corsa-email.png" width="150" alt="CORSA Carwash" style="display:block;width:150px;height:auto;border:0"/>
         <div style="width:44px;height:4px;background:${LIMA};border-radius:2px;margin-top:14px"></div>
       </td></tr>
       <tr><td style="padding:26px 28px 8px">
-        <h1 style="margin:0 0 6px;font-size:22px;line-height:1.25;font-weight:800;color:${TINTA}">${esc4(args.titulo)}</h1>
+        <h1 style="margin:0 0 6px;font-size:22px;line-height:1.25;font-weight:800;color:${TINTA}">${esc5(args.titulo)}</h1>
         ${args.cuerpo}
       </td></tr>
       <tr><td style="padding:18px 28px 24px;border-top:1px solid #EEF1EA;font-size:11.5px;line-height:1.55;color:${GRIS}">
-        <strong style="color:${TINTA}">${esc4(e.nombreComercial || "CORSA Carwash")}</strong>${e.razonSocial ? ` \xB7 ${esc4(e.razonSocial)}` : ""}<br/>
-        ${e.direccion ? `${esc4(e.direccion)}<br/>` : ""}
-        ${[e.telefono ? `Tel. ${esc4(e.telefono)}` : "", e.correo ? esc4(e.correo) : ""].filter(Boolean).join(" \xB7 ")}
+        <strong style="color:${TINTA}">${esc5(e.nombreComercial || "CORSA Carwash")}</strong>${e.razonSocial ? ` \xB7 ${esc5(e.razonSocial)}` : ""}<br/>
+        ${e.direccion ? `${esc5(e.direccion)}<br/>` : ""}
+        ${[e.telefono ? `Tel. ${esc5(e.telefono)}` : "", e.correo ? esc5(e.correo) : ""].filter(Boolean).join(" \xB7 ")}
       </td></tr>
     </table>
     <div style="font-size:11px;color:#8A928D;margin-top:12px">Este correo se envi\xF3 autom\xE1ticamente desde el sistema de CORSA Carwash.</div>
@@ -1208,26 +1378,17 @@ function parrafo(html) {
   return `<p style="margin:10px 0;font-size:14.5px;line-height:1.6;color:#2B302E">${html}</p>`;
 }
 function boton(texto, url) {
-  return `<a href="${esc4(url)}" style="display:inline-block;background:${TINTA};color:${LIMA};text-decoration:none;font-weight:700;font-size:13.5px;padding:11px 18px;border-radius:10px;margin:6px 0 4px">${esc4(texto)}</a>`;
+  return `<a href="${esc5(url)}" style="display:inline-block;background:${TINTA};color:${LIMA};text-decoration:none;font-weight:700;font-size:13.5px;padding:11px 18px;border-radius:10px;margin:6px 0 4px">${esc5(texto)}</a>`;
 }
 
-// server/correo/handler.ts
+// server/correo/smtp.ts
+import nodemailer from "nodemailer";
 var CORREO_CORSA = "corsacarwash@gmail.com";
-var DESTINOS_CIERRE_CAJA = ["jubismauricio@gmail.com"];
-var ErrorHttp = class extends Error {
-  constructor(status, mensaje) {
-    super(mensaje);
-    this.status = status;
-  }
-};
-function destinos(correoCliente) {
-  const to = correoCliente ? [correoCliente] : [CORREO_CORSA];
-  const bcc = correoCliente && correoCliente.toLowerCase() !== CORREO_CORSA ? [CORREO_CORSA] : [];
-  return { to, bcc };
-}
 function transporte() {
   const { SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASSWORD } = process.env;
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASSWORD) throw new ErrorHttp(500, "El correo no est\xE1 configurado en el servidor (SMTP).");
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASSWORD) {
+    throw Object.assign(new Error("El correo no est\xE1 configurado en el servidor (SMTP)."), { status: 500 });
+  }
   return nodemailer.createTransport({
     host: SMTP_HOST,
     port: Number(SMTP_PORT || 465),
@@ -1239,6 +1400,22 @@ function remitente() {
   const correo = process.env.SMTP_FROM || process.env.SMTP_USER || CORREO_CORSA;
   return `"${(process.env.SMTP_FROM_NAME || "CORSA Carwash").replace(/"/g, "")}" <${correo}>`;
 }
+
+// server/correo/handler.ts
+var DESTINOS_CIERRE_CAJA = ["jubismauricio@gmail.com"];
+var CUPONES_ENVIOS_POR_ENTREGA = 5;
+var CUPONES_ENVIOS_POR_DIA = 300;
+var ErrorHttp = class extends Error {
+  constructor(status, mensaje) {
+    super(mensaje);
+    this.status = status;
+  }
+};
+function destinos(correoCliente) {
+  const to = correoCliente ? [correoCliente] : [CORREO_CORSA];
+  const bcc = correoCliente && correoCliente.toLowerCase() !== CORREO_CORSA ? [CORREO_CORSA] : [];
+  return { to, bcc };
+}
 var TIPO_DTE = {
   "01": "Factura electr\xF3nica",
   "03": "Comprobante de cr\xE9dito fiscal",
@@ -1248,7 +1425,7 @@ var TIPO_DTE = {
 function saludo(c) {
   if (!c) return "Hola";
   const nombre = c.customer_type === "company" ? c.trade_name || c.nombre : c.nombre.split(" ")[0];
-  return `Hola, ${esc4(nombre)}`;
+  return `Hola, ${esc5(nombre)}`;
 }
 function serviciosDe(sale) {
   return (sale?.items ?? []).map((i) => String(i.descripcion).replace(/^Aspirado de interiores/, "Aspirado"));
@@ -1262,6 +1439,7 @@ async function enviarYRegistrar(args) {
       bcc,
       subject: args.asunto,
       html: args.html,
+      ...args.replyTo ? { replyTo: args.replyTo } : {},
       attachments: args.adjuntos.map((a) => ({ filename: a.filename, content: a.content, contentType: a.contentType }))
     });
     await registrarEnvio(args.db, {
@@ -1272,6 +1450,7 @@ async function enviarYRegistrar(args) {
       fiscal_document_id: args.fiscalDocumentId ?? null,
       customer_id: args.customerId ?? null,
       cash_session_id: args.cashSessionId ?? null,
+      cuponera_entrega_id: args.cuponeraEntregaId ?? null,
       destinatarios: to,
       bcc,
       asunto: args.asunto,
@@ -1290,6 +1469,7 @@ async function enviarYRegistrar(args) {
       fiscal_document_id: args.fiscalDocumentId ?? null,
       customer_id: args.customerId ?? null,
       cash_session_id: args.cashSessionId ?? null,
+      cuponera_entrega_id: args.cuponeraEntregaId ?? null,
       destinatarios: to,
       bcc,
       asunto: args.asunto,
@@ -1334,22 +1514,22 @@ async function correoDeVenta(db, orgId, userId, appUrl, workOrderId) {
           contentType: "application/pdf"
         });
       }
-      const facturado = sellado && doc ? aviso(`<strong>Facturado.</strong> Este servicio va en tu ${esc4(TIPO_DTE[doc.dte.tipoDte] ?? "DTE")} <strong>${esc4(doc.dte.numeroControl)}</strong>, adjunto en PDF y JSON.`) : aviso("<strong>Pendiente de facturar.</strong> Este lavado qued\xF3 cargado a tu cuenta y se incluye en tu pr\xF3ximo CCF consolidado.", "ambar");
+      const facturado = sellado && doc ? aviso(`<strong>Facturado.</strong> Este servicio va en tu ${esc5(TIPO_DTE[doc.dte.tipoDte] ?? "DTE")} <strong>${esc5(doc.dte.numeroControl)}</strong>, adjunto en PDF y JSON.`) : aviso("<strong>Pendiente de facturar.</strong> Este lavado qued\xF3 cargado a tu cuenta y se incluye en tu pr\xF3ximo CCF consolidado.", "ambar");
       const html2 = layout({
         appUrl,
         emisor,
         preheader: `Gracias por lavar tu carro ${placa} en CORSA.`,
         titulo: "\xA1Gracias por tu visita!",
-        cuerpo: parrafo(`${saludo(c)}: gracias por confiar en CORSA Carwash. Hoy dejamos listo tu carro${placa ? ` placa <strong>${esc4(placa)}</strong>` : ""}.`) + tarjeta("Tu lavado", [
-          fila2("Fecha", esc4(fechaSV(wo.created_at, true))),
-          ...placa ? [fila2("Placa", `<strong>${esc4(placa)}</strong>`)] : [],
-          fila2("Servicio", esc4(servicios.join(" + ") || "Lavado")),
-          fila2("Total del servicio", money4(Number(sale?.total ?? 0)), true)
+        cuerpo: parrafo(`${saludo(c)}: gracias por confiar en CORSA Carwash. Hoy dejamos listo tu carro${placa ? ` placa <strong>${esc5(placa)}</strong>` : ""}.`) + tarjeta("Tu lavado", [
+          fila2("Fecha", esc5(fechaSV(wo.created_at, true))),
+          ...placa ? [fila2("Placa", `<strong>${esc5(placa)}</strong>`)] : [],
+          fila2("Servicio", esc5(servicios.join(" + ") || "Lavado")),
+          fila2("Total del servicio", money5(Number(sale?.total ?? 0)), true)
         ].join("")) + facturado + (cxc.cuenta ? tarjeta("Tu cuenta a la fecha", [
-          fila2("Saldo acumulado", money4(cxc.cuenta.saldo), true),
-          fila2("Por vencer", money4(cxc.cuenta.por_vencer)),
-          ...cxc.cuenta.vencido > 0 ? [fila2("Vencido", `<span style="color:#C2272D;font-weight:700">${money4(cxc.cuenta.vencido)}</span>`)] : [],
-          fila2("Cr\xE9dito disponible", money4(cxc.cuenta.disponible)),
+          fila2("Saldo acumulado", money5(cxc.cuenta.saldo), true),
+          fila2("Por vencer", money5(cxc.cuenta.por_vencer)),
+          ...cxc.cuenta.vencido > 0 ? [fila2("Vencido", `<span style="color:#C2272D;font-weight:700">${money5(cxc.cuenta.vencido)}</span>`)] : [],
+          fila2("Cr\xE9dito disponible", money5(cxc.cuenta.disponible)),
           ...cxc.lavados.some((l) => !l.consolidated_invoice_id) ? [fila2("Lavados pendientes de facturar", String(cxc.lavados.filter((l) => !l.consolidated_invoice_id).length))] : []
         ].join("")) : "") + parrafo("Adjuntamos tu estado de cuenta con el historial de servicios. \xA1Te esperamos pronto!")
       });
@@ -1373,16 +1553,16 @@ async function correoDeVenta(db, orgId, userId, appUrl, workOrderId) {
     const html = layout({
       appUrl,
       emisor,
-      preheader: `${tipo} ${doc.dte.numeroControl} \xB7 ${money4(Number(sale?.total ?? 0))}`,
+      preheader: `${tipo} ${doc.dte.numeroControl} \xB7 ${money5(Number(sale?.total ?? 0))}`,
       titulo: `Tu ${tipo.toLowerCase()}`,
       cuerpo: parrafo(`${saludo(receptor)}: gracias por tu visita a CORSA Carwash. Adjuntamos tu documento tributario electr\xF3nico en PDF y su archivo JSON.`) + tarjeta("Documento", [
-        fila2("Tipo", esc4(tipo)),
-        fila2("N\xFAmero de control", `<span style="font-family:monospace">${esc4(doc.dte.numeroControl)}</span>`),
-        fila2("C\xF3digo de generaci\xF3n", `<span style="font-family:monospace;font-size:11.5px">${esc4(doc.dte.codigoGeneracion)}</span>`),
-        fila2("Fecha", esc4(fechaSV(wo.created_at, true))),
-        ...placa ? [fila2("Placa", `<strong>${esc4(placa)}</strong>`)] : [],
-        fila2("Servicio", esc4(servicios.join(" + ") || "Lavado")),
-        fila2("Total", money4(Number(sale?.total ?? 0)), true)
+        fila2("Tipo", esc5(tipo)),
+        fila2("N\xFAmero de control", `<span style="font-family:monospace">${esc5(doc.dte.numeroControl)}</span>`),
+        fila2("C\xF3digo de generaci\xF3n", `<span style="font-family:monospace;font-size:11.5px">${esc5(doc.dte.codigoGeneracion)}</span>`),
+        fila2("Fecha", esc5(fechaSV(wo.created_at, true))),
+        ...placa ? [fila2("Placa", `<strong>${esc5(placa)}</strong>`)] : [],
+        fila2("Servicio", esc5(servicios.join(" + ") || "Lavado")),
+        fila2("Total", money5(Number(sale?.total ?? 0)), true)
       ].join("")) + (doc.dte.qrUrl ? parrafo(boton("Verificar en Hacienda", doc.dte.qrUrl)) : "")
     });
     return enviarYRegistrar({
@@ -1454,13 +1634,13 @@ async function correoDeFactura(db, orgId, userId, appUrl, invoiceId) {
     const html = layout({
       appUrl,
       emisor,
-      preheader: `CCF consolidado ${doc.dte.numeroControl} \xB7 ${lineas.length} lavados \xB7 ${money4(Number(inv.total))}`,
+      preheader: `CCF consolidado ${doc.dte.numeroControl} \xB7 ${lineas.length} lavados \xB7 ${money5(Number(inv.total))}`,
       titulo: "Tu comprobante de cr\xE9dito fiscal",
       cuerpo: parrafo(`${saludo(c)}: adjuntamos el CCF consolidado de tus lavados, con el detalle de cada placa, en PDF y su archivo JSON.`) + tarjeta("Documento", [
-        fila2("N\xFAmero de control", `<span style="font-family:monospace">${esc4(doc.dte.numeroControl)}</span>`),
-        fila2("C\xF3digo de generaci\xF3n", `<span style="font-family:monospace;font-size:11.5px">${esc4(doc.dte.codigoGeneracion)}</span>`),
+        fila2("N\xFAmero de control", `<span style="font-family:monospace">${esc5(doc.dte.numeroControl)}</span>`),
+        fila2("C\xF3digo de generaci\xF3n", `<span style="font-family:monospace;font-size:11.5px">${esc5(doc.dte.codigoGeneracion)}</span>`),
         fila2("Lavados facturados", String(lineas.length)),
-        fila2("Total", money4(Number(inv.total)), true)
+        fila2("Total", money5(Number(inv.total)), true)
       ].join("")) + (doc.dte.qrUrl ? parrafo(boton("Verificar en Hacienda", doc.dte.qrUrl)) : "") + parrafo("\xA1Gracias por seguir confiando en CORSA Carwash!")
     });
     return enviarYRegistrar({
@@ -1495,13 +1675,13 @@ async function correoEstadoCuenta(db, orgId, userId, appUrl, customerId) {
     const html = layout({
       appUrl,
       emisor,
-      preheader: `Saldo a la fecha ${money4(cta.saldo)}`,
+      preheader: `Saldo a la fecha ${money5(cta.saldo)}`,
       titulo: "Tu estado de cuenta",
-      cuerpo: parrafo(`${saludo(c)}: gracias por ser cliente de CORSA Carwash. Te compartimos tu estado de cuenta al ${esc4(fechaSV(/* @__PURE__ */ new Date()))}.`) + tarjeta("Resumen", [
-        fila2("Saldo total", money4(cta.saldo), true),
-        fila2("Por vencer", money4(cta.por_vencer)),
-        fila2("Vencido", cta.vencido > 0 ? `<span style="color:#C2272D;font-weight:700">${money4(cta.vencido)}</span>` : money4(0)),
-        fila2("Cr\xE9dito disponible", money4(cta.disponible)),
+      cuerpo: parrafo(`${saludo(c)}: gracias por ser cliente de CORSA Carwash. Te compartimos tu estado de cuenta al ${esc5(fechaSV(/* @__PURE__ */ new Date()))}.`) + tarjeta("Resumen", [
+        fila2("Saldo total", money5(cta.saldo), true),
+        fila2("Por vencer", money5(cta.por_vencer)),
+        fila2("Vencido", cta.vencido > 0 ? `<span style="color:#C2272D;font-weight:700">${money5(cta.vencido)}</span>` : money5(0)),
+        fila2("Cr\xE9dito disponible", money5(cta.disponible)),
         ...pendientes ? [fila2("Lavados pendientes de facturar", String(pendientes))] : []
       ].join("")) + (cta.vencido > 0 ? aviso("Tienes saldo vencido. Si ya realizaste el pago, por favor comp\xE1rtenos el comprobante.", "ambar") : "") + parrafo("El detalle de documentos, lavados y abonos va en el PDF adjunto.")
     });
@@ -1535,21 +1715,21 @@ async function correoCierreCaja(db, orgId, userId, appUrl, sessionId) {
     const html = layout({
       appUrl,
       emisor,
-      preheader: `${r.sucursal} \xB7 ventas ${money4(r.ventas.total)} \xB7 queda en caja ${money4(r.efectivo_final)}`,
+      preheader: `${r.sucursal} \xB7 ventas ${money5(r.ventas.total)} \xB7 queda en caja ${money5(r.efectivo_final)}`,
       titulo: "Cierre de caja",
-      cuerpo: parrafo(`Cierre de caja de <strong>${esc4(r.sucursal)}</strong>, ${esc4(dia)}. Cerr\xF3 ${esc4(r.cerro ?? "\u2014")}.`) + tarjeta("Ventas", [
-        fila2("Efectivo", money4(r.ventas.efectivo)),
-        fila2("Tarjeta", money4(r.ventas.tarjeta)),
-        fila2("Transferencia", money4(r.ventas.transferencia)),
-        ...r.ventas.otros > 0 ? [fila2("Otros", money4(r.ventas.otros))] : [],
-        fila2(`Total (${r.ventas.cantidad} ventas)`, money4(r.ventas.total), true)
+      cuerpo: parrafo(`Cierre de caja de <strong>${esc5(r.sucursal)}</strong>, ${esc5(dia)}. Cerr\xF3 ${esc5(r.cerro ?? "\u2014")}.`) + tarjeta("Ventas", [
+        fila2("Efectivo", money5(r.ventas.efectivo)),
+        fila2("Tarjeta", money5(r.ventas.tarjeta)),
+        fila2("Transferencia", money5(r.ventas.transferencia)),
+        ...r.ventas.otros > 0 ? [fila2("Otros", money5(r.ventas.otros))] : [],
+        fila2(`Total (${r.ventas.cantidad} ventas)`, money5(r.ventas.total), true)
       ].join("")) + tarjeta("Efectivo", [
-        fila2("Efectivo inicial", money4(r.efectivo_inicial)),
-        fila2("Ingresos en efectivo", money4(r.ingresos_efectivo)),
-        fila2(`Retiros (${retiros.length})`, money4(r.egresos_efectivo)),
-        fila2("Remesa", money4(r.remesa)),
-        fila2("Efectivo final en caja", money4(r.efectivo_final), true)
-      ].join("")) + (retiros.length ? tarjeta("Retiros de efectivo", retiros.map((m) => fila2(`${esc4(m.motivo)} \xB7 autoriz\xF3 ${esc4(m.autorizo ?? "\u2014")}`, money4(m.monto))).join("")) : "") + parrafo("El reporte completo va en el PDF adjunto.")
+        fila2("Efectivo inicial", money5(r.efectivo_inicial)),
+        fila2("Ingresos en efectivo", money5(r.ingresos_efectivo)),
+        fila2(`Retiros (${retiros.length})`, money5(r.egresos_efectivo)),
+        fila2("Remesa", money5(r.remesa)),
+        fila2("Efectivo final en caja", money5(r.efectivo_final), true)
+      ].join("")) + (retiros.length ? tarjeta("Retiros de efectivo", retiros.map((m) => fila2(`${esc5(m.motivo)} \xB7 autoriz\xF3 ${esc5(m.autorizo ?? "\u2014")}`, money5(m.monto))).join("")) : "") + parrafo("El reporte completo va en el PDF adjunto.")
     });
     return enviarYRegistrar({
       db,
@@ -1567,16 +1747,84 @@ async function correoCierreCaja(db, orgId, userId, appUrl, sessionId) {
     await navegador.close();
   }
 }
+async function correoDeCupones(db, quien, appUrl, entregaId) {
+  const { data: e } = await db.from("cuponera_entregas").select("id, organization_id, customer_id, destinatario_nombre, destinatario_correo, nota, cantidad, created_at").eq("id", entregaId).eq("organization_id", quien.orgId).maybeSingle();
+  if (!e || quien.customerId && e.customer_id !== quien.customerId) throw new ErrorHttp(404, "No existe esa entrega");
+  if (!e.destinatario_correo) throw new ErrorHttp(409, "La entrega no tiene correo de destino");
+  const { count: enviados } = await db.from("envios_correo").select("id", { count: "exact", head: true }).eq("cuponera_entrega_id", entregaId).eq("status", "sent");
+  if ((enviados ?? 0) >= CUPONES_ENVIOS_POR_ENTREGA) {
+    throw new ErrorHttp(429, `Esta entrega ya se envi\xF3 ${enviados} veces. Descarga el PDF y comp\xE1rtelo directamente.`);
+  }
+  const { count: hoy } = await db.from("envios_correo").select("id", { count: "exact", head: true }).eq("created_by", quien.userId).eq("tipo", "cupones").gte("created_at", new Date(Date.now() - 24 * 3600 * 1e3).toISOString());
+  if ((hoy ?? 0) >= CUPONES_ENVIOS_POR_DIA) {
+    throw new ErrorHttp(429, "Se alcanz\xF3 el l\xEDmite de correos de hoy. Int\xE9ntalo ma\xF1ana o comun\xEDcate con CORSA.");
+  }
+  const { data: ids } = await db.from("cuponera_entrega_cupones").select("voucher_id").eq("entrega_id", entregaId);
+  const { data: filas } = await db.from("v_vouchers").select("id, code, sequence_number, validation_token, service_name, size, includes_aspirado, is_gift, unit_value, customer_name, batch_id, status").in("id", (ids ?? []).map((r) => r.voucher_id)).order("sequence_number");
+  const cupones = filas ?? [];
+  if (cupones.length === 0) throw new ErrorHttp(409, "La entrega no tiene cupones");
+  const empresa = cupones[0].customer_name;
+  const n = cupones.length;
+  const servicios = [...new Set(cupones.map((c) => [c.service_name, c.size].filter(Boolean).join(" ") + (c.includes_aspirado ? " + aspirado de interiores" : "")))];
+  const navegador = await abrirNavegador();
+  try {
+    const pdf = await htmlAPdf(navegador, buildVouchersHTML(cupones, n === 1, { base: appUrl }));
+    const nombre = e.destinatario_nombre.split(" ")[0];
+    const html = layout({
+      appUrl,
+      preheader: `${empresa} te envi\xF3 ${n === 1 ? "un cup\xF3n" : `${n} cupones`} de lavado en CORSA Carwash.`,
+      titulo: n === 1 ? "\xA1Tienes un cup\xF3n de lavado!" : `\xA1Tienes ${n} cupones de lavado!`,
+      cuerpo: parrafo(`Hola, ${esc5(nombre)}: <strong>${esc5(empresa)}</strong> te ${n === 1 ? "regala un cup\xF3n" : `regala ${n} cupones`} para lavar tu carro en CORSA Carwash.`) + (e.nota ? aviso(`<em>\u201C${esc5(e.nota)}\u201D</em>`) : "") + tarjeta(n === 1 ? "Tu cup\xF3n" : "Tus cupones", [
+        fila2("Servicio", esc5(servicios.join(" \xB7 "))),
+        fila2(
+          n === 1 ? "N\xFAmero de cup\xF3n" : "N\xFAmeros de cup\xF3n",
+          `<span style="font-family:monospace;font-weight:700;letter-spacing:.04em">${cupones.map((c) => esc5(c.code)).join(" \xB7 ")}</span>`
+        ),
+        fila2("Cantidad", String(n), true)
+      ].join("")) + parrafo(`<strong>\xBFC\xF3mo se usa?</strong> Presenta el cup\xF3n en caja, impreso o en tu tel\xE9fono: el cajero escanea el QR o teclea el n\xFAmero. Cada cup\xF3n vale por un lavado y se usa una sola vez.`) + parrafo("Adjuntamos tu cup\xF3n en PDF. \xA1Te esperamos!")
+    });
+    return await enviarYRegistrar({
+      db,
+      orgId: quien.orgId,
+      userId: quien.userId,
+      tipo: "cupones",
+      correoCliente: null,
+      destinos: { to: [e.destinatario_correo], bcc: [] },
+      // Si la persona responde, le contesta quien le mandó los cupones.
+      replyTo: quien.correo,
+      asunto: n === 1 ? `${empresa} te envi\xF3 un cup\xF3n de lavado CORSA` : `${empresa} te envi\xF3 ${n} cupones de lavado CORSA`,
+      html,
+      adjuntos: [{ filename: `cupones-corsa-${cupones[0].code}${n > 1 ? `-y-${n - 1}-mas` : ""}.pdf`, content: pdf, contentType: "application/pdf" }],
+      customerId: e.customer_id,
+      cuponeraEntregaId: e.id
+    });
+  } finally {
+    await navegador.close();
+  }
+}
 async function manejar(args) {
   try {
     const jwt = (args.auth ?? "").replace(/^Bearer\s+/i, "").trim();
     if (!jwt) throw new ErrorHttp(401, "Falta la sesi\xF3n");
     const db = admin();
+    const b = args.cuerpo ?? {};
+    const uuid = (v) => typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v);
+    if (b.accion === "cupones" && uuid(b.entregaId)) {
+      const externo = await usuarioCuponera(db, jwt).catch((e) => {
+        throw new ErrorHttp(e.status ?? 401, e.message);
+      });
+      if (externo) {
+        return await correoDeCupones(db, { ...externo }, args.appUrl, b.entregaId);
+      }
+      const interno = await usuarioDe(db, jwt).catch((e) => {
+        throw new ErrorHttp(e.status ?? 401, e.message);
+      });
+      if (!await tienePermiso(db, interno.userId, "cuponera.manage")) throw new ErrorHttp(403, "No autorizado: se requiere cuponera.manage");
+      return await correoDeCupones(db, { ...interno, customerId: null, correo: null }, args.appUrl, b.entregaId);
+    }
     const { userId, orgId } = await usuarioDe(db, jwt).catch((e) => {
       throw new ErrorHttp(e.status ?? 401, e.message);
     });
-    const b = args.cuerpo ?? {};
-    const uuid = (v) => typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v);
     if (b.accion === "venta" && uuid(b.workOrderId)) return await correoDeVenta(db, orgId, userId, args.appUrl, b.workOrderId);
     if (b.accion === "factura" && uuid(b.invoiceId)) return await correoDeFactura(db, orgId, userId, args.appUrl, b.invoiceId);
     if (b.accion === "estado_cuenta" && uuid(b.customerId)) return await correoEstadoCuenta(db, orgId, userId, args.appUrl, b.customerId);
@@ -1584,6 +1832,7 @@ async function manejar(args) {
     throw new ErrorHttp(400, "Solicitud inv\xE1lida");
   } catch (e) {
     if (e instanceof ErrorHttp) return { status: e.status, body: { ok: false, error: e.message } };
+    if (e && typeof e.status === "number") return { status: e.status, body: { ok: false, error: e.message } };
     console.error("[correo]", e);
     return { status: 500, body: { ok: false, error: e instanceof Error ? e.message : "Error interno" } };
   }

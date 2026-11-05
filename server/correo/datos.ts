@@ -20,13 +20,61 @@ export function admin(): SupabaseClient {
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } })
 }
 
-/** Quién pide el envío y de qué organización. Sin sesión válida, nada. */
+/** Usuario externo de la Cuponera Digital (0083): lo marca el service role al crearlo. */
+function esDeCuponera(user: { app_metadata?: Record<string, unknown> }): boolean {
+  return user.app_metadata?.portal === 'cuponera'
+}
+
+/**
+ * Quién pide el envío y de qué organización. Sin sesión válida, nada. Un
+ * usuario de la Cuponera Digital no pasa por acá aunque tuviera profile: no es
+ * personal de CORSA.
+ */
 export async function usuarioDe(db: SupabaseClient, jwt: string): Promise<{ userId: string; orgId: string }> {
   const { data, error } = await db.auth.getUser(jwt)
   if (error || !data.user) throw Object.assign(new Error('La sesión venció. Volvé a ingresar.'), { status: 401 })
+  if (esDeCuponera(data.user)) throw Object.assign(new Error('No autorizado'), { status: 403 })
   const { data: perfil } = await db.from('profiles').select('organization_id').eq('id', data.user.id).maybeSingle()
   if (!perfil?.organization_id) throw Object.assign(new Error('El usuario no pertenece a ninguna organización'), { status: 403 })
   return { userId: data.user.id, orgId: perfil.organization_id as string }
+}
+
+/** El mismo cálculo que public.has_permission(), con el service role. */
+export async function tienePermiso(db: SupabaseClient, userId: string, codigo: string): Promise<boolean> {
+  const [{ data: ur }, { data: perm }] = await Promise.all([
+    db.from('user_roles').select('role_id').eq('user_id', userId),
+    db.from('permissions').select('id').eq('code', codigo).maybeSingle(),
+  ])
+  const roles = (ur ?? []).map((r: any) => r.role_id as string)
+  if (!perm || roles.length === 0) return false
+  const { data: activos } = await db.from('roles').select('id').in('id', roles).eq('active', true)
+  const ids = (activos ?? []).map((r: any) => r.id as string)
+  if (ids.length === 0) return false
+  const { count } = await db.from('role_permissions').select('role_id', { count: 'exact', head: true })
+    .in('role_id', ids).eq('permission_id', perm.id)
+  return (count ?? 0) > 0
+}
+
+/**
+ * El usuario de la Cuponera Digital que pide algo: activo, con la cuponera de
+ * su cliente activa. Devuelve null si el JWT es de otra clase de usuario.
+ */
+export async function usuarioCuponera(db: SupabaseClient, jwt: string): Promise<
+  { userId: string; orgId: string; customerId: string; nombre: string; correo: string } | null
+> {
+  const { data, error } = await db.auth.getUser(jwt)
+  if (error || !data.user) throw Object.assign(new Error('La sesión venció. Volvé a ingresar.'), { status: 401 })
+  const { data: u } = await db.from('cuponera_usuarios')
+    .select('user_id, organization_id, customer_id, nombre, correo, activo, cuponera_clientes!inner(activa)')
+    .eq('user_id', data.user.id).maybeSingle()
+  if (!u) {
+    if (esDeCuponera(data.user)) throw Object.assign(new Error('Tu usuario no tiene acceso a la Cuponera Digital'), { status: 403 })
+    return null
+  }
+  if (!u.activo || !(u as any).cuponera_clientes?.activa) {
+    throw Object.assign(new Error('Tu usuario no tiene acceso a la Cuponera Digital'), { status: 403 })
+  }
+  return { userId: u.user_id, orgId: u.organization_id, customerId: u.customer_id, nombre: u.nombre, correo: u.correo }
 }
 
 const vacio = (v: unknown) => v == null || String(v).trim() === ''
@@ -163,11 +211,15 @@ export async function datosCxc(db: SupabaseClient, customerId: string, orgId: st
   }
 }
 
+export type TipoEnvio =
+  'dte' | 'lavado_credito' | 'ccf_consolidado' | 'estado_cuenta' | 'cierre_caja' | 'cupones' | 'cuponera_acceso'
+
 /** Deja constancia del intento: de acá sale la tarjeta verde/roja de la venta. */
 export async function registrarEnvio(db: SupabaseClient, fila: {
   organization_id: string
-  tipo: 'dte' | 'lavado_credito' | 'ccf_consolidado' | 'estado_cuenta' | 'cierre_caja'
+  tipo: TipoEnvio
   work_order_id?: string | null
+  cuponera_entrega_id?: string | null
   cash_session_id?: string | null
   invoice_id?: string | null
   fiscal_document_id?: string | null

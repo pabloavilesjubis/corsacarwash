@@ -3,7 +3,7 @@
 import { build } from 'esbuild'
 
 await build({
-  entryPoints: { correo: 'server/correo/entrada.ts' },
+  entryPoints: { correo: 'server/correo/entrada.ts', cuponera: 'server/cuponera/entrada.ts' },
   outdir: 'api',
   bundle: true,
   platform: 'node',
