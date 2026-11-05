@@ -961,9 +961,6 @@ function normalizarResumen(r) {
   };
 }
 
-// src/lib/fiscal/marca.ts
-var MARCA = { nombreComercial: "CORSA CARWASH" };
-
 // src/lib/vouchers/voucherDocument.ts
 var FONDO_CUPON = "/cupones/fondo-cupon.png";
 function origen(base) {
@@ -984,14 +981,9 @@ function qrSrc(data) {
   return `https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=0&qzone=1&data=${encodeURIComponent(data)}`;
 }
 function voucherCard(v, base) {
-  const servicio = [v.service_name, v.size].filter(Boolean).join(" ");
   return `
   <section class="voucher">
     <div class="left">
-      <div class="brand">${esc4(MARCA.nombreComercial)}</div>
-      <div class="kicker">${v.is_gift ? "Cup\xF3n de cortes\xEDa" : "Cup\xF3n de servicio \xB7 prepagado"}</div>
-
-      <div class="service">${esc4(servicio)}</div>
       <div class="includes">
         ${v.includes_aspirado ? '<span class="pill">Incluye aspirado de interiores</span>' : '<span class="pill pill-muted">Sin aspirado</span>'}
       </div>
@@ -1003,12 +995,14 @@ function voucherCard(v, base) {
     </div>
 
     <div class="right">
+      <div class="stub">
       <div class="code-label">Cup\xF3n N\xB0</div>
       <div class="code">${esc4(v.code)}</div>
       <div class="seq">Correlativo ${String(v.sequence_number).padStart(6, "0")}</div>
       <img class="qr" src="${esc4(qrSrc(voucherValidationUrl(v, base)))}" alt="QR de validaci\xF3n ${esc4(v.code)}"/>
       <div class="qr-note">Escane\xE1 para validar</div>
       <div class="value">${v.is_gift ? "REGAL\xCDA" : `Valor ${money4(v.unit_value)}`}</div>
+      </div>
     </div>
   </section>`;
 }
@@ -1033,57 +1027,55 @@ function buildVouchersHTML(vouchers, unico = false, opciones = {}) {
   /* Tres por hoja: 279mm menos m\xE1rgenes, repartidos en tres bloques. */
   .voucher {
     height: 85mm; display: flex;
-    border: 2px solid #111; border-radius: 3mm;
+    border-radius: 3mm;
     overflow: hidden; margin-bottom: 4mm;
-    /* El arte de fondo (200 \xD7 85 mm). Sin archivo, queda el blanco de siempre. */
-    background: #fff url('${base}${FONDO_CUPON}') center / cover no-repeat;
+    background: #383838 url('${base}${FONDO_CUPON}') center / cover no-repeat;
   }
   .voucher:last-child { margin-bottom: 0; }
 
-  .left { flex: 1; padding: 7mm 8mm; display: flex; flex-direction: column; }
-  .brand { font-size: 24px; font-weight: 900; letter-spacing: 0.16em; line-height: 1; }
-  .kicker {
-    font-size: 9px; font-weight: 700; letter-spacing: 0.18em;
-    text-transform: uppercase; color: #555; margin-top: 3px;
-  }
-  .service { font-size: 30px; font-weight: 900; margin-top: 7mm; line-height: 1.05; }
-  .includes { margin-top: 3mm; }
+  /* Lo variable va en el hueco entre la leyenda del arte y el logo CORSA. */
+  .left { flex: 1; padding: 0 0 0 5mm; display: flex; flex-direction: column; }
+  .includes { margin-top: 44mm; }
   .pill {
-    display: inline-block; font-size: 10.5px; font-weight: 700;
-    border: 1.5px solid #111; border-radius: 20px; padding: 2px 10px;
+    display: inline-block; font-size: 9.5px; font-weight: 700;
+    color: #DFF56B; border: 1.5px solid #DFF56B; border-radius: 20px; padding: 2px 10px;
   }
-  .pill-muted { border-color: #999; color: #666; font-weight: 600; }
+  .pill-muted { color: #bbb; border-color: #888; font-weight: 600; }
 
-  .holder { margin-top: auto; }
+  .holder { margin-top: 2.5mm; }
   .holder-label {
     font-size: 8.5px; font-weight: 800; letter-spacing: 0.12em;
-    text-transform: uppercase; color: #666;
+    text-transform: uppercase; color: rgba(255,255,255,0.6);
   }
-  .holder-name { font-size: 14px; font-weight: 700; margin-top: 1px; }
+  .holder-name { font-size: 13px; font-weight: 700; margin-top: 1px; color: #fff; }
 
-  /* Tal\xF3n derecho, separado por troquel visual. */
+  /* Tal\xF3n derecho, separado por troquel visual. La tarjeta va abajo: arriba est\xE1 el logo. */
   .right {
-    width: 52mm; padding: 6mm 4mm;
-    border-left: 2px dashed #111;
+    width: 52mm; padding: 0 4mm 3mm;
+    border-left: 2px dashed rgba(255,255,255,0.55);
+    display: flex; flex-direction: column; justify-content: flex-end;
+  }
+  .stub {
+    background: #fff; border-radius: 2.5mm; padding: 2mm 3mm;
     display: flex; flex-direction: column; align-items: center; text-align: center;
+    box-shadow: 0 1mm 3mm rgba(0,0,0,0.25);
   }
   .code-label {
-    font-size: 8.5px; font-weight: 800; letter-spacing: 0.12em;
+    font-size: 7.5px; font-weight: 800; letter-spacing: 0.12em;
     text-transform: uppercase; color: #666;
   }
   .code {
     font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
-    font-size: 26px; font-weight: 900; letter-spacing: 0.05em; line-height: 1.1;
+    font-size: 22px; font-weight: 900; letter-spacing: 0.12em; line-height: 1.1;
   }
   /* El correlativo va discreto: el n\xFAmero grande es el que se teclea. */
   .seq {
     font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
-    font-size: 8.5px; color: #666; margin-top: 1mm; letter-spacing: 0.04em;
+    font-size: 7.5px; color: #666; margin-top: 0.3mm; letter-spacing: 0.04em;
   }
-  /* La imagen del QR es opaca con su margen blanco: se lee aunque el arte pase por detr\xE1s. */
-  .qr { width: 28mm; height: 28mm; margin-top: 2mm; }
-  .qr-note { font-size: 8.5px; color: #555; margin-top: 1.5mm; }
-  .value { font-size: 12px; font-weight: 800; margin-top: auto; }
+  .qr { width: 21mm; height: 21mm; margin-top: 1.2mm; }
+  .qr-note { font-size: 7px; color: #555; margin-top: 0.6mm; }
+  .value { font-size: 10px; font-weight: 800; margin-top: 0.8mm; }
 
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
