@@ -113,12 +113,21 @@ export interface DocumentoVigente {
 /** El DTE vigente de una factura (el sellado si hay), con su JSON completo. */
 export async function dteDeFactura(db: SupabaseClient, invoiceId: string): Promise<DocumentoVigente | null> {
   const { data } = await db.from('fiscal_documents')
-    .select('id, dte_type, ambiente, status, numero_control, codigo_generacion, sello_recepcion, json_original, signed_jws, created_at')
+    .select(COLUMNAS_DOCUMENTO)
     .eq('invoice_id', invoiceId).not('numero_control', 'is', null)
     .order('created_at', { ascending: false })
   const filas = (data ?? []) as any[]
   const d = filas.find(f => f.status === 'ACCEPTED') ?? filas.find(f => f.status === 'INVALIDATED') ?? filas[0]
-  if (!d) return null
+  return d ? documentoDeFila(d) : null
+}
+
+/**
+ * Columnas de fiscal_documents que necesita documentoDeFila: el DTE para la
+ * factura carta y el JSON completo (firmado y con el sello) para el archivo.
+ */
+export const COLUMNAS_DOCUMENTO = 'id, dte_type, ambiente, status, numero_control, codigo_generacion, sello_recepcion, json_original, signed_jws, created_at'
+
+export function documentoDeFila(d: any): DocumentoVigente {
   const ident = d.json_original?.identificacion ?? {}
   const sellado = Boolean(d.sello_recepcion) && (d.status === 'ACCEPTED' || d.status === 'INVALIDATED')
   return {
@@ -142,6 +151,32 @@ export async function dteDeFactura(db: SupabaseClient, invoiceId: string): Promi
 export async function ventaDeOrden(db: SupabaseClient, orderId: string, orgId: string): Promise<Sale | null> {
   const { data } = await db.from('v_sales_history').select('*').eq('order_id', orderId).eq('organization_id', orgId).maybeSingle()
   return (data as Sale) ?? null
+}
+
+/**
+ * La «venta» de una factura sin orden propia (CCF consolidado de CxC): la
+ * factura carta necesita una, y se arma con las líneas del documento.
+ */
+export async function ventaDeFacturaConsolidada(db: SupabaseClient, inv: {
+  id: string; branch_id: string | null; customer_id: string | null; receptor_customer_id: string | null
+  invoice_type: string | null; invoice_number: string | null; subtotal: unknown; tax_amount: unknown; total: unknown; created_at: string
+}, orgId: string): Promise<{ sale: Sale; cliente: Cliente | null }> {
+  const c = await cliente(db, inv.receptor_customer_id ?? inv.customer_id, orgId)
+  const { data: venta } = await db.rpc('fiscal_sale_for_emission', { p_invoice_id: inv.id, p_organization_id: orgId })
+  const lineas = ((venta as any)?.lineas ?? []) as { descripcion: string; cantidad: number; precioUni: number }[]
+  const sale = {
+    order_id: inv.id, organization_id: orgId, branch_id: inv.branch_id, order_number: inv.invoice_number,
+    created_at: inv.created_at, status: 'delivered', order_kind: 'service',
+    subtotal: Number(inv.subtotal), tax_total: Number(inv.tax_amount), total: Number(inv.total),
+    items: lineas.map(l => ({ descripcion: l.descripcion, cantidad: l.cantidad, unitario: Number(l.precioUni), total: Number(l.precioUni) * l.cantidad })),
+    customer_name: c?.nombre ?? '', customer_type: c?.customer_type ?? 'company', customer_trade_name: c?.trade_name ?? null,
+    customer_nit: c?.nit ?? null, customer_nrc: c?.nrc ?? null, customer_dui: c?.dui ?? null,
+    customer_cod_actividad: c?.cod_actividad ?? null, customer_desc_actividad: c?.desc_actividad ?? null,
+    customer_phone: c?.phone ?? null, customer_email: c?.correo ?? null,
+    customer_departamento: c?.departamento ?? null, customer_municipio: c?.municipio ?? null, customer_direccion: c?.direccion ?? null,
+    plate: null, payment_method: 'Crédito', invoice_id: inv.id, invoice_type: inv.invoice_type, invoice_number: inv.invoice_number,
+  } as unknown as Sale
+  return { sale, cliente: c }
 }
 
 export interface Cliente {

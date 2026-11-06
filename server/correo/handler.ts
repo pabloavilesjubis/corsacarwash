@@ -27,7 +27,7 @@ import { buildVouchersHTML, type CuponImprimible } from '../../src/lib/vouchers/
 import type { Sale } from '../../src/services/sales.service'
 import {
   admin, cliente, datosCxc, dteDeFactura, emisorDeSucursal, registrarEnvio, tienePermiso, usuarioCuponera, usuarioDe,
-  ventaDeOrden, type Cliente, type TipoEnvio,
+  ventaDeFacturaConsolidada, ventaDeOrden, type Cliente, type TipoEnvio,
 } from './datos'
 import { abrirNavegador, htmlAPdf } from './pdf'
 import { aviso, boton, esc, fechaSV, fila, layout, money, parrafo, tarjeta } from './plantillas'
@@ -235,22 +235,8 @@ async function correoDeFactura(db: ReturnType<typeof admin>, orgId: string, user
   const doc = await dteDeFactura(db, invoiceId)
   if (doc?.dte.estado !== 'ACCEPTED') throw new ErrorHttp(409, 'El CCF todavía no está sellado por Hacienda')
 
-  const c = await cliente(db, inv.receptor_customer_id ?? inv.customer_id, orgId)
-  const { data: venta } = await db.rpc('fiscal_sale_for_emission', { p_invoice_id: invoiceId, p_organization_id: orgId })
-  const lineas = ((venta as any)?.lineas ?? []) as { descripcion: string; cantidad: number; precioUni: number }[]
-  // La factura carta necesita una «venta»: la consolidada se arma con sus líneas.
-  const sale = {
-    order_id: inv.id, organization_id: orgId, branch_id: inv.branch_id, order_number: inv.invoice_number,
-    created_at: inv.created_at, status: 'delivered', order_kind: 'service',
-    subtotal: Number(inv.subtotal), tax_total: Number(inv.tax_amount), total: Number(inv.total),
-    items: lineas.map(l => ({ descripcion: l.descripcion, cantidad: l.cantidad, unitario: Number(l.precioUni), total: Number(l.precioUni) * l.cantidad })),
-    customer_name: c?.nombre ?? '', customer_type: c?.customer_type ?? 'company', customer_trade_name: c?.trade_name ?? null,
-    customer_nit: c?.nit ?? null, customer_nrc: c?.nrc ?? null, customer_dui: c?.dui ?? null,
-    customer_cod_actividad: c?.cod_actividad ?? null, customer_desc_actividad: c?.desc_actividad ?? null,
-    customer_phone: c?.phone ?? null, customer_email: c?.correo ?? null,
-    customer_departamento: c?.departamento ?? null, customer_municipio: c?.municipio ?? null, customer_direccion: c?.direccion ?? null,
-    plate: null, payment_method: 'Crédito', invoice_id: inv.id, invoice_type: inv.invoice_type, invoice_number: inv.invoice_number,
-  } as unknown as Sale
+  const { sale, cliente: c } = await ventaDeFacturaConsolidada(db, inv, orgId)
+  const lineas = sale.items ?? []
 
   const emisor = await emisorDeSucursal(db, inv.branch_id)
   const navegador = await abrirNavegador()

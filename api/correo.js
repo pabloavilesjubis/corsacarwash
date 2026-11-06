@@ -1200,10 +1200,13 @@ async function emisorDeSucursal(db, branchId) {
   };
 }
 async function dteDeFactura(db, invoiceId) {
-  const { data } = await db.from("fiscal_documents").select("id, dte_type, ambiente, status, numero_control, codigo_generacion, sello_recepcion, json_original, signed_jws, created_at").eq("invoice_id", invoiceId).not("numero_control", "is", null).order("created_at", { ascending: false });
+  const { data } = await db.from("fiscal_documents").select(COLUMNAS_DOCUMENTO).eq("invoice_id", invoiceId).not("numero_control", "is", null).order("created_at", { ascending: false });
   const filas = data ?? [];
   const d = filas.find((f) => f.status === "ACCEPTED") ?? filas.find((f) => f.status === "INVALIDATED") ?? filas[0];
-  if (!d) return null;
+  return d ? documentoDeFila(d) : null;
+}
+var COLUMNAS_DOCUMENTO = "id, dte_type, ambiente, status, numero_control, codigo_generacion, sello_recepcion, json_original, signed_jws, created_at";
+function documentoDeFila(d) {
   const ident = d.json_original?.identificacion ?? {};
   const sellado = Boolean(d.sello_recepcion) && (d.status === "ACCEPTED" || d.status === "INVALIDATED");
   return {
@@ -1225,6 +1228,43 @@ async function dteDeFactura(db, invoiceId) {
 async function ventaDeOrden(db, orderId, orgId) {
   const { data } = await db.from("v_sales_history").select("*").eq("order_id", orderId).eq("organization_id", orgId).maybeSingle();
   return data ?? null;
+}
+async function ventaDeFacturaConsolidada(db, inv, orgId) {
+  const c = await cliente(db, inv.receptor_customer_id ?? inv.customer_id, orgId);
+  const { data: venta } = await db.rpc("fiscal_sale_for_emission", { p_invoice_id: inv.id, p_organization_id: orgId });
+  const lineas = venta?.lineas ?? [];
+  const sale = {
+    order_id: inv.id,
+    organization_id: orgId,
+    branch_id: inv.branch_id,
+    order_number: inv.invoice_number,
+    created_at: inv.created_at,
+    status: "delivered",
+    order_kind: "service",
+    subtotal: Number(inv.subtotal),
+    tax_total: Number(inv.tax_amount),
+    total: Number(inv.total),
+    items: lineas.map((l) => ({ descripcion: l.descripcion, cantidad: l.cantidad, unitario: Number(l.precioUni), total: Number(l.precioUni) * l.cantidad })),
+    customer_name: c?.nombre ?? "",
+    customer_type: c?.customer_type ?? "company",
+    customer_trade_name: c?.trade_name ?? null,
+    customer_nit: c?.nit ?? null,
+    customer_nrc: c?.nrc ?? null,
+    customer_dui: c?.dui ?? null,
+    customer_cod_actividad: c?.cod_actividad ?? null,
+    customer_desc_actividad: c?.desc_actividad ?? null,
+    customer_phone: c?.phone ?? null,
+    customer_email: c?.correo ?? null,
+    customer_departamento: c?.departamento ?? null,
+    customer_municipio: c?.municipio ?? null,
+    customer_direccion: c?.direccion ?? null,
+    plate: null,
+    payment_method: "Cr\xE9dito",
+    invoice_id: inv.id,
+    invoice_type: inv.invoice_type,
+    invoice_number: inv.invoice_number
+  };
+  return { sale, cliente: c };
 }
 async function cliente(db, id, orgId) {
   if (!id) return null;
@@ -1308,13 +1348,36 @@ async function abrirNavegador() {
     headless: true
   });
 }
+var LINK_GOOGLE_FONTS = /<link\b[^>]*href="(https:\/\/fonts\.googleapis\.com\/css2\?[^"]+)"[^>]*>/g;
+var cssEstatico = /* @__PURE__ */ new Map();
+function pedirCssEstatico(url) {
+  let p = cssEstatico.get(url);
+  if (!p) {
+    p = fetch(url.replace(/&amp;/g, "&"), { signal: AbortSignal.timeout(5e3) }).then((r) => r.ok ? r.text() : null).then((css) => css && /format\('truetype'\)/.test(css) ? css : null).catch(() => null);
+    p.then((css) => {
+      if (!css) cssEstatico.delete(url);
+    });
+    cssEstatico.set(url, p);
+  }
+  return p;
+}
+async function conFuentesEstaticas(html) {
+  const urls = [...new Set([...html.matchAll(LINK_GOOGLE_FONTS)].map((m) => m[1]))];
+  if (urls.length === 0) return html;
+  const css = new Map(await Promise.all(urls.map(async (u) => [u, await pedirCssEstatico(u)])));
+  return html.replace(LINK_GOOGLE_FONTS, (tag, url) => {
+    const c = css.get(url);
+    return c ? `<style>${c}</style>` : tag;
+  });
+}
 async function htmlAPdf(navegador, html) {
+  const contenido = await conFuentesEstaticas(html);
   const pagina = await navegador.newPage();
   try {
     await pagina.evaluateOnNewDocument("window._corsaPreview = true; window.print = function () {};");
-    await pagina.setContent(html, { waitUntil: "load", timeout: 25e3 });
+    await pagina.setContent(contenido, { waitUntil: "load", timeout: 25e3 });
     await pagina.evaluate("document.fonts ? document.fonts.ready : null");
-    const pdf = await pagina.pdf({ format: "letter", printBackground: true, preferCSSPageSize: true });
+    const pdf = await pagina.pdf({ format: "letter", printBackground: true, preferCSSPageSize: true, tagged: false, outline: false });
     return Buffer.from(pdf);
   } finally {
     await pagina.close();
@@ -1598,40 +1661,8 @@ async function correoDeFactura(db, orgId, userId, appUrl, invoiceId) {
   if (!inv.consolidado && inv.work_order_id) return correoDeVenta(db, orgId, userId, appUrl, inv.work_order_id);
   const doc = await dteDeFactura(db, invoiceId);
   if (doc?.dte.estado !== "ACCEPTED") throw new ErrorHttp(409, "El CCF todav\xEDa no est\xE1 sellado por Hacienda");
-  const c = await cliente(db, inv.receptor_customer_id ?? inv.customer_id, orgId);
-  const { data: venta } = await db.rpc("fiscal_sale_for_emission", { p_invoice_id: invoiceId, p_organization_id: orgId });
-  const lineas = venta?.lineas ?? [];
-  const sale = {
-    order_id: inv.id,
-    organization_id: orgId,
-    branch_id: inv.branch_id,
-    order_number: inv.invoice_number,
-    created_at: inv.created_at,
-    status: "delivered",
-    order_kind: "service",
-    subtotal: Number(inv.subtotal),
-    tax_total: Number(inv.tax_amount),
-    total: Number(inv.total),
-    items: lineas.map((l) => ({ descripcion: l.descripcion, cantidad: l.cantidad, unitario: Number(l.precioUni), total: Number(l.precioUni) * l.cantidad })),
-    customer_name: c?.nombre ?? "",
-    customer_type: c?.customer_type ?? "company",
-    customer_trade_name: c?.trade_name ?? null,
-    customer_nit: c?.nit ?? null,
-    customer_nrc: c?.nrc ?? null,
-    customer_dui: c?.dui ?? null,
-    customer_cod_actividad: c?.cod_actividad ?? null,
-    customer_desc_actividad: c?.desc_actividad ?? null,
-    customer_phone: c?.phone ?? null,
-    customer_email: c?.correo ?? null,
-    customer_departamento: c?.departamento ?? null,
-    customer_municipio: c?.municipio ?? null,
-    customer_direccion: c?.direccion ?? null,
-    plate: null,
-    payment_method: "Cr\xE9dito",
-    invoice_id: inv.id,
-    invoice_type: inv.invoice_type,
-    invoice_number: inv.invoice_number
-  };
+  const { sale, cliente: c } = await ventaDeFacturaConsolidada(db, inv, orgId);
+  const lineas = sale.items ?? [];
   const emisor = await emisorDeSucursal(db, inv.branch_id);
   const navegador = await abrirNavegador();
   try {

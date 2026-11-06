@@ -76,6 +76,10 @@
     },
     "api/cuponera.js": {
       "maxDuration": 30
+    },
+    "api/documentos.js": {
+      "maxDuration": 60,
+      "includeFiles": "node_modules/@sparticuz/chromium/bin/**"
     }
   }
 }

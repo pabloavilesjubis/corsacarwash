@@ -56,7 +56,8 @@ const DTE_DE: Record<TipoVentas, string> = { ccf: '03', fcf: '01' }
  */
 const PAGINA = 1000
 
-export async function fetchDtesParaContadores(desde: string, hasta: string, tipo: TipoVentas): Promise<DteExportado[]> {
+/** Todos los DTE del rango, CCF y FCF, sellados e invalidados. */
+export async function fetchDtesDelRango(desde: string, hasta: string): Promise<DteExportado[]> {
   const todos: DteExportado[] = []
   for (let inicio = 0; ; inicio += PAGINA) {
     const { data, error } = await (supabase as any)
@@ -67,7 +68,11 @@ export async function fetchDtesParaContadores(desde: string, hasta: string, tipo
     todos.push(...filas)
     if (filas.length < PAGINA) break
   }
-  return todos.filter(d => d.dte_type === DTE_DE[tipo])
+  return todos
+}
+
+export async function fetchDtesParaContadores(desde: string, hasta: string, tipo: TipoVentas): Promise<DteExportado[]> {
+  return (await fetchDtesDelRango(desde, hasta)).filter(d => d.dte_type === DTE_DE[tipo])
 }
 
 // ─── Columnas ─────────────────────────────────────────────────
