@@ -985,8 +985,9 @@ function qrSrc(data) {
   return `https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=0&qzone=1&data=${encodeURIComponent(data)}`;
 }
 function voucherCard(v, base) {
+  const generico = fondoDeCupon(v) === FONDO_CUPON;
   return `
-  <section class="voucher" style="background-image: url('${esc4(origen(base) + fondoDeCupon(v))}')">
+  <section class="voucher${generico ? " generico" : ""}" style="background-image: url('${esc4(origen(base) + fondoDeCupon(v))}')">
     <div class="left">
       <div class="includes">
         ${v.includes_aspirado ? '<span class="pill">Incluye aspirado de interiores</span>' : '<span class="pill pill-muted">Sin aspirado</span>'}
@@ -1082,6 +1083,16 @@ function buildVouchersHTML(vouchers, unico = false, opciones = {}) {
   .qr { width: 21mm; height: 21mm; margin-top: 1.2mm; }
   .qr-note { font-size: 7px; color: #555; margin-top: 0.6mm; }
   .value { font-size: 10px; font-weight: 800; margin-top: 0.8mm; }
+
+  /* Arte gen\xE9rico: nada que esquivar arriba, la tarjeta se centra y crece. */
+  .generico .right { justify-content: center; padding: 4mm 3.5mm; }
+  .generico .stub { padding: 3.5mm 3mm; border-radius: 3mm; }
+  .generico .code-label { font-size: 9px; }
+  .generico .code { font-size: 28px; }
+  .generico .seq { font-size: 8.5px; }
+  .generico .qr { width: 33mm; height: 33mm; margin-top: 2mm; }
+  .generico .qr-note { font-size: 8px; margin-top: 1mm; }
+  .generico .value { font-size: 12.5px; margin-top: 1.2mm; }
 
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
