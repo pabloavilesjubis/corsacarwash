@@ -31,10 +31,15 @@ comment on column public.customers.fondo_cupon is
 
 -- ─────────────────────────────────────────────
 -- 1. TELEPERFORMANCE
---    Se busca por nombre y sólo se asigna si hay exactamente un cliente que
---    coincide. Si no, se avisa y TP queda con el genérico hasta asignarlo a
---    mano:  update public.customers set fondo_cupon =
---             '/cupones/fondo-cupon-teleperformance.png' where id = '<id de TP>';
+--    En el sistema TP está registrada con su razón social:
+--      COMPAÑIA SALVADOREÑA DE TELESERVICES, S.A. DE C.V.
+--      NIT 0614-070104-101-0
+--    El nombre no dice «Teleperformance», así que se busca por NIT (sólo los
+--    dígitos: da igual si se guardó con guiones o sin ellos). Sólo se asigna
+--    si hay exactamente un cliente con ese NIT; si no, se avisa y TP queda
+--    con el genérico hasta asignarlo a mano:
+--      update public.customers set fondo_cupon =
+--        '/cupones/fondo-cupon-teleperformance.png' where id = '<id de TP>';
 -- ─────────────────────────────────────────────
 do $$
 declare
@@ -42,16 +47,15 @@ declare
 begin
   select array_agg(id) into v_ids
     from public.customers
-   where coalesce(legal_name, '') ilike '%teleperformance%'
-      or coalesce(trade_name, '') ilike '%teleperformance%';
+   where regexp_replace(coalesce(nit, ''), '[^0-9]', '', 'g') = '06140701041010';
 
   if coalesce(array_length(v_ids, 1), 0) = 1 then
     update public.customers
        set fondo_cupon = '/cupones/fondo-cupon-teleperformance.png'
      where id = v_ids[1];
-    raise notice 'Arte de Teleperformance asignado al cliente %', v_ids[1];
+    raise notice 'Arte de Teleperformance asignado al cliente % (NIT 0614-070104-101-0)', v_ids[1];
   else
-    raise warning 'Arte de Teleperformance NO asignado: % clientes coinciden con «teleperformance» (%). Asignalo a mano.',
+    raise warning 'Arte de Teleperformance NO asignado: % clientes con NIT 0614-070104-101-0 (%). Asignalo a mano.',
       coalesce(array_length(v_ids, 1), 0), v_ids;
   end if;
 end $$;
