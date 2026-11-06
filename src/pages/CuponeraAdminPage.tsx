@@ -302,7 +302,7 @@ function DetalleCliente({ cliente, onCambio }: { cliente: ClienteCuponera; onCam
                 <tbody>
                   {lotes.map(l => (
                     <tr key={l.batch_id} style={{ cursor: 'default', opacity: l.anulado ? 0.55 : 1 }}>
-                      <td><div style={{ fontWeight: 600, fontSize: 13 }}>{l.order_number ?? '—'}</div><div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{fecha(l.created_at)}</div></td>
+                      <td><div style={{ fontWeight: 600, fontSize: 13 }}>{l.order_number ?? '—'}</div><div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{fecha(l.created_at)}</div>{l.facturado_a && <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>Facturado a {l.facturado_a}</div>}</td>
                       <td style={{ fontSize: 13 }}>{l.service_name} {l.size}{l.includes_aspirado && <span className="badge badge-neutral" style={{ marginLeft: 6 }}>+ aspirado</span>}</td>
                       <td style={{ textAlign: 'right', fontWeight: 700 }}>{l.quantity}</td>
                       <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{l.entregados} entregados · {l.redimidos} redimidos</td>

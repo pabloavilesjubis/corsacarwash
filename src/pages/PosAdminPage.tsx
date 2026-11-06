@@ -108,14 +108,84 @@ export function PosAdminPage() {
   )
 }
 
+const CAMPOS_CLIENTE = 'id, customer_type, first_name, last_name, trade_name, legal_name, nit, nrc, dui, email, phone, fiscal_document_type, cod_actividad, desc_actividad, fiscal_departamento, fiscal_municipio, fiscal_complemento, billing_email'
+
+/** Buscador de cliente: lo usan «Facturar a» y «Beneficiario». */
+function SelectorCliente({ value, onChange, excluirId, placeholder, autoFocus }: {
+  value: Cliente | null
+  onChange: (c: Cliente | null) => void
+  excluirId?: string
+  placeholder?: string
+  autoFocus?: boolean
+}) {
+  const [query, setQuery] = useState('')
+  const [resultados, setResultados] = useState<Cliente[]>([])
+
+  useEffect(() => {
+    if (query.trim().length < 2 || value) { setResultados([]); return }
+    const t = setTimeout(async () => {
+      const term = query.trim()
+      const { data } = await (supabase as any)
+        .from('customers')
+        .select(CAMPOS_CLIENTE)
+        .or(`first_name.ilike.%${term}%,last_name.ilike.%${term}%,trade_name.ilike.%${term}%,legal_name.ilike.%${term}%,nit.ilike.%${term}%`)
+        .eq('active', true)
+        .limit(8)
+      setResultados(((data ?? []) as Cliente[]).filter(c => c.id !== excluirId))
+    }, 300)
+    return () => clearTimeout(t)
+  }, [query, value, excluirId])
+
+  if (value) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderRadius: 14, border: '1.5px solid var(--corsa-green)', background: 'rgba(2,53,48,0.05)', marginBottom: 14 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>{nombreCliente(value)}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+            {[value.nit ? `NIT ${value.nit}` : value.dui ? `DUI ${value.dui}` : null, value.email]
+              .filter(Boolean).join(' · ') || 'Sin datos de contacto'}
+          </div>
+        </div>
+        <button onClick={() => { onChange(null); setQuery('') }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 18 }}>×</button>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ position: 'relative', marginBottom: 14 }}>
+      <input className="corsa-input" value={query} onChange={e => setQuery(e.target.value)}
+             placeholder={placeholder ?? 'Buscá por nombre, razón social o NIT…'} autoFocus={autoFocus}/>
+      {resultados.length > 0 && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 60, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.14)', maxHeight: 220, overflowY: 'auto' }}>
+          {resultados.map(c => (
+            <button key={c.id} onClick={() => { onChange(c); setResultados([]) }}
+              style={{ width: '100%', textAlign: 'left', padding: '9px 13px', border: 'none', background: 'transparent', cursor: 'pointer', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{nombreCliente(c)}</div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                {c.nit ? `NIT ${c.nit}` : c.customer_type === 'company' ? 'Empresa' : 'Persona'}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function VentaCupones() {
   const { currentBranch } = useAuth()
   const esMovil = useEsMovil()
   const branchId = (currentBranch as any)?.id ?? null
 
-  const [query, setQuery] = useState('')
-  const [resultados, setResultados] = useState<Cliente[]>([])
+  // A quién se le factura.
   const [cliente, setCliente] = useState<Cliente | null>(null)
+  // Beneficiario (0084): los cupones salen a nombre de otro cliente, que es el
+  // que los ve en su cuponera. El que paga no aparece en ningún cupón.
+  const [conBeneficiario, setConBeneficiario] = useState(false)
+  const [beneficiario, setBeneficiario] = useState<Cliente | null>(null)
+  const titular = conBeneficiario ? beneficiario : cliente
+  const titularId = titular?.id ?? null
 
   const [servicio, setServicio] = useState<string>('ELITE')
   const [tamano, setTamano] = useState<'S' | 'M' | 'L'>('M')
@@ -143,33 +213,19 @@ function VentaCupones() {
     if (s) setPrecioServicio(s.prices[tamano].toFixed(2))
   }, [servicio, tamano])
 
-  useEffect(() => {
-    if (query.trim().length < 2 || cliente) { setResultados([]); return }
-    const t = setTimeout(async () => {
-      const term = query.trim()
-      const { data } = await (supabase as any)
-        .from('customers')
-        .select('id, customer_type, first_name, last_name, trade_name, legal_name, nit, nrc, dui, email, phone, fiscal_document_type, cod_actividad, desc_actividad, fiscal_departamento, fiscal_municipio, fiscal_complemento, billing_email')
-        .or(`first_name.ilike.%${term}%,last_name.ilike.%${term}%,trade_name.ilike.%${term}%,legal_name.ilike.%${term}%,nit.ilike.%${term}%`)
-        .eq('active', true)
-        .limit(8)
-      setResultados(data ?? [])
-    }, 300)
-    return () => clearTimeout(t)
-  }, [query, cliente])
-
   // El documento arranca según lo que el cliente tenga configurado.
   useEffect(() => {
     if (cliente) setDocType(preferredDocType(cliente as any))
   }, [cliente])
 
+  // La cuponera es la del titular: con beneficiario, la del beneficiario.
   useEffect(() => {
     setCuponera(null)
-    if (!cliente) return
+    if (!titularId) return
     let vivo = true
-    estadoCuponera(cliente.id).then(c => { if (vivo) { setCuponera(c); setACuponera(Boolean(c?.activa)) } })
+    estadoCuponera(titularId).then(c => { if (vivo) { setCuponera(c); setACuponera(Boolean(c?.activa)) } })
     return () => { vivo = false }
-  }, [cliente])
+  }, [titularId])
 
   const cant = Math.max(0, parseInt(cantidad) || 0)
   const unitario = esRegalia
@@ -189,6 +245,7 @@ function VentaCupones() {
         // Una regalía no necesita cliente ni precio.
         ? true
         : cliente && unitario > 0 && (docType !== 'ccf' || ccfStatus?.ok)
+          && (!conBeneficiario || (beneficiario && beneficiario.id !== cliente.id))
     )
   )
 
@@ -208,6 +265,7 @@ function VentaCupones() {
         paymentMethod: pago,
         docType,
         isGift: esRegalia,
+        beneficiaryCustomerId: !esRegalia && conBeneficiario ? beneficiario?.id ?? null : null,
       })
       setResultado(r)
       toast.success(`${r.quantity} cupones ${esRegalia ? 'de regalía ' : ''}emitidos`)
@@ -226,7 +284,7 @@ function VentaCupones() {
       toast.error(err instanceof Error ? err.message : 'No se pudieron emitir los cupones')
     }
     setVendiendo(false)
-  }, [branchId, cliente, servicio, tamano, cant, precioServicio, conAspirado, precioAspirado, pago, docType, esRegalia, cuponera, aCuponera])
+  }, [branchId, cliente, conBeneficiario, beneficiario, servicio, tamano, cant, precioServicio, conAspirado, precioAspirado, pago, docType, esRegalia, cuponera, aCuponera])
 
   const descargarPdf = async (batchId: string) => {
     try {
@@ -245,7 +303,8 @@ function VentaCupones() {
   }
 
   const nuevaVenta = () => {
-    setResultado(null); setCliente(null); setQuery(''); setCantidad('10')
+    setResultado(null); setCliente(null); setCantidad('10')
+    setConBeneficiario(false); setBeneficiario(null)
     setConAspirado(false)
   }
 
@@ -262,12 +321,14 @@ function VentaCupones() {
           <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
             Orden {resultado.order_number}
             {resultado.is_gift && ' · Regalía, sin documento fiscal'}
+            {!resultado.is_gift && conBeneficiario && cliente && beneficiario &&
+              ` · Facturado a ${nombreCliente(cliente)} · Cupones a nombre de ${nombreCliente(beneficiario)}`}
           </div>
         </div>
 
         {enCuponera && (
           <div style={{ maxWidth: 620, marginBottom: 12, padding: '11px 14px', borderRadius: 14, background: 'var(--color-success-tint)', color: 'var(--color-success-text)', fontSize: 13 }}>
-            <strong>Cargados a la Cuponera Digital</strong> de {cliente ? nombreCliente(cliente) : 'el cliente'}: ya los ve en su portal
+            <strong>Cargados a la Cuponera Digital</strong> de {titular ? nombreCliente(titular) : 'el cliente'}: ya los ve en su portal
             y puede entregarlos por correo o en PDF. No hace falta imprimir el lote.
           </div>
         )}
@@ -340,7 +401,7 @@ function VentaCupones() {
             <button className={`filter-pill${!esRegalia ? ' active' : ''}`}
                     onClick={() => setEsRegalia(false)}>Venta</button>
             <button className={`filter-pill${esRegalia ? ' active' : ''}`}
-                    onClick={() => { setEsRegalia(true); setCliente(null); setQuery('') }}>
+                    onClick={() => { setEsRegalia(true); setCliente(null); setConBeneficiario(false); setBeneficiario(null) }}>
               Regalía
             </button>
           </div>
@@ -352,49 +413,51 @@ function VentaCupones() {
             </div>
           )}
 
-          {!esRegalia && <div className="panel-section-label">Cliente</div>}
-          {esRegalia ? null : cliente ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderRadius: 14, border: '1.5px solid var(--corsa-green)', background: 'rgba(2,53,48,0.05)', marginBottom: 14 }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 700 }}>{nombreCliente(cliente)}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                  {[cliente.nit ? `NIT ${cliente.nit}` : cliente.dui ? `DUI ${cliente.dui}` : null, cliente.email]
-                    .filter(Boolean).join(' · ') || 'Sin datos de contacto'}
-                </div>
-              </div>
-              <button onClick={() => { setCliente(null); setQuery('') }}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 18 }}>×</button>
-            </div>
-          ) : (
-            <div style={{ position: 'relative', marginBottom: 14 }}>
-              <input className="corsa-input" value={query} onChange={e => setQuery(e.target.value)}
-                     placeholder="Buscá por nombre, razón social o NIT…" autoFocus/>
-              {resultados.length > 0 && (
-                <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 60, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.14)', maxHeight: 220, overflowY: 'auto' }}>
-                  {resultados.map(c => (
-                    <button key={c.id} onClick={() => { setCliente(c); setResultados([]) }}
-                      style={{ width: '100%', textAlign: 'left', padding: '9px 13px', border: 'none', background: 'transparent', cursor: 'pointer', borderBottom: '1px solid var(--border)' }}>
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>{nombreCliente(c)}</div>
-                      <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
-                        {c.nit ? `NIT ${c.nit}` : c.customer_type === 'company' ? 'Empresa' : 'Persona'}
-                      </div>
-                    </button>
-                  ))}
-                </div>
+          {!esRegalia && (
+            <>
+              <div className="panel-section-label">Facturar a</div>
+              <SelectorCliente value={cliente} onChange={setCliente} autoFocus/>
+
+              <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer', fontSize: 13, margin: '-4px 0 12px' }}>
+                <input type="checkbox" checked={conBeneficiario}
+                       onChange={e => { setConBeneficiario(e.target.checked); if (!e.target.checked) setBeneficiario(null) }}
+                       style={{ accentColor: 'var(--corsa-green)' }}/>
+                Los cupones son para otro cliente (beneficiario)
+              </label>
+
+              {conBeneficiario && (
+                <>
+                  <div className="panel-section-label">Beneficiario</div>
+                  <SelectorCliente value={beneficiario} onChange={setBeneficiario} excluirId={cliente?.id}
+                                   placeholder="Empresa a cuyo nombre salen los cupones…"/>
+                  {cliente && beneficiario && cliente.id === beneficiario.id && (
+                    <div style={{ fontSize: 12, color: 'var(--color-danger, #b42318)', margin: '-6px 0 12px' }}>
+                      El beneficiario es el mismo cliente al que se factura: quitá el beneficiario o elegí otro.
+                    </div>
+                  )}
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', background: 'var(--subtle-bg)', padding: '9px 12px', borderRadius: 12, margin: '-4px 0 14px', lineHeight: 1.5 }}>
+                    La factura sale a nombre de <strong>{cliente ? nombreCliente(cliente) : 'quien paga'}</strong>.
+                    Los cupones, el PDF, la Cuponera Digital y el canje en caja dicen
+                    {' '}<strong>{beneficiario ? nombreCliente(beneficiario) : 'el beneficiario'}</strong>:
+                    el beneficiario no ve quién los compró.
+                  </div>
+                </>
               )}
-            </div>
+            </>
           )}
 
-          {!esRegalia && cliente && cuponera?.activa && (
+          {!esRegalia && titular && cuponera?.activa && (
             <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer', padding: '10px 14px', borderRadius: 14, border: '1px solid var(--border)', background: aCuponera ? 'var(--accent-tint)' : 'transparent', marginBottom: 14 }}>
               <input type="checkbox" checked={aCuponera} onChange={e => setACuponera(e.target.checked)} style={{ accentColor: 'var(--corsa-green)', marginTop: 3 }}/>
               <span>
-                <span style={{ fontSize: 13, fontWeight: 700, display: 'block' }}>Cargar a su Cuponera Digital</span>
+                <span style={{ fontSize: 13, fontWeight: 700, display: 'block' }}>
+                  Cargar a la Cuponera Digital{conBeneficiario && titular ? ` de ${nombreCliente(titular)}` : ''}
+                </span>
                 <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>El cliente entrega los cupones desde su portal, por correo o en PDF.</span>
               </span>
             </label>
           )}
-          {!esRegalia && cliente && cuponera && !cuponera.activa && (
+          {!esRegalia && titular && cuponera && !cuponera.activa && (
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14 }}>
               La Cuponera Digital de este cliente está suspendida: los cupones no se cargarán a su portal.
             </div>

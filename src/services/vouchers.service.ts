@@ -38,6 +38,9 @@ export interface VoucherRow {
   entregado_a?: string | null
   entregado_correo?: string | null
   entregado_at?: string | null
+  /** Quién pagó, sólo si no es el titular (venta con beneficiario, 0084). */
+  facturado_customer_id?: string | null
+  facturado_a?: string | null
 }
 
 export interface VoucherFilters {
@@ -84,6 +87,11 @@ export interface SellVouchersInput {
   paymentMethod: string
   docType: 'ticket' | 'ccf'
   isGift: boolean
+  /**
+   * Titular de los cupones cuando no es quien paga (0084): la factura va a
+   * `customerId` y los cupones, la cuponera y el canje, a nombre de éste.
+   */
+  beneficiaryCustomerId?: string | null
 }
 
 export interface SoldVoucher {
@@ -124,6 +132,9 @@ export async function sellVouchers(input: SellVouchersInput): Promise<SellVouche
     p_payment_method:      input.paymentMethod,
     p_doc_type:            input.docType,
     p_is_gift:             input.isGift,
+    // Sólo si hay beneficiario: así una venta normal funciona aunque la base
+    // todavía no tenga la 0084.
+    ...(input.beneficiaryCustomerId ? { p_beneficiary_customer_id: input.beneficiaryCustomerId } : {}),
   })
   if (error) throw new Error(error.message)
   return data as SellVouchersResult

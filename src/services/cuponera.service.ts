@@ -232,6 +232,8 @@ export interface LoteCuponera {
   total: number
   cuponera: boolean
   order_number: string | null
+  /** Quién pagó el lote, si no es el titular de la cuponera (0084). */
+  facturado_a?: string | null
   anulado: boolean
   activos: number
   redimidos: number
