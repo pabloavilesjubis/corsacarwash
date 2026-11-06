@@ -38,6 +38,8 @@ export interface CuponPortal {
   entregado_a: string | null
   entregado_correo: string | null
   entregado_at: string | null
+  /** Arte propio del titular (0085); null = genérico. */
+  fondo_cupon?: string | null
 }
 
 export interface Totales {

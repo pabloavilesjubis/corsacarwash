@@ -963,6 +963,10 @@ function normalizarResumen(r) {
 
 // src/lib/vouchers/voucherDocument.ts
 var FONDO_CUPON = "/cupones/fondo-cupon.png";
+function fondoDeCupon(v) {
+  const f = v.fondo_cupon;
+  return f && /^\/cupones\/[a-z0-9-]+\.png$/.test(f) ? f : FONDO_CUPON;
+}
 function origen(base) {
   if (base) return base.replace(/\/$/, "");
   return typeof window !== "undefined" ? window.location.origin : "";
@@ -982,7 +986,7 @@ function qrSrc(data) {
 }
 function voucherCard(v, base) {
   return `
-  <section class="voucher">
+  <section class="voucher" style="background-image: url('${esc4(origen(base) + fondoDeCupon(v))}')">
     <div class="left">
       <div class="includes">
         ${v.includes_aspirado ? '<span class="pill">Incluye aspirado de interiores</span>' : '<span class="pill pill-muted">Sin aspirado</span>'}
@@ -1029,7 +1033,9 @@ function buildVouchersHTML(vouchers, unico = false, opciones = {}) {
     height: 85mm; display: flex;
     border-radius: 3mm;
     overflow: hidden; margin-bottom: 4mm;
-    background: #383838 url('${base}${FONDO_CUPON}') center / cover no-repeat;
+    /* La imagen la pone cada cup\xF3n (fondoDeCupon): depende del titular. */
+    background-color: #383838; background-position: center;
+    background-size: cover; background-repeat: no-repeat;
   }
   .voucher:last-child { margin-bottom: 0; }
 
@@ -1752,7 +1758,7 @@ async function correoDeCupones(db, quien, appUrl, entregaId) {
     throw new ErrorHttp(429, "Se alcanz\xF3 el l\xEDmite de correos de hoy. Int\xE9ntalo ma\xF1ana o comun\xEDcate con CORSA.");
   }
   const { data: ids } = await db.from("cuponera_entrega_cupones").select("voucher_id").eq("entrega_id", entregaId);
-  const { data: filas } = await db.from("v_vouchers").select("id, code, sequence_number, validation_token, service_name, size, includes_aspirado, is_gift, unit_value, customer_name, batch_id, status").in("id", (ids ?? []).map((r) => r.voucher_id)).order("sequence_number");
+  const { data: filas } = await db.from("v_vouchers").select("*").in("id", (ids ?? []).map((r) => r.voucher_id)).order("sequence_number");
   const cupones = filas ?? [];
   if (cupones.length === 0) throw new ErrorHttp(409, "La entrega no tiene cupones");
   const empresa = cupones[0].customer_name;

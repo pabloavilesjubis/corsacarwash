@@ -405,7 +405,9 @@ async function correoDeCupones(
 
   const { data: ids } = await db.from('cuponera_entrega_cupones').select('voucher_id').eq('entrega_id', entregaId)
   const { data: filas } = await db.from('v_vouchers')
-    .select('id, code, sequence_number, validation_token, service_name, size, includes_aspirado, is_gift, unit_value, customer_name, batch_id, status')
+    // '*' y no la lista: fondo_cupon llega con la 0085 y pedirlo por nombre
+    // rompería el envío si el código se publica antes que la migración.
+    .select('*')
     .in('id', (ids ?? []).map((r: any) => r.voucher_id))
     .order('sequence_number')
   const cupones = (filas ?? []) as (CuponImprimible & { status: string })[]

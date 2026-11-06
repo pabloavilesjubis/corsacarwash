@@ -41,6 +41,8 @@ export interface VoucherRow {
   /** Quién pagó, sólo si no es el titular (venta con beneficiario, 0084). */
   facturado_customer_id?: string | null
   facturado_a?: string | null
+  /** Arte propio del titular (0085); null = genérico. */
+  fondo_cupon?: string | null
 }
 
 export interface VoucherFilters {

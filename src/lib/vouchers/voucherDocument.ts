@@ -15,10 +15,17 @@ import type { VoucherRow } from '../../services/vouchers.service'
 /** Lo mínimo de un cupón para imprimirlo: lo cumplen la fila de Cupones y la del portal. */
 export type CuponImprimible = Pick<VoucherRow,
   'id' | 'code' | 'sequence_number' | 'validation_token' | 'service_name' | 'size' |
-  'includes_aspirado' | 'is_gift' | 'unit_value' | 'customer_name' | 'batch_id'>
+  'includes_aspirado' | 'is_gift' | 'unit_value' | 'customer_name' | 'batch_id'> & {
+  /** Arte propio del titular (0085). Null o ausente = arte genérico. */
+  fondo_cupon?: string | null
+}
 
 /**
- * Arte de fondo del cupón. Va en public/ y cubre la tarjeta entera
+ * Arte GENÉRICO de fondo del cupón: el de todos los clientes, sin logo de
+ * ninguno. Un cliente con arte propio (p. ej. Teleperformance) lo trae en
+ * `fondo_cupon`, que sale de customers.fondo_cupon del titular del lote.
+ *
+ * El arte va en public/ y cubre la tarjeta entera
  * (200 × 85 mm, 2362 × 1004 px a 300 dpi). El arte trae la marca, el servicio
  * y la leyenda, así que el cupón sólo imprime encima lo variable: aspirado y
  * titular a la izquierda, y en el talón una tarjeta blanca con número, QR y
@@ -26,6 +33,16 @@ export type CuponImprimible = Pick<VoucherRow,
  * está, queda el gris oscuro del arte para que el texto claro se siga leyendo.
  */
 export const FONDO_CUPON = '/cupones/fondo-cupon.png'
+
+/**
+ * El fondo de un cupón. La ruta va dentro del CSS, así que sólo se acepta un
+ * archivo de /cupones/ (la base lo exige también); cualquier otra cosa cae al
+ * genérico, nunca al arte de otro cliente.
+ */
+export function fondoDeCupon(v: Pick<CuponImprimible, 'fondo_cupon'>): string {
+  const f = v.fondo_cupon
+  return f && /^\/cupones\/[a-z0-9-]+\.png$/.test(f) ? f : FONDO_CUPON
+}
 
 /**
  * `base` es el origen de la app (https://…). En el navegador sale solo; el
@@ -65,7 +82,7 @@ function qrSrc(data: string): string {
  */
 function voucherCard(v: CuponImprimible, base?: string): string {
   return `
-  <section class="voucher">
+  <section class="voucher" style="background-image: url('${esc(origen(base) + fondoDeCupon(v))}')">
     <div class="left">
       <div class="includes">
         ${v.includes_aspirado
@@ -124,7 +141,9 @@ export function buildVouchersHTML(vouchers: CuponImprimible[], unico = false, op
     height: 85mm; display: flex;
     border-radius: 3mm;
     overflow: hidden; margin-bottom: 4mm;
-    background: #383838 url('${base}${FONDO_CUPON}') center / cover no-repeat;
+    /* La imagen la pone cada cupón (fondoDeCupon): depende del titular. */
+    background-color: #383838; background-position: center;
+    background-size: cover; background-repeat: no-repeat;
   }
   .voucher:last-child { margin-bottom: 0; }
 
