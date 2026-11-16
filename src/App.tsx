@@ -158,7 +158,7 @@ export default function App() {
                     fiscal.seed; los verifica el servidor, no esta ruta. */}
                 <Route path="/contabilidad" element={<Navigate to="/contabilidad/notas-credito" replace/>}/>
                 <Route path="/contabilidad/notas-credito"     element={<ScreenGuard permission="screens.accounting"><NotasCreditoPage/></ScreenGuard>}/>
-                <Route path="/contabilidad/sujetos-excluidos" element={<ScreenGuard permission="screens.accounting"><SujetosExcluidosPage/></ScreenGuard>}/>
+                <Route path="/contabilidad/sujetos-excluidos" element={<ScreenGuard permission="screens.fsee"><SujetosExcluidosPage/></ScreenGuard>}/>
                 <Route path="/contabilidad/invalidaciones"    element={<ScreenGuard permission="screens.accounting"><InvalidacionesPage/></ScreenGuard>}/>
                 <Route path="/contabilidad/correlativos"      element={<ScreenGuard permission="screens.accounting"><CorrelativosPage/></ScreenGuard>}/>
                 <Route path="/users"       element={<ScreenGuard permission="users.manage"><UsersPage/></ScreenGuard>}/>

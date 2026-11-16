@@ -251,7 +251,7 @@ export function NotasCreditoPage() {
 
 export function SujetosExcluidosPage() {
   const { hasPermission } = useAuth()
-  return hasPermission('screens.accounting') ? <HistorialDocumentos tipo="14"/> : <SinAcceso/>
+  return hasPermission('screens.fsee') ? <HistorialDocumentos tipo="14"/> : <SinAcceso/>
 }
 
 // ─── Invalidaciones ──────────────────────────────────────────

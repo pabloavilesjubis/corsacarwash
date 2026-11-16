@@ -74,10 +74,11 @@ export const SCREENS: readonly ScreenDef[] = [
   { key: 'notificaciones', path: '/settings/notificaciones', label: 'Notificaciones',   permission: 'plc.read',            section: 'administracion', hidden: true },
   { key: 'cierre_diario',  path: '/dashboard/cierre-diario', label: 'Cierre del día',   permission: 'plc.read',            section: 'administracion', hidden: true },
   // Contabilidad: documentos fiscales que no salen de una venta del POS. Las
-  // cuatro comparten screens.accounting; emitir pide además fiscal.issue y
+  // pantallas piden screens.accounting, salvo Sujetos excluidos (screens.fsee,
+  // para que Caja, donde está el firmador, la vea sola); emitir pide además fiscal.issue y
   // sembrar fiscal.seed, que se verifican en el servidor.
   { key: 'acc_nc',      path: '/contabilidad/notas-credito',     label: 'Notas de crédito',     permission: 'screens.accounting', section: 'contabilidad', submenu: 'Contabilidad' },
-  { key: 'acc_fsee',    path: '/contabilidad/sujetos-excluidos', label: 'Sujetos excluidos',    permission: 'screens.accounting', section: 'contabilidad', submenu: 'Contabilidad' },
+  { key: 'acc_fsee',    path: '/contabilidad/sujetos-excluidos', label: 'Sujetos excluidos',    permission: 'screens.fsee', section: 'contabilidad', submenu: 'Contabilidad' },
   { key: 'acc_inv',     path: '/contabilidad/invalidaciones',    label: 'Invalidaciones',       permission: 'screens.accounting', section: 'contabilidad', submenu: 'Contabilidad' },
   { key: 'acc_corr',    path: '/contabilidad/correlativos',      label: 'Correlativos',         permission: 'screens.accounting', section: 'contabilidad', submenu: 'Contabilidad' },
 
