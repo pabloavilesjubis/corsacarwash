@@ -220,7 +220,10 @@ export function FormSujetoExcluido({ branchId, onListo, onCancelar }: {
         <div className="alert-banner danger"><div className="alert-body"><div className="alert-desc">{error}</div></div></div>
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginRight: 'auto' }}>
+          Se firma con el firmador de Hacienda: emitilo desde la PC de facturación.
+        </span>
         <button className="btn btn-ghost" onClick={onCancelar} disabled={enviando}>Cancelar</button>
         <button className="btn btn-primary" onClick={emitir} disabled={enviando}>
           {enviando ? 'Emitiendo…' : 'Emitir y transmitir a Hacienda'}

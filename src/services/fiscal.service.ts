@@ -351,7 +351,31 @@ export interface SolicitudSujetoExcluido {
   observaciones: string | null
 }
 
-export const emitirSujetoExcluido = (s: SolicitudSujetoExcluido) => llamarWorker('/v1/app/fsee', s)
+/**
+ * Sujeto Excluido y Nota de Crédito con FIRMA LOCAL, igual que la venta: la
+ * estación fiscal de ESTA PC tiene que estar lista antes de pedir número; el
+ * Worker arma y devuelve el DTE, la PC lo firma con el firmador de Hacienda y
+ * el Worker lo transmite. Reintentar con la misma llave (el formulario la
+ * conserva) retoma el MISMO documento, ya armado: no reserva otro número.
+ */
+async function emitirDocumentoConFirmaLocal(rutaPreparar: string, cuerpo: unknown): Promise<ResultadoFiscal> {
+  await exigirEstacionLista()
+  const timeoutMs = 60_000
+  const preparado = await llamarWorker(rutaPreparar, cuerpo, { timeoutMs })
+  if (preparado.estado !== 'PENDIENTE_FIRMA' || !preparado.dte || !preparado.documentoId) return preparado
+
+  let jws: string
+  try {
+    jws = await firmarEnEstacion(preparado.dte)
+  } catch (e) {
+    throw new ErrorFiscal(`${e instanceof Error ? e.message : 'No se pudo firmar.'} ` +
+      `El documento ${preparado.numeroControl ?? ''} quedó preparado con los datos que se enviaron: ` +
+      'al volver a emitir se firma ese mismo, sin gastar otro número.', 'SIN_FIRMA')
+  }
+  return llamarWorker('/v1/app/documento/firmada', { documentoId: preparado.documentoId, jws }, { timeoutMs })
+}
+
+export const emitirSujetoExcluido = (s: SolicitudSujetoExcluido) => emitirDocumentoConFirmaLocal('/v1/app/fsee/preparar', s)
 
 export interface SolicitudNotaCredito {
   idempotencyKey: string
@@ -370,7 +394,7 @@ export interface SolicitudNotaCredito {
   condicionOperacion: 1 | 2
 }
 
-export const emitirNotaCredito = (s: SolicitudNotaCredito) => llamarWorker('/v1/app/nota-credito', s)
+export const emitirNotaCredito = (s: SolicitudNotaCredito) => emitirDocumentoConFirmaLocal('/v1/app/nota-credito/preparar', s)
 
 export interface Persona { nombre: string; tipoDocumento: string; numDocumento: string }
 
